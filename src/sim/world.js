@@ -19,7 +19,7 @@ function createWorld(seed, bus) {
     combat: combatMod.createCombat(), pendingStrikes: [],
     counters: { attacks: 0, blocks: 0, finishers: 0 },
     streaming: streamingMod.createStreaming(seed, bus, citygen.generate),
-    bike: bikeMod.createBike(2.0, -1.6, Math.PI / 2), mounted: false,
+    bike: bikeMod.createBike(1.7, -1.2, Math.PI / 2), mounted: false, mountTick: -999,
     bus: bus
   };
   world.streaming.update(0, 0);
@@ -34,8 +34,8 @@ function rideStep(world, input) {
   var blk = !!s.held.block;
   bikeMod.step(b, { throttle: Math.max(0, s.my), brake: Math.max(Math.max(0, -s.my), blk ? 0.55 : 0), steer: s.mx, reverse: s.my < -0.3 && !blk, boost: !!s.held.attack, drift: blk, stunt: !!s.pressed.attack }, env, dt, world.bus);
   p.x = b.x; p.z = b.z; p.face = b.h;
-  if (s.pressed.attack && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED) {
-    b.speed = 0; world.mounted = false;
+  if (s.pressed.attack && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED && world.tick - world.mountTick > 30) {       /* half a second after climbing on, so two quick presses cannot flip him straight off */
+    b.speed = 0; world.mounted = false; input.consume('attack', 99);       /* the press that got him off must not also count as a buffered press to climb back on */
     p.x = b.x + Math.cos(b.h) * 1.0; p.z = b.z - Math.sin(b.h) * 1.0;     /* steps off to the bike's left */
     world.bus.emit('ride:park', { x: b.x, z: b.z });
   }
@@ -43,11 +43,21 @@ function rideStep(world, input) {
   world.tick++;
 }
 
-/* a man within reach means the button is for fighting, not for climbing on the bike */
+/* a man right beside him means the button is for fighting; one further off does not stop him climbing on */
 function menNear(world, p) {
   var l = world.combat.enemies;
-  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < 5) return true;
+  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < BIKE.MOUNT_BLOCK) return true;
   return false;
+}
+/* how far he stands from the bike's body (a line from rear wheel to front wheel), not from its middle */
+function bikeDistance(world) {
+  var b = world.bike, p = world.player, fx = Math.sin(b.h), fz = Math.cos(b.h), dx = p.x - b.x, dz = p.z - b.z;
+  var t = Math.max(-BIKE.HALF_LEN, Math.min(BIKE.HALF_LEN, dx * fx + dz * fz));
+  return Math.hypot(dx - fx * t, dz - fz * t);
+}
+function canMount(world) {
+  var p = world.player;
+  return !world.mounted && !p.down && p.stun <= 0 && bikeDistance(world) < BIKE.MOUNT_REACH && !menNear(world, p);
 }
 
 function step(world, input) {
@@ -55,8 +65,8 @@ function step(world, input) {
   var p = world.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ;
   p.px = p.x; p.pz = p.z;
   world.bike.speed = 0;
-  if (s.pressed.attack && !world.attackLock && !p.down && p.stun <= 0 && Math.hypot(world.bike.x - p.x, world.bike.z - p.z) < BIKE.MOUNT_RANGE && !menNear(world, p)) {
-    world.mounted = true; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
+  if (canMount(world) && (s.pressed.attack || input.consume('attack', 8))) {
+    input.consume('attack', 99); world.mounted = true; world.mountTick = world.tick; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
     world.bus.emit('ride:mount', { x: world.bike.x, z: world.bike.z });
     world.streaming.update(p.x, p.z); world.tick++; return;
   }
@@ -92,4 +102,4 @@ function hash(world) {
   return h >>> 0;
 }
 
-module.exports = { createWorld: createWorld, step: step, hash: hash, startFight: combatMod.begin };
+module.exports = { canMount: canMount, bikeDistance: bikeDistance, createWorld: createWorld, step: step, hash: hash, startFight: combatMod.begin };

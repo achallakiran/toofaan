@@ -20,7 +20,10 @@ var BIKE = {
   ROLL_TIME: 0.62,          /* seconds for a full barrel roll in the air */
   BOOST_DRAIN: 0.4,         /* per second */
   BOOST_REFILL: 0.08,
-  MOUNT_RANGE: 2.8,
+  MOUNT_REACH: 1.7,         /* metres from the bike's body (rear wheel to front wheel) within which Attack climbs on */
+  MOUNT_SHOW: 3.2,          /* the prompt appears a little earlier than the reach, so he can step in */
+  MOUNT_BLOCK: 2.2,         /* a man this close means Attack is for fighting */
+  HALF_LEN: 0.9,
   PARK_SPEED: 0.7,          /* below this, Attack parks the bike and lets him step off */
   GEARS: [0, 4.5, 9, 14, 19.5]  /* speed at which each gear starts, for the engine note */
 };

@@ -437,6 +437,15 @@ test('world: walk up to the bike, Attack mounts, riding moves the player and the
   run(2, 0, 0, true); assert(!w.mounted, 'dismounted'); assert(Math.hypot(w.player.x - w.bike.x, w.player.z - w.bike.z) < 1.5);
   assert.deepStrictEqual(ev, ['ride:mount', 'ride:park']);
 });
+test('world: climbing on is easy beside either wheel, still works with a man a few steps away, and is refused only when one is right beside him', function () {
+  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), b = w.bike, fx = Math.sin(b.h), fz = Math.cos(b.h);
+  function tryAt(x, z) { w.mounted = false; w.player.x = x; w.player.z = z; inp.setButton('attack', false); for (var q = 0; q < 12; q++) { inp.tick(w.tick); worldMod.step(w, inp); w.mounted = false; } inp.tick(w.tick); worldMod.step(w, inp); inp.setButton('attack', true); inp.tick(w.tick); worldMod.step(w, inp); inp.setButton('attack', false); inp.tick(w.tick); worldMod.step(w, inp); return w.mounted; }
+  assert(tryAt(b.x + fx * 1.0 + fz * 1.3, b.z + fz * 1.0 - fx * 1.3), 'beside the front wheel');
+  assert(tryAt(b.x - fx * 1.0 + fz * 1.3, b.z - fz * 1.0 - fx * 1.3), 'beside the back wheel');
+  assert(!tryAt(b.x + 4, b.z + 4), 'too far');
+  combatMod.spawn(w, 'thug', b.x + 6, b.z); assert(tryAt(b.x + fz * 1.3, b.z - fx * 1.3), 'a man a few steps off does not stop him');
+  w.combat.enemies.length = 0; combatMod.spawn(w, 'thug', b.x + fz * 2.0, b.z - fx * 2.0); assert(!tryAt(b.x + fz * 1.3, b.z - fx * 1.3), 'a man right beside him means fight');
+});
 test('world: the same seed and the same inputs give the same hash with the bike in play', function () {
   function go() { var bus = busMod.createBus(), w = worldMod.createWorld(8, bus), inp = inputMod.createInput();
     for (var t = 0; t < 1500; t++) { inp.setAxis(Math.sin(t / 90) * 0.8, t < 1200 ? 1 : 0); inp.setButton('attack', t === 3 || t % 200 === 150); inp.setButton('block', t % 333 > 300); inp.tick(w.tick); worldMod.step(w, inp); } return worldMod.hash(w); }

@@ -10,6 +10,7 @@ async function boot(browser, url) {
   var page = await (await browser.newContext({ viewport: { width: 900, height: 540 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
   await page.goto(url); await page.waitForSelector('html[data-ready="1"]', { timeout: 20000 }); await page.waitForTimeout(700);
+  await page.evaluate(function () { var g = window.__game; if (g && g.ctx.world.bike) g.ctx.world.bike.x = 5000; });      /* the fight checks happen away from the parked bike, so Attack is always a punch */
   page.errs = errs; return page;
 }
 async function tap(page, code, hold) { await page.keyboard.down(code); await page.waitForTimeout(hold || 80); await page.keyboard.up(code); }

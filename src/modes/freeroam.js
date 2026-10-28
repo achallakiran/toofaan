@@ -64,7 +64,7 @@ function createFreeroam() {
         S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
       })();
       function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
-      scope.add(ctx.bus.on('ride:mount', function () { S.sfx.start(); }));
+      scope.add(ctx.bus.on('ride:mount', function () { S.mp.cancel(); S.sfx.start(); }));
       scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
       scope.add(ctx.bus.on('ride:jump', function () { S.cine.shake(0.05, 0.2); }));
       scope.add(ctx.bus.on('ride:land', function (e) { S.sfx.land(e.vy); S.cine.shake(Math.min(0.14, 0.02 + e.vy * 0.01), 0.25); if (e.vy > 6) S.txt.say('thud', { x: e.x, y: 1.0, z: e.z }, view.camera, false); }));
@@ -212,10 +212,10 @@ function createFreeroam() {
         shot = o2;
       } else S.rc.state.init = false;
       /* engine note and riding HUD */
-      var near = !mounted && Math.hypot(bk.x - p.x, bk.z - p.z) < BIKE.MOUNT_RANGE + 1;
+      var bd = mounted ? 99 : worldMod.bikeDistance(ctx.world), near = bd < BIKE.MOUNT_SHOW, can = !mounted && worldMod.canMount(ctx.world);
       if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
       if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
-      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (near ? 'ATTACK: get on the Bijli' : '');
+      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
       if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
       u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
       if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h' + (bk.score ? '   ' + bk.score : ''); u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
