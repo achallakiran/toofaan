@@ -315,12 +315,43 @@ function createScope() {
 module.exports = { createScope: createScope };
 
 };
+defs["data/bike"]=function(module,exports,require){
+/* data layer: the Bijli, a heavy classic cruiser. One block of numbers so the handling can be tuned by feel. */
+'use strict';
+
+var BIKE = {
+  MAX_SPEED: 25,            /* m/s, about 90 km/h */
+  BOOST_SPEED: 31,
+  ACCEL: 6.2,               /* m/s^2 at a standstill, tapering toward top speed */
+  BOOST_ACCEL: 9,
+  BRAKE: 13,
+  COAST: 0.9,               /* engine braking when the throttle is released */
+  DRAG: 0.0007,             /* speed squared drag */
+  REVERSE_MAX: 2.2,
+  TURN_R0: 3.6,             /* tightest turning radius, metres, at walking pace */
+  TURN_RV: 0.95,            /* extra radius per m/s: wide arcs at speed */
+  STEER_LAG: 5.5,           /* how quickly the bars follow the stick (per second): lazy on purpose */
+  DRIFT_BOOST: 1.35,        /* extra yaw while Block drifts */
+  DRIFT_BRAKE: 4,
+  RADIUS: 0.55,             /* collision circle, metres */
+  GRAVITY: 16,
+  ROLL_TIME: 0.62,          /* seconds for a full barrel roll in the air */
+  BOOST_DRAIN: 0.4,         /* per second */
+  BOOST_REFILL: 0.08,
+  MOUNT_RANGE: 2.8,
+  PARK_SPEED: 0.7,          /* below this, Attack parks the bike and lets him step off */
+  GEARS: [0, 4.5, 9, 14, 19.5]  /* speed at which each gear starts, for the engine note */
+};
+
+module.exports = BIKE;
+
+};
 defs["data/config"]=function(module,exports,require){
 /* data layer: constants and tables only. No logic that touches the outside world. */
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 31',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 32',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -860,6 +891,9 @@ var enemyview = require('../view/enemyview');
 var fightui = require('../view/fightui');
 var lettering = require('../view/lettering');
 var sfxmod = require('../view/sfx');
+var bikevox = require('../view/bikevox');
+var ridecam = require('../view/ridecam');
+var BIKE = require('../data/bike');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
 function groupCentre(world, hx, hz) {
@@ -883,6 +917,8 @@ function createFreeroam() {
       scope.add(function () { view.clearChunks(); });
       S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
       scope.add(function () { view.scene.remove(S.rig.root); });
+      S.bike = bikevox.createBike(); view.scene.add(S.bike.root); scope.add(function () { view.scene.remove(S.bike.root); });
+      S.rc = ridecam.createRideCam(); S.mountW = ctx.world.mounted ? 1 : 0; S.wheelA = 0; S.bPrev = null; S.flash = null; S.flashT = 0; S.rideHint = '';
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
@@ -896,6 +932,25 @@ function createFreeroam() {
         function upd() { bst.textContent = 'Style: ' + S.txt.styleName; bt.textContent = 'Text: ' + ({ bubble: 'bubble', plain: 'plain', off: 'off' })[S.txt.mode]; bl.textContent = S.txt.script === 'hi' ? 'हिंदी' : 'ABC'; bsn.textContent = 'Sound: ' + (S.sfx.on ? 'on' : 'off'); }
         bst.textContent = 'Style: ' + S.txt.styleName; upd(); document.body.appendChild(bar); scope.add(function () { bar.remove(); });
       })();
+
+      /* riding HUD: speed, boost, stunt score and the one hint that matters right now */
+      (function () {
+        var el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:700 12px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000';
+        el.innerHTML = '<div id="rdFlash" style="font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;height:36px;opacity:0;transition:opacity .25s"></div><div id="rdSpeed" style="font:900 26px system-ui,sans-serif;display:none"></div><div id="rdBoost" style="width:150px;height:6px;margin:4px auto;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;display:none"><div style="height:100%;width:100%;background:linear-gradient(90deg,#ffc21a,#ff6a3d)"></div></div><div id="rdHint" style="font-weight:600;opacity:.9"></div>';
+        document.body.appendChild(el); scope.add(function () { el.remove(); });
+        S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
+      })();
+      function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
+      scope.add(ctx.bus.on('ride:mount', function () { S.sfx.start(); }));
+      scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
+      scope.add(ctx.bus.on('ride:jump', function () { S.cine.shake(0.05, 0.2); }));
+      scope.add(ctx.bus.on('ride:land', function (e) { S.sfx.land(e.vy); S.cine.shake(Math.min(0.14, 0.02 + e.vy * 0.01), 0.25); if (e.vy > 6) S.txt.say('thud', { x: e.x, y: 1.0, z: e.z }, view.camera, false); }));
+      scope.add(ctx.bus.on('ride:crash', function (e) {
+        S.sfx.crash(!!e.hard); S.cine.shake(e.hard ? 0.25 : 0.1, 0.4); S.fx.spawn('blockspark', { x: e.x, y: 1.0, z: e.z }, e.hard ? 1.6 : 0.3);
+        S.txt.say(e.hard ? 'smash' : 'thud', { x: e.x, y: 1.4, z: e.z }, view.camera, !!e.hard); if (e.with === 'landing') flash('BAD LANDING');
+      }));
+      scope.add(ctx.bus.on('ride:roll', function (e) { S.sfx.roll(); flash('360 ROLL  +500'); S.cine.shake(0.06, 0.2); }));
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -956,6 +1011,7 @@ function createFreeroam() {
       var cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
       ctx.world.attackLock = S.mp.active();            /* no walking while a move plays; the sim itself stops movement while Block is held */
       ctx.world.invuln = !!(mv0 && mv0.counter) || cm0 === 'counterCross';         /* counters and the finisher cannot be interrupted */
+      var bk = ctx.world.bike; S.bPrev = { x: bk.x, y: bk.y, z: bk.z, h: bk.h };
       ctx.input.tick(tick);
       worldMod.step(ctx.world, ctx.input);
     },
@@ -982,11 +1038,27 @@ function createFreeroam() {
       if (S.blockW > 0.01) { var bw = posemath.smooth(S.blockW); pose = posemath.layer(pose, posemath.named('block'), bw * 0.85, bw); }
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
-      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat);
+      /* the bike: interpolated between ticks, wheels turning, bars following the stick */
+      var bk = ctx.world.bike, bp = S.bPrev || bk, mounted = ctx.world.mounted;
+      var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
+      S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
+      var B3 = S.bike; B3.root.position.set(bx, by, bz); B3.root.rotation.y = bh;
+      B3.lean.rotation.z = bk.lean + bk.slip * 0.5 + (bk.rolling ? bk.roll : 0);
+      B3.pitch.rotation.x = -bk.pitch - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
+      B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
+      var rideP = null;
+      if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
+      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(!ctx.world.mounted);
       S.fx.update(dt);
-      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face;
-      S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
+      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-(mounted ? 30 : 14) * dt));
+      if (S.mountW > 0.02) {
+        /* hop onto the seat: the hero's walking spot blends to the seat, with a little jump on the way */
+        var rw2 = posemath.smooth(S.mountW), sv = S.sv || (S.sv = new THREE.Vector3()), sq = S.sq || (S.sq = new THREE.Quaternion());
+        B3.root.updateMatrixWorld(true); sv.set(B3.seat.x, B3.seat.y + 0.08 - 0.85, B3.seat.z); B3.pitch.localToWorld(sv); B3.pitch.getWorldQuaternion(sq);
+        S.rig.root.position.set(x + (sv.x - x) * rw2, (sv.y) * rw2 + Math.sin(Math.PI * rw2) * 0.35, z + (sv.z - z) * rw2);
+        S.rig.root.rotation.y = S.face; if (rw2 > 0.999) S.rig.root.quaternion.copy(sq); else { var q0 = S.q0 || (S.q0 = new THREE.Quaternion()); q0.setFromAxisAngle(S.up || (S.up = new THREE.Vector3(0, 1, 0)), S.face); S.rig.root.quaternion.copy(q0).slerp(sq, rw2); }
+      } else { S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face; }
+      S.rig.applyPose(pose, { plant: S.mountW < 0.5 }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
       S.cine.update(dt, cm, ct, cm ? Math.min(ct / 0.55, (cl - ct) / 0.7, 1) : 0);
@@ -1010,6 +1082,22 @@ function createFreeroam() {
         if (S.cine.shakeT > 0) { var sk = S.cine.shakeT / (S.cine.dur || 1), amp = S.cine.shakeA * sk * sk * 0.6; o.x += Math.sin(S.t * 83) * amp; o.y += Math.sin(S.t * 97 + 1) * amp; }
         shot = o;
       } else if (S.seqW <= 0.01) S.seqCam = null;
+      if (S.mountW > 0.01) {
+        /* the riding camera takes over as he climbs on, and hands back when he steps off */
+        var rs = S.rc.update(dt, bk, bx, by, bz, bh, ctx.world.streaming), b1 = shot || { x: x, y: 6.4, z: z + 6.6, lx: x, ly: 1.0, lz: z - 2.2, fov: 46 }, rw3 = posemath.smooth(S.mountW), o2 = {}, f3;
+        for (f3 in rs) o2[f3] = b1[f3] + (rs[f3] - b1[f3]) * rw3;
+        if (S.cine.shakeT > 0) { var sk2 = S.cine.shakeT / (S.cine.dur || 1), amp2 = S.cine.shakeA * sk2 * sk2 * 0.6; o2.x += Math.sin(S.t * 83) * amp2; o2.y += Math.sin(S.t * 97 + 1) * amp2; }
+        shot = o2;
+      } else S.rc.state.init = false;
+      /* engine note and riding HUD */
+      var near = !mounted && Math.hypot(bk.x - p.x, bk.z - p.z) < BIKE.MOUNT_RANGE + 1;
+      if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
+      if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
+      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (near ? 'ATTACK: get on the Bijli' : '');
+      if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
+      u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
+      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h' + (bk.score ? '   ' + bk.score : ''); u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
+      if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
@@ -1142,6 +1230,116 @@ function createStudio() {
 module.exports = { createStudio: createStudio };
 
 };
+defs["sim/bike"]=function(module,exports,require){
+/* sim: the Bijli. A kinematic cruiser: it follows the ground (ramps), leaves it when the ground falls away, collides with
+   building footprints, and can roll in the air. Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
+'use strict';
+
+var B = require('../data/bike');
+var TAU = Math.PI * 2;
+
+function createBike(x, z, h) {
+  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, roll: 0, rolling: false, rolls: 0, score: 0,
+           steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0 };
+}
+
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+/* ctrl: {throttle 0..1, brake 0..1, steer -1..1 (right +), boost bool, drift bool, stunt bool (edge)}
+   env: {groundAt(x,z), solidsNear(x,z,r,out)}   bus: event bus or null */
+function step(b, ctrl, env, dt, bus) {
+  var thr = b.crash > 0 ? 0 : ctrl.throttle, brk = ctrl.brake, v = b.speed, i;
+  if (b.crash > 0) b.crash = Math.max(0, b.crash - dt);
+  b.thr += (thr - b.thr) * Math.min(1, 6 * dt);
+
+  /* speed along the heading */
+  var boosting = !!ctrl.boost && b.boost > 0.02 && !b.air && v > 1 && b.crash <= 0;
+  b.boosting = boosting;
+  var top = boosting ? B.BOOST_SPEED : B.MAX_SPEED;
+  if (!b.air) {
+    var a = 0;
+    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
+    else if (thr <= 0.05 && v > 0) a -= B.COAST;
+    if (brk > 0.05) { if (v > 0.3) a -= B.BRAKE * brk; else if (ctrl.reverse) { if (v > -B.REVERSE_MAX) a -= 3 * brk; } else { v = 0; a = 0; } }
+    else if (thr <= 0.05 && v < 0) a += B.COAST;
+    a -= B.DRAG * v * Math.abs(v);
+    b.drifting = !!ctrl.drift && v > 7 && Math.abs(ctrl.steer) > 0.2;
+    if (b.drifting) a -= B.DRIFT_BRAKE;
+    v += a * dt;
+    if (thr <= 0.05 && brk <= 0.05 && Math.abs(v) < 0.25) v = 0;
+    if (v > top) v = Math.max(top, v - 6 * dt);
+    b.speed = v;
+    if (boosting) b.boost = Math.max(0, b.boost - B.BOOST_DRAIN * dt); else b.boost = Math.min(1, b.boost + B.BOOST_REFILL * dt);
+  } else b.drifting = false;
+
+  /* steering: lazy bars, wide arcs at speed */
+  var airSteer = b.air ? 0.25 : 1;
+  b.steer += (ctrl.steer * airSteer - b.steer) * (1 - Math.exp(-B.STEER_LAG * dt));
+  var R = B.TURN_R0 + B.TURN_RV * Math.abs(b.speed), yaw = (b.speed / R) * b.steer * (b.drifting ? B.DRIFT_BOOST : 1);
+  b.h -= yaw * dt;
+  b.slip += ((b.drifting ? -b.steer * 0.4 : 0) - b.slip) * Math.min(1, 8 * dt);
+  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -0.55, 0.55) * (b.air ? 0.3 : 1);
+  b.lean += (leanT - b.lean) * (1 - Math.exp(-6 * dt));
+  /* fork dip under braking, rear squat under throttle */
+  var pitchT = (brk > 0.05 && v > 1 ? -0.06 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
+  b.pitch += (pitchT - b.pitch) * (1 - Math.exp(-7 * dt));
+
+  /* move */
+  var fx = Math.sin(b.h), fz = Math.cos(b.h);
+  b.lastY = b.y;
+  b.x += fx * b.speed * dt; b.z += fz * b.speed * dt;
+
+  /* walls: a circle against building footprints */
+  var near = env.solidsNear(b.x, b.z, B.RADIUS + 1, []);
+  for (i = 0; i < near.length; i++) {
+    var q = near[i]; if (b.y > q.y1 - 0.25) continue;
+    var cx = clamp(b.x, q.x0, q.x1), cz = clamp(b.z, q.z0, q.z1), dx = b.x - cx, dz = b.z - cz, d2 = dx * dx + dz * dz;
+    if (d2 >= B.RADIUS * B.RADIUS) continue;
+    var d = Math.sqrt(d2), nx, nz;
+    if (d < 1e-6) { var l = b.x - q.x0, r = q.x1 - b.x, t = b.z - q.z0, u = q.z1 - b.z, m = Math.min(l, r, t, u); nx = m === l ? -1 : m === r ? 1 : 0; nz = m === t ? -1 : m === u ? 1 : 0; d = 0; }
+    else { nx = dx / d; nz = dz / d; }
+    b.x += nx * (B.RADIUS - d); b.z += nz * (B.RADIUS - d);
+    var into = -(fx * nx + fz * nz) * b.speed;                    /* speed driven into the wall */
+    if (into > 1.5) {
+      var hard = into > 9;
+      b.speed *= hard ? 0.1 : (1 - 0.55 * Math.min(1, into / 9));
+      if (hard) b.crash = 0.9; else if (into > 4) b.crash = 0.3;
+      if (bus && into > 3) bus.emit('ride:crash', { x: b.x, z: b.z, speed: into, hard: hard, with: 'wall' });
+    }
+  }
+
+  /* ground, jumping, landing */
+  var gy = env.groundAt(b.x, b.z);
+  if (!b.air) {
+    if (gy < b.y - 0.06 && b.vyGround > 1.2) { b.air = true; b.vy = b.vyGround; b.airT = 0; b.y += b.vy * dt; if (bus) bus.emit('ride:jump', { x: b.x, z: b.z, vy: b.vy }); }
+    else if (gy < b.y - 0.06) { b.air = true; b.vy = 0; b.airT = 0; }
+    else { b.y = gy; b.vyGround = (b.y - b.lastY) / dt; }
+  } else {
+    b.airT += dt; b.vy -= B.GRAVITY * dt; b.y += b.vy * dt;
+    if (ctrl.stunt && !b.rolling && b.airT > 0.12) b.rolling = true;
+    if (b.rolling) {
+      b.roll += (TAU / B.ROLL_TIME) * dt;
+      if (b.roll >= TAU) { b.roll = 0; b.rolling = false; b.rolls++; b.score += 500; b.boost = 1; if (bus) bus.emit('ride:roll', { x: b.x, z: b.z, count: b.rolls, score: b.score }); }
+    }
+    if (b.y <= gy && b.vy <= 0) {
+      var vyIn = -b.vy; b.y = gy; b.air = false; b.vyGround = 0;
+      if (b.rolling && b.roll > 0.8 && b.roll < TAU - 0.8) { b.speed *= 0.4; b.crash = 0.8; if (bus) bus.emit('ride:crash', { x: b.x, z: b.z, speed: vyIn, hard: true, with: 'landing' }); }
+      else { if (vyIn > 8) b.speed *= 0.85; if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT }); }
+      b.roll = 0; b.rolling = false; b.vy = 0;
+    }
+  }
+
+  /* engine note inputs: gear from speed, rpm climbs inside each gear */
+  var g = 0; for (i = 0; i < B.GEARS.length; i++) if (Math.abs(b.speed) >= B.GEARS[i]) g = i;
+  if (g !== b.gear) { b.gear = g; b.shiftT = 0.18; } if (b.shiftT > 0) b.shiftT -= dt;
+  var lo = B.GEARS[g], hi = g + 1 < B.GEARS.length ? B.GEARS[g + 1] : B.BOOST_SPEED + 1, fr = clamp((Math.abs(b.speed) - lo) / (hi - lo), 0, 1);
+  var rpmT = 0.18 + 0.62 * fr + 0.2 * b.thr - (b.shiftT > 0 ? 0.18 : 0);
+  b.rpm += (rpmT - b.rpm) * Math.min(1, 9 * dt);
+}
+
+module.exports = { createBike: createBike, step: step };
+
+};
 defs["sim/chunkgen"]=function(module,exports,require){
 /* sim: deterministic chunk specs. A spec is plain data (boxes in chunk-local metres),
    so the same seed always rebuilds the same chunk and nothing needs to be stored. */
@@ -1152,13 +1350,13 @@ var CONFIG = require('../data/config');
 
 function chunkKey(cx, cz) { return cx + ',' + cz; }
 
-function generateChunk(seed, cx, cz) {
+function generateChunk(seed, cx, cz, opts) {
   var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND;
   var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
-  var boxes = [];
+  var boxes = [], solids = [], ramps = [];
   function box(x0, y0, z0, x1, y1, z1, c) { boxes.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
 
-  var onRoad = (cz === 0);
+  var onRoad = opts && opts.road != null ? !!opts.road : (cz === 0);
   box(-H, -0.3, -H, H, 0, H, onRoad ? G.sidewalk : G.dirt);          /* base ground */
   if (onRoad) {
     box(-H, -0.28, -6, H, 0.02, 6, G.road);                            /* main road along x */
@@ -1177,6 +1375,7 @@ function generateChunk(seed, cx, cz) {
       var shopH = 2.7;
       var c = rng.int(2, 11);
       box(x, 0, rows[r].z0, x + w, hgt, rows[r].z1, c);
+      solids.push({ x0: x, z0: rows[r].z0, x1: x + w, z1: rows[r].z1, y1: hgt });
       if (onRoad) {                                                   /* shopfront band raised to a hero-sized doorway */
         var zf = rows[r].z0 < 0 ? rows[r].z1 : rows[r].z0, dz = rows[r].z0 < 0 ? 0.12 : -0.12;
         box(x + 0.4, 0, Math.min(zf, zf + dz), x + w - 0.4, shopH, Math.max(zf, zf + dz), 1);
@@ -1188,11 +1387,74 @@ function generateChunk(seed, cx, cz) {
   if (onRoad) for (var p = -H + 4; p < H; p += 10) {
     box(p, 0, 7.4, p + 0.18, 4.2, 7.58, 1); box(p - 0.4, 4.0, 7.4, p + 0.58, 4.2, 7.58, 1);
     box(p, 0, -7.58, p + 0.18, 4.2, -7.4, 1); box(p - 0.4, 4.0, -7.58, p + 0.58, 4.2, -7.4, 1);
+    solids.push({ x0: p, z0: 7.4, x1: p + 0.18, z1: 7.58, y1: 4.2 }, { x0: p, z0: -7.58, x1: p + 0.18, z1: -7.4, y1: 4.2 });
   }
-  return { key: chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes };
+  /* a jump ramp in one lane (drawn last so the buildings above are the same as before): stair boxes for the eye, slope data for the bike */
+  if (onRoad && !(opts && opts.noRamp) && !(cx === 0 && cz === 0) && rng.chance(0.5)) {
+    var rx0 = rng.range(-12, -4), rlen = 8, rh = 3.0, rw = 4.4, rz0 = (rng.chance(0.5) ? 3 : -3) - rw / 2, n = 16, k;
+    for (k = 0; k < n; k++) box(rx0 + rlen * k / n, 0.02, rz0, rx0 + rlen * (k + 1) / n, 0.04 + rh * (k + 0.5) / n, rz0 + rw, k % 4 < 2 ? 3 : 4);
+    ramps.push({ x0: rx0, z0: rz0, x1: rx0 + rlen, z1: rz0 + rw, axis: 'x', dir: 1, h: rh });
+  }
+  return { key: chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: ramps };
 }
 
 module.exports = { generateChunk: generateChunk, chunkKey: chunkKey };
+
+};
+defs["sim/citygen"]=function(module,exports,require){
+/* sim: the city. Chunk rows 0,3,6.. are east-west roads; chunk columns 1,4,7.. are north-south roads; where they cross is an
+   intersection; everything else is a building block. Pure data from (seed, cx, cz), like every chunk spec. Each spec also lists
+   `solids` (footprints the bike cannot enter) and `ramps` (slopes it can jump from), in chunk-local metres. */
+'use strict';
+
+var CONFIG = require('../data/config');
+var gen = require('./chunkgen');
+var rngMod = require('../core/rng');
+
+var PERIOD = 3;
+function mod(a, n) { return ((a % n) + n) % n; }
+function roadH(cz) { return mod(cz, PERIOD) === 0; }
+function roadV(cx) { return mod(cx, PERIOD) === 1; }
+function kindOf(cx, cz) { var h = roadH(cz), v = roadV(cx); return h && v ? 'cross' : (h ? 'roadH' : (v ? 'roadV' : 'block')); }
+
+function swapXZ(spec) {                                   /* turn an east-west road chunk into a north-south one */
+  function sw(b) { var o = {}, k; for (k in b) o[k] = b[k]; o.x0 = b.z0; o.x1 = b.z1; o.z0 = b.x0; o.z1 = b.x1; return o; }
+  spec.boxes = spec.boxes.map(sw); spec.solids = spec.solids.map(sw);
+  spec.ramps = spec.ramps.map(function (r) { var o = sw(r); o.axis = 'z'; return o; });
+  return spec;
+}
+
+function generate(seed, cx, cz) {
+  var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND, kind = kindOf(cx, cz), spec;
+  /* the old street keeps its look: the road chunks come straight from the street generator, a hash-salted copy per chunk */
+  var salt = (cx * 31 + cz * 17) | 0;
+  if (kind === 'roadH') spec = gen.generateChunk(seed ^ (cz === 0 ? 0 : 0x5bd1e995), cx, cz === 0 ? 0 : (cz + salt) | 0, { road: true });
+  else if (kind === 'roadV') spec = swapXZ(gen.generateChunk(seed ^ 0x2c1b3c6d, cz, (cx + salt) | 0, { road: true }));
+  else if (kind === 'block') spec = gen.generateChunk(seed ^ 0x1f3d5b79, cx, cz, { road: false });
+  else {
+    var boxes = [], solids = [], k, p;
+    function box(x0, y0, z0, x1, y1, z1, c) { boxes.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
+    box(-H, -0.3, -H, H, 0, H, G.sidewalk);
+    box(-H, -0.28, -6, H, 0.02, 6, G.road); box(-6, -0.28, -H, 6, 0.02, H, G.road);
+    for (k = -H + 2; k < H; k += 6) { if (Math.abs(k + 1.5) > 7) { box(k, 0.02, -0.15, k + 3, 0.04, 0.15, 8); box(-0.15, 0.02, k, 0.15, 0.04, k + 3, 8); } }
+    for (k = -5; k <= 5; k += 1.4) { box(k, 0.02, 6.4, k + 0.7, 0.04, 8.4, 8); box(k, 0.02, -8.4, k + 0.7, 0.04, -6.4, 8); box(6.4, 0.02, k, 8.4, 0.04, k + 0.7, 8); box(-8.4, 0.02, k, -6.4, 0.04, k + 0.7, 8); }
+    [[-7.5, -7.5], [7.5, -7.5], [-7.5, 7.5], [7.5, 7.5]].forEach(function (q) {
+      box(q[0], 0, q[1], q[0] + 0.18, 4.2, q[1] + 0.18, 1); box(q[0] - 0.3, 4.0, q[1], q[0] + 0.5, 4.2, q[1] + 0.18, 1);
+      solids.push({ x0: q[0], z0: q[1], x1: q[0] + 0.18, z1: q[1] + 0.18, y1: 4.2 });
+    });
+    p = [[-H, -H, -9, -9], [9, -H, H, -9], [-H, 9, -9, H], [9, 9, H, H]];                   /* corner buildings, set back from the junction */
+    var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
+    p.forEach(function (q) {
+      var x0 = q[0] === -H ? q[0] + 0.4 : q[0], x1 = q[2] === H ? q[2] - 0.4 : q[2], z0 = q[1] === -H ? q[1] + 0.4 : q[1], z1 = q[3] === H ? q[3] - 0.4 : q[3], hgt = rng.range(7, 20);
+      box(x0, 0, z0, x1, hgt, z1, rng.int(2, 11)); solids.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: hgt });
+    });
+    spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
+  }
+  spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;
+  return spec;
+}
+
+module.exports = { generate: generate, kindOf: kindOf, roadH: roadH, roadV: roadV, PERIOD: PERIOD };
 
 };
 defs["sim/combat"]=function(module,exports,require){
@@ -1485,7 +1747,8 @@ defs["sim/streaming"]=function(module,exports,require){
 var CONFIG = require('../data/config');
 var gen = require('./chunkgen');
 
-function createStreaming(seed, bus) {
+function createStreaming(seed, bus, genFn) {
+  genFn = genFn || gen.generateChunk;
   var S = CONFIG.CHUNK_SIZE, R = CONFIG.STREAM_RADIUS;
   var loaded = {};            /* key -> spec */
   var cache = [];             /* recent specs, newest last */
@@ -1513,7 +1776,7 @@ function createStreaming(seed, bus) {
       bus.emit('chunk:unload', { key: key });
     }
     for (key in want) if (!loaded[key]) {
-      var sp = fromCache(key) || gen.generateChunk(seed, want[key][0], want[key][1]);
+      var sp = fromCache(key) || genFn(seed, want[key][0], want[key][1]);
       loaded[key] = sp; stats.loads++;
       bus.emit('chunk:load', { key: key, spec: sp });
     }
@@ -1522,8 +1785,32 @@ function createStreaming(seed, bus) {
     return true;
   }
 
+  /* collision queries for the bike: footprints near a point, and the ground height (ramps) under it. World metres. */
+  function specAt(x, z) { return loaded[gen.chunkKey(Math.floor((x + S / 2) / S), Math.floor((z + S / 2) / S))] || null; }
+  function solidsNear(x, z, r, out) {
+    out = out || []; var cx0 = Math.floor((x - r + S / 2) / S), cx1 = Math.floor((x + r + S / 2) / S), cz0 = Math.floor((z - r + S / 2) / S), cz1 = Math.floor((z + r + S / 2) / S), a, b, i;
+    for (a = cx0; a <= cx1; a++) for (b = cz0; b <= cz1; b++) {
+      var sp = loaded[gen.chunkKey(a, b)]; if (!sp || !sp.solids) continue;
+      for (i = 0; i < sp.solids.length; i++) {
+        var q = sp.solids[i], x0 = q.x0 + sp.ox, x1 = q.x1 + sp.ox, z0 = q.z0 + sp.oz, z1 = q.z1 + sp.oz;
+        if (x1 > x - r && x0 < x + r && z1 > z - r && z0 < z + r) out.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: q.y1 });
+      }
+    }
+    return out;
+  }
+  function groundAt(x, z) {
+    var sp = specAt(x, z); if (!sp || !sp.ramps) return 0;
+    for (var i = 0; i < sp.ramps.length; i++) {
+      var r = sp.ramps[i], lx = x - sp.ox, lz = z - sp.oz;
+      if (lx < r.x0 || lx > r.x1 || lz < r.z0 || lz > r.z1) continue;
+      var t = r.axis === 'x' ? (r.dir > 0 ? lx - r.x0 : r.x1 - lx) / (r.x1 - r.x0) : (r.dir > 0 ? lz - r.z0 : r.z1 - lz) / (r.z1 - r.z0);
+      return r.h * (t < 0 ? 0 : t > 1 ? 1 : t);
+    }
+    return 0;
+  }
+
   return {
-    update: update,
+    update: update, specAt: specAt, solidsNear: solidsNear, groundAt: groundAt,
     loadedKeys: function () { return Object.keys(loaded).sort(); },
     snapshotSpecs: function () { return Object.keys(loaded).sort().map(function (k) { return loaded[k]; }); },
     loadedCount: function () { return Object.keys(loaded).length; },
@@ -1544,6 +1831,9 @@ var CONFIG = require('../data/config');
 var rngMod = require('../core/rng');
 var streamingMod = require('./streaming');
 var combatMod = require('./combat');
+var citygen = require('./citygen');
+var bikeMod = require('./bike');
+var BIKE = require('../data/bike');
 
 function createWorld(seed, bus) {
   var world = {
@@ -1553,16 +1843,48 @@ function createWorld(seed, bus) {
     player: { x: 0, z: 0, px: 0, pz: 0, face: 0, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
     combat: combatMod.createCombat(), pendingStrikes: [],
     counters: { attacks: 0, blocks: 0, finishers: 0 },
-    streaming: streamingMod.createStreaming(seed, bus),
+    streaming: streamingMod.createStreaming(seed, bus, citygen.generate),
+    bike: bikeMod.createBike(2.0, -1.6, Math.PI / 2), mounted: false,
     bus: bus
   };
   world.streaming.update(0, 0);
   return world;
 }
 
+/* riding: the stick steers and throttles, Block brakes (and drifts with the stick held across), Attack boosts, or rolls in the air;
+   at a standstill Attack parks the bike and he steps off */
+function rideStep(world, input) {
+  var p = world.player, s = input.state, b = world.bike, env = world.streaming, dt = 1 / CONFIG.TICK_HZ;
+  p.px = p.x; p.pz = p.z; p.moving = false;
+  var blk = !!s.held.block;
+  bikeMod.step(b, { throttle: Math.max(0, s.my), brake: Math.max(Math.max(0, -s.my), blk ? 0.55 : 0), steer: s.mx, reverse: s.my < -0.3 && !blk, boost: !!s.held.attack, drift: blk, stunt: !!s.pressed.attack }, env, dt, world.bus);
+  p.x = b.x; p.z = b.z; p.face = b.h;
+  if (s.pressed.attack && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED) {
+    b.speed = 0; world.mounted = false;
+    p.x = b.x + Math.cos(b.h) * 1.0; p.z = b.z - Math.sin(b.h) * 1.0;     /* steps off to the bike's left */
+    world.bus.emit('ride:park', { x: b.x, z: b.z });
+  }
+  world.streaming.update(p.x, p.z);
+  world.tick++;
+}
+
+/* a man within reach means the button is for fighting, not for climbing on the bike */
+function menNear(world, p) {
+  var l = world.combat.enemies;
+  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < 5) return true;
+  return false;
+}
+
 function step(world, input) {
+  if (world.mounted) { rideStep(world, input); return; }
   var p = world.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ;
   p.px = p.x; p.pz = p.z;
+  world.bike.speed = 0;
+  if (s.pressed.attack && !world.attackLock && !p.down && p.stun <= 0 && Math.hypot(world.bike.x - p.x, world.bike.z - p.z) < BIKE.MOUNT_RANGE && !menNear(world, p)) {
+    world.mounted = true; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
+    world.bus.emit('ride:mount', { x: world.bike.x, z: world.bike.z });
+    world.streaming.update(p.x, p.z); world.tick++; return;
+  }
   var mx = s.mx, mz = -s.my;                       /* stick up = away from camera = -z */
   var m = Math.sqrt(mx * mx + mz * mz);
   /* committed to an action: no walking or turning while a move plays or Block is held */
@@ -1589,7 +1911,7 @@ function hash(world) {
   function mixf(f) { mix(Math.round(f * 10000)); }
   mix(world.tick); mixf(p.x); mixf(p.z); mixf(p.face); mix(p.rage);
   mix(world.counters.attacks); mix(world.counters.blocks); mix(world.counters.finishers);
-  mix(world.rng.getState());
+  mix(world.rng.getState()); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
   var keys = world.streaming.loadedKeys();
   for (var i = 0; i < keys.length; i++) for (var j = 0; j < keys[i].length; j++) mix(keys[i].charCodeAt(j));
   return h >>> 0;
@@ -1669,6 +1991,112 @@ function createView(canvas) {
 }
 
 module.exports = { createView: createView };
+
+};
+defs["view/bikevox"]=function(module,exports,require){
+/* view: the Bijli, a classic Indian cruiser built from voxels (8.5 cm). Parts: body, fork with bars and headlight, two wheels.
+   Grid axes: x across (centre 5), y up, z forward. The mesh origin of the whole bike is on the ground, mid wheelbase. */
+'use strict';
+
+var vg = require('./voxgrid');
+var h = vg.hex;
+var VS = 0.085;
+var BO = { x: 5, y: 0, z: 13.5 };                       /* bike origin, in body-grid voxels */
+var REAR = { y: 4.5, z: 5 }, HEAD = { y: 11.5, z: 20.5 }, AXLE = { y: 4.5, z: 23 };
+var C = { blue: h('#1f56c8'), blueD: h('#16408f'), yel: h('#ffc21a'), chrome: h('#cfd5da'), chromeD: h('#8e979f'), blk: h('#17191c'), grey: h('#6b747d'), greyD: h('#454c53'),
+          seat: h('#2b1d14'), seatL: h('#3d2a1c'), red: h('#d83a2e'), lamp: h('#fff3c4'), tyre: h('#1b1c1f'), tyreL: h('#2a2c31'), rim: h('#e8ecef'), hub: h('#9aa4ab') };
+
+function buildBody() {
+  var g = vg.createGrid(11, 16, 30), x;
+  vg.box(g, 4, 3, 8, 6, 7, 15, C.grey);                                         /* engine block */
+  vg.box(g, 4, 7, 10, 6, 8, 14, C.greyD);                                       /* cylinder head */
+  vg.box(g, 3, 4, 9, 3, 6, 13, C.chromeD); vg.box(g, 7, 4, 9, 7, 6, 13, C.chromeD);      /* crankcase covers */
+  vg.box(g, 4, 3, 5, 6, 3, 9, C.greyD);                                         /* swing arm joint / gearbox */
+  vg.box(g, 2, 4, 3, 2, 4, 15, C.blk); vg.box(g, 8, 4, 3, 8, 4, 15, C.blk);     /* swing arms */
+  for (x = 0; x < 6; x++) { vg.set(g, 2, 5 + x, 5 + Math.round(x * 0.3), C.chrome); vg.set(g, 8, 5 + x, 5 + Math.round(x * 0.3), C.chrome); } /* rear shocks */
+  vg.ellipsoid(g, 5, 11, 15, 2.9, 2.3, 5, function (xx, yy, zz) { return (xx === 5 && yy >= 12) ? C.yel : (yy < 10 ? C.blueD : C.blue); });  /* teardrop tank with a yellow stripe */
+  vg.box(g, 4, 9, 11, 6, 9, 12, C.blk);                                         /* tank mount */
+  vg.box(g, 3, 8, 4, 7, 8, 12, C.seat); vg.box(g, 4, 9, 5, 6, 9, 11, C.seatL);  /* the seat */
+  vg.box(g, 3, 9, 4, 7, 9, 4, C.seat);                                          /* seat back lip */
+  vg.box(g, 4, 9, 1, 6, 9, 8, C.blue); vg.box(g, 3, 8, 0, 7, 8, 2, C.blue);     /* rear fender over the wheel */
+  vg.set(g, 5, 8, 0, C.red); vg.set(g, 5, 9, 0, C.red);                         /* tail light */
+  vg.box(g, 4, 5, 18, 6, 11, 19, C.blk);                                        /* frame down tube to the head */
+  vg.box(g, 5, 9, 17, 5, 10, 18, C.blk);
+  vg.box(g, 8, 3, 1, 9, 4, 14, C.chrome); vg.box(g, 9, 2, 1, 9, 3, 13, C.chromeD); /* long chrome silencer on the right */
+  vg.box(g, 8, 2, 14, 8, 3, 16, C.chrome); vg.set(g, 9, 3, 0, C.blk);
+  vg.box(g, 7, 3, 15, 7, 5, 16, C.chrome);                                      /* exhaust header */
+  vg.box(g, 1, 3, 12, 2, 3, 13, C.blk); vg.box(g, 8, 3, 12, 9, 3, 13, C.blk);   /* foot pegs */
+  vg.box(g, 3, 3, 15, 3, 3, 16, C.blk);
+  vg.box(g, 3, 3, 6, 3, 4, 7, C.blk);                                           /* pillion pegs */
+  return g;
+}
+
+function buildFork() {                          /* origin: the steering head */
+  var g = vg.createGrid(11, 16, 12), i;
+  for (i = 0; i < 8; i++) { var z = 3 + Math.round(i * 0.4), y = 11 - i; vg.set(g, 3, y, z, C.chrome); vg.set(g, 7, y, z, C.chrome); vg.set(g, 3, y, z + 1, C.chromeD); vg.set(g, 7, y, z + 1, C.chromeD); }  /* fork legs sloping to the axle */
+  vg.box(g, 3, 12, 2, 7, 12, 3, C.blk); vg.box(g, 4, 11, 2, 6, 11, 3, C.blk);  /* top yoke */
+  vg.box(g, 0, 13, 2, 10, 13, 2, C.chrome);                                      /* upright bars */
+  vg.box(g, 0, 12, 2, 0, 13, 2, C.chrome); vg.box(g, 10, 12, 2, 10, 13, 2, C.chrome);
+  vg.box(g, 0, 13, 1, 1, 13, 3, C.blk); vg.box(g, 9, 13, 1, 10, 13, 3, C.blk);  /* grips */
+  vg.box(g, 1, 14, 2, 1, 14, 2, C.chrome); vg.box(g, 9, 14, 2, 9, 14, 2, C.chrome); /* levers */
+  vg.ellipsoid(g, 5, 10.2, 5.5, 2.2, 1.9, 2.0, C.chrome);                        /* round headlight */
+  vg.ellipsoid(g, 5, 10.2, 7.0, 1.4, 1.3, 0.9, C.lamp);
+  vg.box(g, 4, 12, 3, 6, 13, 4, C.blk);                                           /* little speedo */
+  vg.box(g, 4, 8, 3, 6, 8, 9, C.blue); vg.box(g, 3, 7, 5, 7, 7, 9, C.blue);      /* front fender above the wheel */
+  return g;
+}
+
+function buildWheel() {
+  var g = vg.createGrid(3, 9, 9), y, z;
+  for (y = 0; y < 9; y++) for (z = 0; z < 9; z++) {
+    var d = Math.hypot(y + 0.5 - 4.5, z + 0.5 - 4.5), x;
+    if (d > 4.6) continue;
+    for (x = 0; x < 3; x++) {
+      var c;
+      if (d > 3.6) c = ((y + z) & 1) ? C.tyre : C.tyreL;
+      else if (d > 2.7) c = C.rim;
+      else if (d > 1.1) c = (((Math.round(Math.atan2(z - 4, y - 4) / (Math.PI / 4))) & 1) ? C.chromeD : C.rim);   /* spokes */
+      else c = C.hub;
+      vg.set(g, x, y, z, c);
+    }
+  }
+  return g;
+}
+
+var cache = null;
+function mesh(g, pivot, seed) {
+  var a = vg.meshGrid(g, pivot, VS, { jitter: 0.04, seed: seed });
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); geo.setIndex(new THREE.BufferAttribute(a.indices, 1)); geo.computeBoundingSphere();
+  return geo;
+}
+function templates() {
+  if (cache) return cache;
+  cache = { mat: new THREE.MeshLambertMaterial({ vertexColors: true }),
+            body: mesh(buildBody(), BO, 1), fork: mesh(buildFork(), { x: 5, y: HEAD.y - 3 + 3 - 0, z: 3.5 }, 2), wheel: mesh(buildWheel(), { x: 1.5, y: 4.5, z: 4.5 }, 3) };
+  return cache;
+}
+
+/* The bike object: root (position, heading), lean group (roll about the long axis), body, a fork that turns with the bars and carries the front wheel.
+   seat: where the rider's hips go, in root space. */
+function createBike() {
+  var T = templates(), root = new THREE.Group(), lean = new THREE.Group(), pitch = new THREE.Group();
+  root.add(lean); lean.add(pitch);
+  var body = new THREE.Mesh(T.body, T.mat); pitch.add(body);
+  function at(gx, gy, gz) { return [(gx - BO.x) * VS, (gy - BO.y) * VS, (gz - BO.z) * VS]; }
+  var rp = at(5, REAR.y, REAR.z), rear = new THREE.Group(); rear.position.set(rp[0], rp[1], rp[2]); rear.add(new THREE.Mesh(T.wheel, T.mat)); pitch.add(rear);
+  var hp = at(5, HEAD.y, HEAD.z - 17), fork = new THREE.Group();                 /* head pivot sits on the steering axis */
+  var fpos = at(5, HEAD.y, HEAD.z); fork.position.set(fpos[0], fpos[1], fpos[2]); pitch.add(fork);
+  /* the fork mesh's origin is at grid (5, HEAD.y, 3.5) in fork-grid coordinates, i.e. the head */
+  fork.add(new THREE.Mesh(T.fork, T.mat));
+  var front = new THREE.Group(); front.position.set(0, (AXLE.y - HEAD.y) * VS, (AXLE.z - HEAD.z) * VS); front.add(new THREE.Mesh(T.wheel, T.mat)); fork.add(front);
+  var seat = at(5, 9, 8.5);
+  return { root: root, lean: lean, pitch: pitch, fork: fork, front: front, rear: rear, seat: { x: seat[0], y: seat[1], z: seat[2] }, wheelR: 4.6 * VS,
+           pegs: { y: 3.2 * VS, z: (13 - BO.z) * VS, x: 4 * VS }, bars: { y: (HEAD.y + 2.0) * VS, z: (HEAD.z - BO.z - 1.4) * VS, x: 4.2 * VS } };
+}
+
+module.exports = { createBike: createBike, VS: VS };
 
 };
 defs["view/boxmesh"]=function(module,exports,require){
@@ -2016,6 +2444,7 @@ function createFightUi() {
       combo.textContent = c.combo + (c.combo === 1 ? ' hit' : ' hits'); combo.style.opacity = c.combo >= 2 ? 1 : 0;
       ban.textContent = c.banner; ban.style.opacity = c.bannerT > 0 ? 1 : 0;
     },
+    show: function (v) { el.style.display = v ? '' : 'none'; ban.style.display = v ? '' : 'none'; },
     dispose: function () { el.remove(); ban.remove(); }
   };
 }
@@ -3161,6 +3590,69 @@ module.exports = { layer: layer, blend: blend, copy: copy, named: named, approac
   sequencePose: sequencePose, sequenceDuration: sequenceDuration, smooth: smooth };
 
 };
+defs["view/ridecam"]=function(module,exports,require){
+/* view: the riding camera and the rider's pose. Pure maths (no THREE), so both can be tested in Node.
+   The camera follows a smoothed heading so it swings behind the bike in turns, widens the view with speed, drifts to a
+   three-quarter angle when slow so the bike and the street are on show, and pulls in rather than sit inside a building. */
+'use strict';
+
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+
+function createRideCam() {
+  var S = { h: 0, d: 5.4, lx: 0, lz: 0, steerS: 0, init: false, q: 1, fov: 46, ly: 1.0 };
+  return {
+    state: S,
+    /* b: bike sim state, x/y/z/h: interpolated position and heading, env: {solidsNear}, dt seconds. Returns a shot {x,y,z,lx,ly,lz,fov}. */
+    update: function (dt, b, x, y, z, h, env) {
+      var sp = Math.abs(b.speed), sn = clamp(sp / 25, 0, 1), k;
+      if (!S.init) { S.init = true; S.h = h + 0.5; S.lx = x; S.lz = z; }
+      /* heading follows with a lag, so a turn opens up to show the bike's lean and the street ahead */
+      k = 1 - Math.exp(-(2.6 + sn * 1.2) * dt); S.h += angDiff(h, S.h) * k;
+      S.steerS += (b.steer - S.steerS) * (1 - Math.exp(-3 * dt));
+      var slow = 1 - smooth(sp / 6), side = 0.78 * slow + S.steerS * 0.42 * sn;                 /* angle off straight-behind: three-quarter when slow, outside of the turn when fast */
+      var ang = S.h + Math.PI + side, dist = 5.0 + sn * 2.4 + (b.boosting ? 0.8 : 0) + slow * 0.6, hgt = 2.1 + sn * 0.9 + slow * 0.3;
+      var tx = x + Math.sin(ang) * dist, tz = z + Math.cos(ang) * dist;
+      /* shrink toward the bike while the camera would sit inside a building */
+      var tries = 0, f = 1;
+      while (tries++ < 7 && env) {
+        var cx = x + (tx - x) * f, cz = z + (tz - z) * f, hit = env.solidsNear(cx, cz, 0.4, []), bad = false, i;
+        for (i = 0; i < hit.length; i++) if (hit[i].y1 > hgt - 0.3) bad = true;
+        if (!bad) break; f *= 0.72;
+      }
+      var camx = x + (tx - x) * f, camz = z + (tz - z) * f, camy = y + 0.7 + (hgt - 0.7) * (0.5 + 0.5 * f);
+      /* look a little ahead of the bike, further at speed */
+      var ahead = 1.2 + sn * 3.2, ltx = x + Math.sin(h) * ahead, ltz = z + Math.cos(h) * ahead;
+      var lk = 1 - Math.exp(-6 * dt); S.lx += (ltx - S.lx) * lk; S.lz += (ltz - S.lz) * lk;
+      var fovT = 46 + sn * 12 + (b.boosting ? 7 : 0) + (b.air ? 3 : 0); S.fov += (fovT - S.fov) * (1 - Math.exp(-3 * dt));
+      return { x: camx, y: camy, z: camz, lx: S.lx, ly: y + 1.0, lz: S.lz, fov: S.fov };
+    }
+  };
+}
+
+/* the rider on a cruiser: relaxed and upright, feet forward on the pegs, hands up on the bars. Leans with the bike, bars follow the steering. */
+function ridePose(b, t) {
+  var st = clamp(b.steer, -1, 1), ln = clamp(b.lean, -0.6, 0.6), sp = clamp(Math.abs(b.speed) / 25, 0, 1), air = b.air ? 1 : 0;
+  var p = {
+    'hip.y': -0.01, 'hip.rx': 4 + sp * 6 + (b.pitch < 0 ? -b.pitch * 40 : 0), 'hip.rz': 0, 'spine.rx': 10 + sp * 12, 'spine.rz': -ln * 14, 'spine.ry': -st * 8,
+    'neck.rx': -6 - sp * 8, 'head.rx': -8 - sp * 6, 'head.ry': -st * 14, 'head.rz': ln * 8,
+    'armA.sx': 62 + sp * 6, 'armA.sz': 14, 'armA.e': 42 - sp * 8, 'armA.sy': 0, 'armA.w': -12,
+    'armB.sx': 62 + sp * 6, 'armB.sz': 14, 'armB.e': 42 - sp * 8, 'armB.sy': 0, 'armB.w': -12,
+    'legA.hx': 58, 'legA.hz': 16, 'legA.k': 44, 'legA.a': -6, 'legB.hx': 58, 'legB.hz': 16, 'legB.k': 44, 'legB.a': -6
+  };
+  /* the bars turn: one arm reaches, the other draws back */
+  p['armA.sx'] += st * 7; p['armB.sx'] -= st * 7; p['armA.sy'] = -st * 8; p['armB.sy'] = -st * 8;
+  p['hip.ry'] = -st * 3;
+  if (air) { p['legA.k'] += 10; p['legB.k'] += 10; p['spine.rx'] += 4; }
+  /* a slight engine tremble at the shoulders */
+  p['spine.rx'] += Math.sin(t * 38) * 0.35 * (0.3 + b.thr);
+  return p;
+}
+
+module.exports = { createRideCam: createRideCam, ridePose: ridePose };
+
+};
 defs["view/sfx"]=function(module,exports,require){
 /* view: impact sounds, synthesised in the browser so the game stays one offline file. Fists are a low thump with a short
    filtered-noise slap; kicks are deeper with a leather snap; blocks are duller; every sound gets a little random pitch. */
@@ -3190,6 +3682,29 @@ function createSfx() {
     s.buffer = nbuf; s.loop = true; f.type = type; f.Q.value = q || 0.8; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+  }
+
+  /* the Bullet's single-cylinder thump: one deep pulse per power stroke, uneven like the real thing, with an exhaust crack on top.
+     idle is a lazy dug-dug-dug, and the beat quickens and brightens with revs and throttle */
+  var eng = { acc: 0, pulse: 0, thr: 0, scrubG: null, scrubS: null, odd: 0 };
+  function firePulse(rn, thr, vol) {
+    var t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(), jit = 0.82 + Math.random() * 0.36, dur = 0.16 - 0.07 * rn;
+    var f0 = 62 + rn * 38 + thr * 10;
+    o.type = 'triangle'; o.frequency.setValueAtTime(f0 * jit, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime((0.5 + 0.35 * thr) * vol * jit, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    var s = ac.createBufferSource(), f = ac.createBiquadFilter(), g2 = ac.createGain();
+    s.buffer = nbuf; s.loop = true; f.type = 'bandpass'; f.Q.value = 1.1; f.frequency.setValueAtTime(260 + rn * 320 + thr * 380, t); f.frequency.exponentialRampToValueAtTime(110, t + dur * 0.8);
+    g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime((0.16 + 0.22 * thr) * vol, t + 0.005); g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.8);
+    s.connect(f); f.connect(g2); g2.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur);
+  }
+  function scrub(level) {
+    if (!eng.scrubS) {
+      var s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = nbuf; s.loop = true; f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.9; g.gain.value = 0; s.connect(f); f.connect(g); g.connect(master); s.start();
+      eng.scrubS = s; eng.scrubG = g;
+    }
+    eng.scrubG.gain.setTargetAtTime(level, ac.currentTime, 0.05);
   }
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
@@ -3221,6 +3736,23 @@ function createSfx() {
       thump(90, 22, 0.9, 1.5); burst(0.7, 0.8, 'lowpass', 1500, 80, 0, 0.7); burst(0.2, 0.9, 'highpass', 3000, 1000, 0); burst(0.3, 0.6, 'bandpass', 2200, 500, 0.04, 2);   /* wood splintering */
       thump(60, 22, 0.6, 0.8, 0.2); this.twang();
     },
+    /* st: {rpm 0..1, thr 0..1, speed, drifting, braking, air}. Called every frame while he rides. */
+    engine: function (dt, st) {
+      if (!on || !ctx()) return;
+      var rn = Math.max(0, Math.min(1, st.rpm)), hz = 5.5 + rn * 20 * (st.air ? 0.8 : 1);
+      eng.acc += dt * hz; var n = 0;
+      while (eng.acc >= 1 && n++ < 3) { eng.acc -= 1; eng.odd++; firePulse(rn, st.thr, (eng.odd % 7 === 0 ? 0.6 : 1) * (st.air ? 0.7 : 1)); }
+      if (eng.acc > 3) eng.acc = 0;
+      if (eng.thr > 0.6 && st.thr < 0.1 && st.speed > 6) { var k = 1 + (Math.random() * 3 | 0), q; for (q = 0; q < k; q++) { burst(0.05, 0.4, 'bandpass', 900 + Math.random() * 500, 300, 0.05 + q * 0.09 + Math.random() * 0.05, 1.4); thump(95, 50, 0.08, 0.4, 0.05 + q * 0.09); } }   /* lift-off pops */
+      eng.thr = st.thr;
+      scrub(st.drifting ? 0.28 : (st.braking && st.speed > 8 ? 0.12 : 0));
+    },
+    engineOff: function () { if (eng.scrubG && ac) eng.scrubG.gain.setTargetAtTime(0, ac.currentTime, 0.05); eng.acc = 0; },
+    shift: function () { if (!on || !ctx()) return; burst(0.03, 0.35, 'highpass', 2500, 1800, 0); thump(180, 90, 0.05, 0.3); },
+    start: function () { if (!on || !ctx()) return; var i; for (i = 0; i < 5; i++) { thump(70, 40, 0.1, 0.5, i * 0.11); burst(0.06, 0.25, 'lowpass', 600, 200, i * 0.11); } },
+    land: function (vy) { if (!on || !ctx()) return; var p = Math.min(1, vy / 10); thump(70, 28, 0.3, 0.7 + p * 0.6); burst(0.18, 0.3 + p * 0.3, 'lowpass', 1500, 200); },
+    crash: function (hard) { if (!on || !ctx()) return; thump(80, 25, hard ? 0.7 : 0.35, hard ? 1.5 : 0.9); burst(hard ? 0.5 : 0.25, hard ? 0.9 : 0.5, 'lowpass', 2200, 120); burst(0.12, 0.7, 'highpass', 2600, 1200, 0.02); if (hard) { burst(0.35, 0.5, 'bandpass', 3000, 900, 0.08, 2); } },
+    roll: function () { if (!on || !ctx()) return; burst(0.3, 0.4, 'bandpass', 500, 2400, 0, 1.4); thump(130, 60, 0.15, 0.6, 0.02); this.twang(); },
     swirl: function () { if (!on || !ctx()) return; burst(0.5, 0.45, 'bandpass', 300, 2200, 0, 1.6); this.twang(); },
     mega: function () {           /* the rage finisher */
       if (!on || !ctx()) return; this.boom(); burst(1.2, 0.7, 'bandpass', 200, 3000, 0.1, 1.4); thump(50, 16, 1.4, 1.5, 0.3);

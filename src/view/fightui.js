@@ -24,6 +24,7 @@ function createFightUi() {
       combo.textContent = c.combo + (c.combo === 1 ? ' hit' : ' hits'); combo.style.opacity = c.combo >= 2 ? 1 : 0;
       ban.textContent = c.banner; ban.style.opacity = c.bannerT > 0 ? 1 : 0;
     },
+    show: function (v) { el.style.display = v ? '' : 'none'; ban.style.display = v ? '' : 'none'; },
     dispose: function () { el.remove(); ban.remove(); }
   };
 }

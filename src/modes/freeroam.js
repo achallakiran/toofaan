@@ -13,6 +13,9 @@ var enemyview = require('../view/enemyview');
 var fightui = require('../view/fightui');
 var lettering = require('../view/lettering');
 var sfxmod = require('../view/sfx');
+var bikevox = require('../view/bikevox');
+var ridecam = require('../view/ridecam');
+var BIKE = require('../data/bike');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
 function groupCentre(world, hx, hz) {
@@ -36,6 +39,8 @@ function createFreeroam() {
       scope.add(function () { view.clearChunks(); });
       S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
       scope.add(function () { view.scene.remove(S.rig.root); });
+      S.bike = bikevox.createBike(); view.scene.add(S.bike.root); scope.add(function () { view.scene.remove(S.bike.root); });
+      S.rc = ridecam.createRideCam(); S.mountW = ctx.world.mounted ? 1 : 0; S.wheelA = 0; S.bPrev = null; S.flash = null; S.flashT = 0; S.rideHint = '';
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
@@ -49,6 +54,25 @@ function createFreeroam() {
         function upd() { bst.textContent = 'Style: ' + S.txt.styleName; bt.textContent = 'Text: ' + ({ bubble: 'bubble', plain: 'plain', off: 'off' })[S.txt.mode]; bl.textContent = S.txt.script === 'hi' ? 'हिंदी' : 'ABC'; bsn.textContent = 'Sound: ' + (S.sfx.on ? 'on' : 'off'); }
         bst.textContent = 'Style: ' + S.txt.styleName; upd(); document.body.appendChild(bar); scope.add(function () { bar.remove(); });
       })();
+
+      /* riding HUD: speed, boost, stunt score and the one hint that matters right now */
+      (function () {
+        var el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:700 12px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000';
+        el.innerHTML = '<div id="rdFlash" style="font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;height:36px;opacity:0;transition:opacity .25s"></div><div id="rdSpeed" style="font:900 26px system-ui,sans-serif;display:none"></div><div id="rdBoost" style="width:150px;height:6px;margin:4px auto;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;display:none"><div style="height:100%;width:100%;background:linear-gradient(90deg,#ffc21a,#ff6a3d)"></div></div><div id="rdHint" style="font-weight:600;opacity:.9"></div>';
+        document.body.appendChild(el); scope.add(function () { el.remove(); });
+        S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
+      })();
+      function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
+      scope.add(ctx.bus.on('ride:mount', function () { S.sfx.start(); }));
+      scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
+      scope.add(ctx.bus.on('ride:jump', function () { S.cine.shake(0.05, 0.2); }));
+      scope.add(ctx.bus.on('ride:land', function (e) { S.sfx.land(e.vy); S.cine.shake(Math.min(0.14, 0.02 + e.vy * 0.01), 0.25); if (e.vy > 6) S.txt.say('thud', { x: e.x, y: 1.0, z: e.z }, view.camera, false); }));
+      scope.add(ctx.bus.on('ride:crash', function (e) {
+        S.sfx.crash(!!e.hard); S.cine.shake(e.hard ? 0.25 : 0.1, 0.4); S.fx.spawn('blockspark', { x: e.x, y: 1.0, z: e.z }, e.hard ? 1.6 : 0.3);
+        S.txt.say(e.hard ? 'smash' : 'thud', { x: e.x, y: 1.4, z: e.z }, view.camera, !!e.hard); if (e.with === 'landing') flash('BAD LANDING');
+      }));
+      scope.add(ctx.bus.on('ride:roll', function (e) { S.sfx.roll(); flash('360 ROLL  +500'); S.cine.shake(0.06, 0.2); }));
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -109,6 +133,7 @@ function createFreeroam() {
       var cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
       ctx.world.attackLock = S.mp.active();            /* no walking while a move plays; the sim itself stops movement while Block is held */
       ctx.world.invuln = !!(mv0 && mv0.counter) || cm0 === 'counterCross';         /* counters and the finisher cannot be interrupted */
+      var bk = ctx.world.bike; S.bPrev = { x: bk.x, y: bk.y, z: bk.z, h: bk.h };
       ctx.input.tick(tick);
       worldMod.step(ctx.world, ctx.input);
     },
@@ -135,11 +160,27 @@ function createFreeroam() {
       if (S.blockW > 0.01) { var bw = posemath.smooth(S.blockW); pose = posemath.layer(pose, posemath.named('block'), bw * 0.85, bw); }
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
-      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat);
+      /* the bike: interpolated between ticks, wheels turning, bars following the stick */
+      var bk = ctx.world.bike, bp = S.bPrev || bk, mounted = ctx.world.mounted;
+      var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
+      S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
+      var B3 = S.bike; B3.root.position.set(bx, by, bz); B3.root.rotation.y = bh;
+      B3.lean.rotation.z = bk.lean + bk.slip * 0.5 + (bk.rolling ? bk.roll : 0);
+      B3.pitch.rotation.x = -bk.pitch - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
+      B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
+      var rideP = null;
+      if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
+      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(!ctx.world.mounted);
       S.fx.update(dt);
-      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face;
-      S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
+      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-(mounted ? 30 : 14) * dt));
+      if (S.mountW > 0.02) {
+        /* hop onto the seat: the hero's walking spot blends to the seat, with a little jump on the way */
+        var rw2 = posemath.smooth(S.mountW), sv = S.sv || (S.sv = new THREE.Vector3()), sq = S.sq || (S.sq = new THREE.Quaternion());
+        B3.root.updateMatrixWorld(true); sv.set(B3.seat.x, B3.seat.y + 0.08 - 0.85, B3.seat.z); B3.pitch.localToWorld(sv); B3.pitch.getWorldQuaternion(sq);
+        S.rig.root.position.set(x + (sv.x - x) * rw2, (sv.y) * rw2 + Math.sin(Math.PI * rw2) * 0.35, z + (sv.z - z) * rw2);
+        S.rig.root.rotation.y = S.face; if (rw2 > 0.999) S.rig.root.quaternion.copy(sq); else { var q0 = S.q0 || (S.q0 = new THREE.Quaternion()); q0.setFromAxisAngle(S.up || (S.up = new THREE.Vector3(0, 1, 0)), S.face); S.rig.root.quaternion.copy(q0).slerp(sq, rw2); }
+      } else { S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face; }
+      S.rig.applyPose(pose, { plant: S.mountW < 0.5 }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
       S.cine.update(dt, cm, ct, cm ? Math.min(ct / 0.55, (cl - ct) / 0.7, 1) : 0);
@@ -163,6 +204,22 @@ function createFreeroam() {
         if (S.cine.shakeT > 0) { var sk = S.cine.shakeT / (S.cine.dur || 1), amp = S.cine.shakeA * sk * sk * 0.6; o.x += Math.sin(S.t * 83) * amp; o.y += Math.sin(S.t * 97 + 1) * amp; }
         shot = o;
       } else if (S.seqW <= 0.01) S.seqCam = null;
+      if (S.mountW > 0.01) {
+        /* the riding camera takes over as he climbs on, and hands back when he steps off */
+        var rs = S.rc.update(dt, bk, bx, by, bz, bh, ctx.world.streaming), b1 = shot || { x: x, y: 6.4, z: z + 6.6, lx: x, ly: 1.0, lz: z - 2.2, fov: 46 }, rw3 = posemath.smooth(S.mountW), o2 = {}, f3;
+        for (f3 in rs) o2[f3] = b1[f3] + (rs[f3] - b1[f3]) * rw3;
+        if (S.cine.shakeT > 0) { var sk2 = S.cine.shakeT / (S.cine.dur || 1), amp2 = S.cine.shakeA * sk2 * sk2 * 0.6; o2.x += Math.sin(S.t * 83) * amp2; o2.y += Math.sin(S.t * 97 + 1) * amp2; }
+        shot = o2;
+      } else S.rc.state.init = false;
+      /* engine note and riding HUD */
+      var near = !mounted && Math.hypot(bk.x - p.x, bk.z - p.z) < BIKE.MOUNT_RANGE + 1;
+      if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
+      if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
+      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (near ? 'ATTACK: get on the Bijli' : '');
+      if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
+      u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
+      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h' + (bk.score ? '   ' + bk.score : ''); u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
+      if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;

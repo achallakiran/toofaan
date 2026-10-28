@@ -114,7 +114,7 @@ test('world: different input changes the hash', function () {
   assert.notStrictEqual(worldMod.hash(a), worldMod.hash(b));
 });
 test('rage gate: finisher only fires at full rage, then resets', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(1, bus), inp = inputMod.createInput(), t = 0;
+  var bus = busMod.createBus(), w = worldMod.createWorld(1, bus), inp = inputMod.createInput(), t = 0; w.bike.x = 500;
   function press(name) { inp.setButton(name, true); inp.tick(t++); worldMod.step(w, inp); inp.setButton(name, false); inp.tick(t++); worldMod.step(w, inp); }
   press('finisher'); assert.strictEqual(w.counters.finishers, 0);
   for (var i = 0; i < 9; i++) press('attack');
@@ -125,7 +125,7 @@ test('rage gate: finisher only fires at full rage, then resets', function () {
 
 console.log('street fight');
 function fightWorld() {
-  var bus = busMod.createBus(), w = worldMod.createWorld(7, bus), inp = inputMod.createInput(), t = 0, ev = [];
+  var bus = busMod.createBus(), w = worldMod.createWorld(7, bus), inp = inputMod.createInput(), t = 0, ev = []; w.bike.x = 500;
   ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
   worldMod.startFight(w); w.combat.enemies.length = 0;
   return { w: w, inp: inp, ev: ev, tick: function (n) { for (var i = 0; i < (n || 1); i++) { inp.tick(t++); worldMod.step(w, inp); } },
@@ -359,6 +359,88 @@ test('fight: while a man is held in the broken-guard sequence, two others can st
   f.w.bus.on('windup', function () { started++; });
   for (var i = 0; i < 90; i++) { f.w.attackLock = true; f.tick(1); if (f.w.player.stun > 0) f.w.player.stun = 0; if (!c.seqId) { c.seqId = a.id; c.seqT = 9999; } }
   assert.ok(started >= 2, 'others attacked: ' + started); assert.strictEqual(a.st, 'hurt', 'the dazed man is still held');
+});
+
+console.log('\ncity and bike');
+var citygen = req('sim/citygen'), bikeMod = req('sim/bike'), streamMod = req('sim/streaming'), BIKE = req('data/bike');
+test('city: same seed and coordinates give identical chunks; kinds follow the road grid', function () {
+  assert.deepStrictEqual(citygen.generate(42, 4, -3), citygen.generate(42, 4, -3));
+  assert.strictEqual(citygen.generate(1, 0, 0).kind, 'roadH'); assert.strictEqual(citygen.generate(1, 1, 0).kind, 'cross');
+  assert.strictEqual(citygen.generate(1, 1, 1).kind, 'roadV'); assert.strictEqual(citygen.generate(1, 2, 1).kind, 'block');
+});
+test('city: every chunk keeps its boxes and footprints inside it; roadways are clear of footprints; the start chunk has no ramp', function () {
+  var S = CONFIG.CHUNK_SIZE / 2, cx, cz;
+  for (cx = -4; cx <= 4; cx++) for (cz = -4; cz <= 4; cz++) {
+    var c = citygen.generate(11, cx, cz);
+    assert(c.boxes.every(function (b) { return b.x0 >= -S - 1e-6 && b.x1 <= S + 1e-6 && b.z0 >= -S - 1e-6 && b.z1 <= S + 1e-6; }), 'box outside ' + c.key);
+    assert(c.solids.every(function (q) { return q.x0 >= -S - 1e-6 && q.x1 <= S + 1e-6 && q.z0 >= -S - 1e-6 && q.z1 <= S + 1e-6; }), 'footprint outside ' + c.key);
+    if (c.kind === 'roadH') assert(c.solids.every(function (q) { return q.z0 >= 7.3 || q.z1 <= -7.3; }), 'footprint in the roadway ' + c.key);
+    if (c.kind === 'roadV') assert(c.solids.every(function (q) { return q.x0 >= 7.3 || q.x1 <= -7.3; }), 'footprint in the roadway ' + c.key);
+    if (c.kind === 'cross') assert(c.solids.every(function (q) { return (q.x0 >= 7 || q.x1 <= -7) && (q.z0 >= 7 || q.z1 <= -7); }), 'footprint in the junction');
+  }
+  assert.strictEqual(citygen.generate(11, 0, 0).ramps.length, 0);
+});
+test('city: streaming with the city keeps within the chunk budget and ground height follows a ramp', function () {
+  var bus = busMod.createBus(), st = streamMod.createStreaming(5, bus, citygen.generate), found = null, cx, cz;
+  st.update(0, 0);
+  for (cx = -6; cx <= 6 && !found; cx++) for (cz = -6; cz <= 6 && !found; cz++) { var c = citygen.generate(5, cx, cz); if (c.ramps.length) found = c; }
+  assert(found, 'some ramp exists'); st.update(found.ox, found.oz);
+  var r = found.ramps[0], mid = (r.z0 + r.z1) / 2;
+  assert(st.groundAt(found.ox + r.x0 + 0.1, found.oz + mid) < 0.5); assert(Math.abs(st.groundAt(found.ox + r.x1 - 0.01, found.oz + mid) - r.h) < 0.1);
+  assert(st.loadedCount() <= CONFIG.BUDGET.maxLoadedChunks);
+});
+function flat() { return { groundAt: function () { return 0; }, solidsNear: function () { return []; } }; }
+function ride(b, env, n, c) { for (var i = 0; i < n; i++) bikeMod.step(b, typeof c === 'function' ? c(i) : c, env, 1 / 60, null); }
+var GO = { throttle: 1, brake: 0, steer: 0, boost: false, drift: false, stunt: false };
+test('bike: builds speed gradually, never above top speed, and brakes to a stop', function () {
+  var b = bikeMod.createBike(0, 0, 0), env = flat();
+  ride(b, env, 60, GO); assert(b.speed > 4 && b.speed < 12, 'after 1 s ' + b.speed);
+  ride(b, env, 1500, GO); assert(b.speed <= BIKE.MAX_SPEED + 0.01 && b.speed > BIKE.MAX_SPEED - 3, 'top ' + b.speed);
+  ride(b, env, 600, { throttle: 0, brake: 1, steer: 0, boost: false, drift: false, stunt: false }); assert(b.speed <= 0.3, 'stopped ' + b.speed);
+});
+test('bike: boost raises the top speed and drains the meter; a heavy cruiser turns in a wide arc at speed', function () {
+  var b = bikeMod.createBike(0, 0, 0); ride(b, flat(), 1200, GO); var s0 = b.speed;
+  ride(b, flat(), 120, { throttle: 1, brake: 0, steer: 0, boost: true, drift: false, stunt: false }); assert(b.speed > s0 + 2 && b.boost < 1, 'boost');
+  var c = bikeMod.createBike(0, 0, 0); ride(c, flat(), 900, GO); var h0 = c.h; ride(c, flat(), 60, { throttle: 1, brake: 0, steer: 1, boost: false, drift: false, stunt: false });
+  var turn = h0 - c.h; assert(turn > 0.3 && turn < 1.4, 'one second at full lock turns ' + turn + ' rad (right turn lowers heading)');
+});
+test('bike: a wall stops it and a hard hit crashes it; it cannot end up inside the footprint', function () {
+  var env = { groundAt: function () { return 0; }, solidsNear: function () { return [{ x0: 30, z0: -5, x1: 40, z1: 5, y1: 10 }]; } };
+  var b = bikeMod.createBike(0, 0, Math.PI / 2), crashed = 0, bus = busMod.createBus(); bus.on('ride:crash', function () { crashed++; });
+  for (var i = 0; i < 1500; i++) bikeMod.step(b, GO, env, 1 / 60, bus);
+  assert(b.x <= 30 - BIKE.RADIUS + 0.01, 'x ' + b.x); assert(crashed >= 1);
+});
+function rampEnv() { return { groundAt: function (x) { return x < 0 || x > 8 ? 0 : 3.0 * x / 8; }, solidsNear: function () { return []; } }; }
+test('bike: a ramp throws it into the air for about a second, then it lands', function () {
+  var b = bikeMod.createBike(-30, 0, Math.PI / 2), bus = busMod.createBus(), ev = []; bus.on('ride:jump', function () { ev.push('j'); }); bus.on('ride:land', function () { ev.push('l'); });
+  var maxY = 0, air = 0; for (var i = 0; i < 1200; i++) { bikeMod.step(b, GO, rampEnv(), 1 / 60, bus); if (b.air) air++; maxY = Math.max(maxY, b.y); }
+  assert.deepStrictEqual(ev, ['j', 'l']); assert(air > 40 && air < 120, 'air ticks ' + air); assert(maxY > 3.0, 'maxY ' + maxY); assert.strictEqual(b.y, 0);
+});
+test('bike: a full roll in the air scores and refills boost; landing half-rolled crashes', function () {
+  function jump(rollAt, stay) {
+    var b = bikeMod.createBike(-30, 0, Math.PI / 2), bus = busMod.createBus(), rolled = 0, bad = 0; bus.on('ride:roll', function () { rolled++; }); bus.on('ride:crash', function (e) { if (e.with === 'landing') bad++; });
+    var wasAir = false, t = 0; b.boost = 0.2;
+    for (var i = 0; i < 1500; i++) { var st = false; if (b.air) { if (!wasAir) t = 0; t++; st = t === rollAt; } wasAir = b.air; bikeMod.step(b, { throttle: 1, brake: 0, steer: 0, boost: false, drift: false, stunt: st }, rampEnv(), 1 / 60, bus); }
+    return { rolled: rolled, bad: bad, score: b.score, boost: b.boost };
+  }
+  var good = jump(8), late = jump(45);
+  assert.strictEqual(good.rolled, 1, 'rolled ' + good.rolled); assert.strictEqual(good.score, 500); assert(good.boost > 0.9);
+  assert.strictEqual(late.rolled, 0); assert.strictEqual(late.bad, 1, 'bad landing ' + late.bad);
+});
+test('world: walk up to the bike, Attack mounts, riding moves the player and the streaming, Attack at a standstill parks and steps off beside it', function () {
+  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), ev = [];
+  ['ride:mount', 'ride:park'].forEach(function (n) { bus.on(n, function () { ev.push(n); }); });
+  function run(n, mx, my, atk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', atk && i === 0); inp.tick(w.tick); worldMod.step(w, inp); } }
+  run(2, 0, 0, false); run(2, 0, 0, true); assert(w.mounted, 'mounted');
+  run(300, 0, 1, false); assert(w.bike.speed > 5 && w.player.x > 10, 'moved ' + w.player.x); assert.strictEqual(w.player.x, w.bike.x);
+  inp.setButton('block', true); run(400, 0, 0, false); inp.setButton('block', false); assert(w.bike.speed < 0.7, 'slow ' + w.bike.speed);
+  run(2, 0, 0, true); assert(!w.mounted, 'dismounted'); assert(Math.hypot(w.player.x - w.bike.x, w.player.z - w.bike.z) < 1.5);
+  assert.deepStrictEqual(ev, ['ride:mount', 'ride:park']);
+});
+test('world: the same seed and the same inputs give the same hash with the bike in play', function () {
+  function go() { var bus = busMod.createBus(), w = worldMod.createWorld(8, bus), inp = inputMod.createInput();
+    for (var t = 0; t < 1500; t++) { inp.setAxis(Math.sin(t / 90) * 0.8, t < 1200 ? 1 : 0); inp.setButton('attack', t === 3 || t % 200 === 150); inp.setButton('block', t % 333 > 300); inp.tick(w.tick); worldMod.step(w, inp); } return worldMod.hash(w); }
+  assert.strictEqual(go(), go());
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

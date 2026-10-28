@@ -36,6 +36,7 @@ var html = tpl.replace('{{THREE}}', function () { return esc(three); }).replace(
 var out = path.join(root, 'dist'); fs.mkdirSync(out, { recursive: true });
 var target = path.join(out, 'toofan-brawler.html');
 fs.writeFileSync(target, html);
+fs.writeFileSync(path.join(root, 'index.html'), html);   /* same game at the repo root, so GitHub Pages serves it as the home page */
 /* Artifact flavour: the host supplies the document skeleton, so strip ours (same game, same inlined library). */
 var art = html.replace(/<!doctype html>\s*/i, '').replace(/<html[^>]*>\s*/i, '').replace(/<head>\s*/i, '').replace(/<\/head>\s*/i, '')
   .replace(/<meta charset[^>]*>\s*/i, '').replace(/<meta name="viewport"[^>]*>\s*/i, '').replace(/<body>\s*/i, '').replace(/<\/body>\s*/i, '').replace(/<\/html>\s*/i, '')

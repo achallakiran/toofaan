@@ -7,13 +7,13 @@ var CONFIG = require('../data/config');
 
 function chunkKey(cx, cz) { return cx + ',' + cz; }
 
-function generateChunk(seed, cx, cz) {
+function generateChunk(seed, cx, cz, opts) {
   var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND;
   var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
-  var boxes = [];
+  var boxes = [], solids = [], ramps = [];
   function box(x0, y0, z0, x1, y1, z1, c) { boxes.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
 
-  var onRoad = (cz === 0);
+  var onRoad = opts && opts.road != null ? !!opts.road : (cz === 0);
   box(-H, -0.3, -H, H, 0, H, onRoad ? G.sidewalk : G.dirt);          /* base ground */
   if (onRoad) {
     box(-H, -0.28, -6, H, 0.02, 6, G.road);                            /* main road along x */
@@ -32,6 +32,7 @@ function generateChunk(seed, cx, cz) {
       var shopH = 2.7;
       var c = rng.int(2, 11);
       box(x, 0, rows[r].z0, x + w, hgt, rows[r].z1, c);
+      solids.push({ x0: x, z0: rows[r].z0, x1: x + w, z1: rows[r].z1, y1: hgt });
       if (onRoad) {                                                   /* shopfront band raised to a hero-sized doorway */
         var zf = rows[r].z0 < 0 ? rows[r].z1 : rows[r].z0, dz = rows[r].z0 < 0 ? 0.12 : -0.12;
         box(x + 0.4, 0, Math.min(zf, zf + dz), x + w - 0.4, shopH, Math.max(zf, zf + dz), 1);
@@ -43,8 +44,15 @@ function generateChunk(seed, cx, cz) {
   if (onRoad) for (var p = -H + 4; p < H; p += 10) {
     box(p, 0, 7.4, p + 0.18, 4.2, 7.58, 1); box(p - 0.4, 4.0, 7.4, p + 0.58, 4.2, 7.58, 1);
     box(p, 0, -7.58, p + 0.18, 4.2, -7.4, 1); box(p - 0.4, 4.0, -7.58, p + 0.58, 4.2, -7.4, 1);
+    solids.push({ x0: p, z0: 7.4, x1: p + 0.18, z1: 7.58, y1: 4.2 }, { x0: p, z0: -7.58, x1: p + 0.18, z1: -7.4, y1: 4.2 });
   }
-  return { key: chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes };
+  /* a jump ramp in one lane (drawn last so the buildings above are the same as before): stair boxes for the eye, slope data for the bike */
+  if (onRoad && !(opts && opts.noRamp) && !(cx === 0 && cz === 0) && rng.chance(0.5)) {
+    var rx0 = rng.range(-12, -4), rlen = 8, rh = 3.0, rw = 4.4, rz0 = (rng.chance(0.5) ? 3 : -3) - rw / 2, n = 16, k;
+    for (k = 0; k < n; k++) box(rx0 + rlen * k / n, 0.02, rz0, rx0 + rlen * (k + 1) / n, 0.04 + rh * (k + 0.5) / n, rz0 + rw, k % 4 < 2 ? 3 : 4);
+    ramps.push({ x0: rx0, z0: rz0, x1: rx0 + rlen, z1: rz0 + rw, axis: 'x', dir: 1, h: rh });
+  }
+  return { key: chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: ramps };
 }
 
 module.exports = { generateChunk: generateChunk, chunkKey: chunkKey };
