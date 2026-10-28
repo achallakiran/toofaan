@@ -1,12 +1,12 @@
 /* sim: the Bijli. A kinematic cruiser: it follows the ground (ramps), leaves it when the ground falls away, collides with
-   building footprints, and can roll in the air. Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
+   building footprints, and Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
 'use strict';
 
 var B = require('../data/bike');
 var TAU = Math.PI * 2;
 
 function createBike(x, z, h) {
-  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, roll: 0, rolling: false, rolls: 0, score: 0,
+  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, 
            steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0 };
 }
 
@@ -25,7 +25,7 @@ function step(b, ctrl, env, dt, bus) {
   var top = boosting ? B.BOOST_SPEED : B.MAX_SPEED;
   if (!b.air) {
     var a = 0;
-    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
+    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL * (B.GEAR_PULL[b.gear] || 0.5)) * (b.shiftT > 0 ? B.SHIFT_DIP : 1) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
     else if (thr <= 0.05 && v > 0) a -= B.COAST;
     if (brk > 0.05) { if (v > 0.3) a -= B.BRAKE * brk; else if (ctrl.reverse) { if (v > -B.REVERSE_MAX) a -= 3 * brk; } else { v = 0; a = 0; } }
     else if (thr <= 0.05 && v < 0) a += B.COAST;
@@ -45,10 +45,10 @@ function step(b, ctrl, env, dt, bus) {
   var R = B.TURN_R0 + B.TURN_RV * Math.abs(b.speed), yaw = (b.speed / R) * b.steer * (b.drifting ? B.DRIFT_BOOST : 1);
   b.h -= yaw * dt;
   b.slip += ((b.drifting ? -b.steer * 0.4 : 0) - b.slip) * Math.min(1, 8 * dt);
-  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -0.55, 0.55) * (b.air ? 0.3 : 1);
+  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -B.LEAN_MAX, B.LEAN_MAX) * (b.air ? 0.3 : 1);
   b.lean += (leanT - b.lean) * (1 - Math.exp(-6 * dt));
   /* fork dip under braking, rear squat under throttle */
-  var pitchT = (brk > 0.05 && v > 1 ? -0.06 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
+  var pitchT = (brk > 0.05 && v > 1 ? -0.1 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
   b.pitch += (pitchT - b.pitch) * (1 - Math.exp(-7 * dt));
 
   /* move */
@@ -83,16 +83,11 @@ function step(b, ctrl, env, dt, bus) {
     else { b.y = gy; b.vyGround = (b.y - b.lastY) / dt; }
   } else {
     b.airT += dt; b.vy -= B.GRAVITY * dt; b.y += b.vy * dt;
-    if (ctrl.stunt && !b.rolling && b.airT > 0.12) b.rolling = true;
-    if (b.rolling) {
-      b.roll += (TAU / B.ROLL_TIME) * dt;
-      if (b.roll >= TAU) { b.roll = 0; b.rolling = false; b.rolls++; b.score += 500; b.boost = 1; if (bus) bus.emit('ride:roll', { x: b.x, z: b.z, count: b.rolls, score: b.score }); }
-    }
     if (b.y <= gy && b.vy <= 0) {
       var vyIn = -b.vy; b.y = gy; b.air = false; b.vyGround = 0;
-      if (b.rolling && b.roll > 0.8 && b.roll < TAU - 0.8) { b.speed *= 0.4; b.crash = 0.8; if (bus) bus.emit('ride:crash', { x: b.x, z: b.z, speed: vyIn, hard: true, with: 'landing' }); }
-      else { if (vyIn > 8) b.speed *= 0.85; if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT }); }
-      b.roll = 0; b.rolling = false; b.vy = 0;
+      if (vyIn > 8) b.speed *= 0.85;
+      if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT });
+      b.vy = 0;
     }
   }
 

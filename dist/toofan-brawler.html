@@ -327,30 +327,34 @@ defs["data/bike"]=function(module,exports,require){
 'use strict';
 
 var BIKE = {
-  MAX_SPEED: 25,            /* m/s, about 90 km/h */
-  BOOST_SPEED: 31,
-  ACCEL: 6.2,               /* m/s^2 at a standstill, tapering toward top speed */
-  BOOST_ACCEL: 9,
-  BRAKE: 13,
+  MAX_SPEED: 27,            /* m/s, about 97 km/h: a Bullet runs out of breath, it does not sprint */
+  BOOST_SPEED: 32,
+  ACCEL: 4.6,               /* m/s^2 at a standstill, tapering toward top speed */
+  GEAR_PULL: [1.0, 1.0, 0.8, 0.62, 0.5],  /* share of ACCEL available in each gear: heavy shove low down, long flat middle */
+  SHIFT_DIP: 0.35,          /* thrust left while the clutch is in */
+  BOOST_ACCEL: 6.5,
+  BRAKE: 9,
   COAST: 0.9,               /* engine braking when the throttle is released */
   DRAG: 0.0007,             /* speed squared drag */
   REVERSE_MAX: 2.2,
-  TURN_R0: 3.6,             /* tightest turning radius, metres, at walking pace */
-  TURN_RV: 0.95,            /* extra radius per m/s: wide arcs at speed */
-  STEER_LAG: 5.5,           /* how quickly the bars follow the stick (per second): lazy on purpose */
+  TURN_R0: 4.4,             /* tightest turning radius, metres, at walking pace */
+  TURN_RV: 1.25,            /* extra radius per m/s: wide arcs at speed */
+  STEER_LAG: 3.4,           /* how quickly the bars follow the stick (per second): lazy on purpose */
   DRIFT_BOOST: 1.35,        /* extra yaw while Block drifts */
   DRIFT_BRAKE: 4,
   RADIUS: 0.55,             /* collision circle, metres */
   GRAVITY: 16,
-  ROLL_TIME: 0.62,          /* seconds for a full barrel roll in the air */
   BOOST_DRAIN: 0.4,         /* per second */
-  BOOST_REFILL: 0.08,
+  BOOST_REFILL: 0.1,
+  LEAN_MAX: 0.38,
+  BOOST_HOLD: 15,           /* ticks Attack must be held before it is a boost, not a tap */
   MOUNT_REACH: 1.7,         /* metres from the bike's body (rear wheel to front wheel) within which Attack climbs on */
   MOUNT_SHOW: 3.2,          /* the prompt appears a little earlier than the reach, so he can step in */
   MOUNT_BLOCK: 2.2,         /* a man this close means Attack is for fighting */
   HALF_LEN: 0.9,
+  SOLID_R: 0.78,            /* the parked bike keeps him this far from its three body discs */
   PARK_SPEED: 0.7,          /* below this, Attack parks the bike and lets him step off */
-  GEARS: [0, 4.5, 9, 14, 19.5]  /* speed at which each gear starts, for the engine note */
+  GEARS: [0, 4.5, 9.5, 15, 21]  /* speed at which each gear starts, for the engine note */
 };
 
 module.exports = BIKE;
@@ -361,7 +365,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 33',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 34',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -960,7 +964,6 @@ function createFreeroam() {
         S.sfx.crash(!!e.hard); S.cine.shake(e.hard ? 0.25 : 0.1, 0.4); S.fx.spawn('blockspark', { x: e.x, y: 1.0, z: e.z }, e.hard ? 1.6 : 0.3);
         S.txt.say(e.hard ? 'smash' : 'thud', { x: e.x, y: 1.4, z: e.z }, view.camera, !!e.hard); if (e.with === 'landing') flash('BAD LANDING');
       }));
-      scope.add(ctx.bus.on('ride:roll', function (e) { S.sfx.roll(); flash('360 ROLL  +500'); S.cine.shake(0.06, 0.2); }));
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -1053,12 +1056,17 @@ function createFreeroam() {
       var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
       S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
       var B3 = S.bike; B3.root.position.set(bx, by, bz); B3.root.rotation.y = bh;
-      B3.lean.rotation.z = bk.lean + bk.slip * 0.5 + (bk.rolling ? bk.roll : 0);
+      B3.lean.rotation.z = bk.lean + bk.slip * 0.5;
       B3.pitch.rotation.x = -bk.pitch - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
       B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
       var rideP = null;
       if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
-      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(!ctx.world.mounted);
+      if (S.mountW > 0.5) {                     /* blows and guard from the saddle: the upper body only, turned toward the man; the legs stay on the pegs */
+        var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), side = Math.max(-1.1, Math.min(1.1, ctx.world.rideSide || 0));
+        if (mo) { var up2 = {}, k2; for (k2 in mo.pose) up2[k2] = mo.pose[k2]; up2['spine.ry'] = (up2['spine.ry'] || 0) + side * 38; pose = posemath.layer(pose, up2, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, bw2, bw2, bw2); }
+      }
+      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-(mounted ? 30 : 14) * dt));
       if (S.mountW > 0.02) {
@@ -1103,10 +1111,10 @@ function createFreeroam() {
       var bd = mounted ? 99 : worldMod.bikeDistance(ctx.world), near = bd < BIKE.MOUNT_SHOW, can = !mounted && worldMod.canMount(ctx.world);
       if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
       if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
-      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
+      var u2 = S.ui2, hint = mounted ? (Math.abs(bk.speed) < BIKE.PARK_SPEED ? (ctx.world.combat.enemies.length ? 'ATTACK: punch   BLOCK: guard / counter' : 'BLOCK: park and get off') : 'Stick: ride   Attack: punch / hold to boost   Block: guard / counter') : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
       if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
       u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
-      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h' + (bk.score ? '   ' + bk.score : ''); u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
+      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h'; u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
       if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
@@ -1242,14 +1250,14 @@ module.exports = { createStudio: createStudio };
 };
 defs["sim/bike"]=function(module,exports,require){
 /* sim: the Bijli. A kinematic cruiser: it follows the ground (ramps), leaves it when the ground falls away, collides with
-   building footprints, and can roll in the air. Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
+   building footprints, and Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
 'use strict';
 
 var B = require('../data/bike');
 var TAU = Math.PI * 2;
 
 function createBike(x, z, h) {
-  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, roll: 0, rolling: false, rolls: 0, score: 0,
+  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, 
            steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0 };
 }
 
@@ -1268,7 +1276,7 @@ function step(b, ctrl, env, dt, bus) {
   var top = boosting ? B.BOOST_SPEED : B.MAX_SPEED;
   if (!b.air) {
     var a = 0;
-    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
+    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL * (B.GEAR_PULL[b.gear] || 0.5)) * (b.shiftT > 0 ? B.SHIFT_DIP : 1) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
     else if (thr <= 0.05 && v > 0) a -= B.COAST;
     if (brk > 0.05) { if (v > 0.3) a -= B.BRAKE * brk; else if (ctrl.reverse) { if (v > -B.REVERSE_MAX) a -= 3 * brk; } else { v = 0; a = 0; } }
     else if (thr <= 0.05 && v < 0) a += B.COAST;
@@ -1288,10 +1296,10 @@ function step(b, ctrl, env, dt, bus) {
   var R = B.TURN_R0 + B.TURN_RV * Math.abs(b.speed), yaw = (b.speed / R) * b.steer * (b.drifting ? B.DRIFT_BOOST : 1);
   b.h -= yaw * dt;
   b.slip += ((b.drifting ? -b.steer * 0.4 : 0) - b.slip) * Math.min(1, 8 * dt);
-  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -0.55, 0.55) * (b.air ? 0.3 : 1);
+  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -B.LEAN_MAX, B.LEAN_MAX) * (b.air ? 0.3 : 1);
   b.lean += (leanT - b.lean) * (1 - Math.exp(-6 * dt));
   /* fork dip under braking, rear squat under throttle */
-  var pitchT = (brk > 0.05 && v > 1 ? -0.06 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
+  var pitchT = (brk > 0.05 && v > 1 ? -0.1 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
   b.pitch += (pitchT - b.pitch) * (1 - Math.exp(-7 * dt));
 
   /* move */
@@ -1326,16 +1334,11 @@ function step(b, ctrl, env, dt, bus) {
     else { b.y = gy; b.vyGround = (b.y - b.lastY) / dt; }
   } else {
     b.airT += dt; b.vy -= B.GRAVITY * dt; b.y += b.vy * dt;
-    if (ctrl.stunt && !b.rolling && b.airT > 0.12) b.rolling = true;
-    if (b.rolling) {
-      b.roll += (TAU / B.ROLL_TIME) * dt;
-      if (b.roll >= TAU) { b.roll = 0; b.rolling = false; b.rolls++; b.score += 500; b.boost = 1; if (bus) bus.emit('ride:roll', { x: b.x, z: b.z, count: b.rolls, score: b.score }); }
-    }
     if (b.y <= gy && b.vy <= 0) {
       var vyIn = -b.vy; b.y = gy; b.air = false; b.vyGround = 0;
-      if (b.rolling && b.roll > 0.8 && b.roll < TAU - 0.8) { b.speed *= 0.4; b.crash = 0.8; if (bus) bus.emit('ride:crash', { x: b.x, z: b.z, speed: vyIn, hard: true, with: 'landing' }); }
-      else { if (vyIn > 8) b.speed *= 0.85; if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT }); }
-      b.roll = 0; b.rolling = false; b.vy = 0;
+      if (vyIn > 8) b.speed *= 0.85;
+      if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT });
+      b.vy = 0;
     }
   }
 
@@ -1573,7 +1576,7 @@ function playerStrike(world, entry) {
     var e = c.enemies[i];
     if (e.dead || e.st === 'dead' || e.st === 'getup' || (e.st === 'down' && !counter)) continue;     /* counters keep hitting enemies on the floor */
     var d = dist(e, p), K = KINDS[e.kind];
-    if (d > spec.reach + K.radius) continue;
+    if (d > spec.reach + K.radius + (world.mounted ? 1.0 : 0)) continue;           /* from the saddle he swings a little further */
     if (spec.arc < 180) {
       var a = Math.atan2(e.x - p.x, e.z - p.z);
       if (Math.abs(angDiff(a, p.face)) > spec.arc * Math.PI / 180) continue;
@@ -1698,14 +1701,14 @@ function step(world, input) {
      until he falls, and every blow, gap-closing step and counter goes to him */
   var tgt = findEnemy(c, c.target);
   if (tgt && (tgt.dead || tgt.st === 'dead' || tgt.st === 'down' || tgt.st === 'getup' || dist(tgt, p) > 6)) { c.target = 0; tgt = null; }
-  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block) {
+  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block && !world.mounted) {
     var pick = pickTarget(c, p, s.mx, -s.my, tgt);
     if (pick) { c.target = pick.id; tgt = pick; }
   }
   if (tgt && !p.down && p.stun <= 0 && world.attackLock) {                          /* mid-move: stay square on him and close the gap, like a lunge */
     var tx = tgt.x - p.x, tz = tgt.z - p.z, td = Math.hypot(tx, tz) || 1;
     p.face = Math.atan2(tx, tz);
-    if (td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
+    if (!world.mounted && td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
   }
   /* Block pressed once the alert is up (from the yellow phase on): the hero answers at once with a counter */
   if (s.pressed.block && !p.down && p.stun <= 0 && !p.invuln) {
@@ -1861,27 +1864,62 @@ function createWorld(seed, bus) {
   return world;
 }
 
-/* riding: the stick steers and throttles, Block brakes (and drifts with the stick held across), Attack boosts, or rolls in the air;
-   at a standstill Attack parks the bike and he steps off */
-function rideStep(world, input) {
-  var p = world.player, s = input.state, b = world.bike, env = world.streaming, dt = 1 / CONFIG.TICK_HZ;
-  p.px = p.x; p.pz = p.z; p.moving = false;
-  var blk = !!s.held.block;
-  bikeMod.step(b, { throttle: Math.max(0, s.my), brake: Math.max(Math.max(0, -s.my), blk ? 0.55 : 0), steer: s.mx, reverse: s.my < -0.3 && !blk, boost: !!s.held.attack, drift: blk, stunt: !!s.pressed.attack }, env, dt, world.bus);
-  p.x = b.x; p.z = b.z; p.face = b.h;
-  if (s.pressed.attack && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED && world.tick - world.mountTick > 30) {       /* half a second after climbing on, so two quick presses cannot flip him straight off */
-    b.speed = 0; world.mounted = false; input.consume('attack', 99);       /* the press that got him off must not also count as a buffered press to climb back on */
-    p.x = b.x + Math.cos(b.h) * 1.0; p.z = b.z - Math.sin(b.h) * 1.0;     /* steps off to the bike's left */
-    world.bus.emit('ride:park', { x: b.x, z: b.z });
+/* the nearest living man within reach of the saddle, or null */
+function foeInReach(world, r) {
+  var l = world.combat.enemies, b = world.bike, best = null, bd = r, i;
+  for (i = 0; i < l.length; i++) {
+    var e = l[i]; if (e.dead || e.st === 'dead' || e.st === 'getup') continue;
+    var d = Math.hypot(e.x - b.x, e.z - b.z); if (d < bd) { bd = d; best = e; }
   }
+  return best;
+}
+function alertNear(world) {
+  var l = world.combat.enemies, p = world.player, i;
+  for (i = 0; i < l.length; i++) if (l[i].st === 'windup' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < 4) return true;
+  return false;
+}
+
+/* riding. Stick: throttle, brake, steer. Attack: a tap fights (when a man is in reach), a hold boosts. Block: hold guards, a tap
+   with an alert showing counters, and at a standstill with nobody about it parks the bike and he steps off. */
+function rideStep(world, input) {
+  var p = world.player, s = input.state, b = world.bike, env = world.streaming, dt = 1 / CONFIG.TICK_HZ, c = world.combat;
+  p.px = p.x; p.pz = p.z; p.moving = false;
+  var hp0 = p.hp;
+  if (!s.held.attack) world.atkArmed = true;
+  world.atkHold = s.held.attack ? (world.atkHold || 0) + 1 : 0;
+  var foe = s.pressed.attack && world.atkArmed && !p.down && p.stun <= 0 ? foeInReach(world, 2.7) : null;
+  var tapped = false;
+  if (foe) {                                           /* a man beside him: Attack is a blow, and this hold is not a boost */
+    c.target = foe.id; world.atkArmed = false; tapped = true;
+    var rel = Math.atan2(foe.x - b.x, foe.z - b.z) - b.h; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); world.rideSide = rel;
+    world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
+  } else if (s.released.attack && world.atkArmed && !p.down && p.stun <= 0) {
+    var f2 = foeInReach(world, 2.7);                    /* a short tap that found nobody on the press: a late blow if he has closed in */
+    if (f2 && world.tick - (world.lastRelease || -99) > 0) { c.target = f2.id; var r2 = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; world.rideSide = Math.atan2(Math.sin(r2), Math.cos(r2)); world.bus.emit('action', { type: 'attack' }); }
+  }
+  var boost = !!s.held.attack && world.atkArmed && world.atkHold >= BIKE.BOOST_HOLD;
+  var alert = alertNear(world);
+  bikeMod.step(b, { throttle: Math.max(0, s.my), brake: Math.max(0, -s.my), steer: s.mx, reverse: s.my < -0.3, boost: boost, drift: false }, env, dt, world.bus);
+  p.x = b.x; p.z = b.z; p.face = b.h;
+  if (s.pressed.block && !alert && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED && world.tick - world.mountTick > 30 && !menNear(world, p, 3.6)) {
+    b.speed = 0; world.mounted = false; input.consume('attack', 99); world.atkArmed = false;
+    p.x = b.x + Math.cos(b.h) * 1.0; p.z = b.z - Math.sin(b.h) * 1.0;     /* steps off to the bike's left */
+    p.guard = false;
+    world.bus.emit('ride:park', { x: b.x, z: b.z });
+    world.streaming.update(p.x, p.z); world.tick++; return;
+  }
+  combatMod.step(world, input);
+  if (p.hp < hp0) b.speed *= 0.82;                    /* a blow rocks the bike */
+  p.x = b.x; p.z = b.z;
   world.streaming.update(p.x, p.z);
   world.tick++;
 }
 
 /* a man right beside him means the button is for fighting; one further off does not stop him climbing on */
-function menNear(world, p) {
+function menNear(world, p, r) {
+  r = r || BIKE.MOUNT_BLOCK;
   var l = world.combat.enemies;
-  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < BIKE.MOUNT_BLOCK) return true;
+  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < r) return true;
   return false;
 }
 /* how far he stands from the bike's body (a line from rear wheel to front wheel), not from its middle */
@@ -1901,7 +1939,7 @@ function step(world, input) {
   p.px = p.x; p.pz = p.z;
   world.bike.speed = 0;
   if (canMount(world) && (s.pressed.attack || input.consume('attack', 8))) {
-    input.consume('attack', 99); world.mounted = true; world.mountTick = world.tick; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
+    input.consume('attack', 99); world.mounted = true; world.mountTick = world.tick; world.atkArmed = false; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
     world.bus.emit('ride:mount', { x: world.bike.x, z: world.bike.z });
     world.streaming.update(p.x, p.z); world.tick++; return;
   }
@@ -1914,6 +1952,12 @@ function step(world, input) {
   if (p.moving) {
     p.x += mx * v; p.z += mz * v;
     p.face = Math.atan2(mx, mz);
+  }
+  /* the parked bike is solid: three discs along its body push him out */
+  var bk = world.bike, bfx = Math.sin(bk.h), bfz = Math.cos(bk.h), bo, SOL = [-0.7, 0, 0.7];
+  for (bo = 0; bo < 3; bo++) {
+    var cx = bk.x + bfx * SOL[bo], cz = bk.z + bfz * SOL[bo], ddx = p.x - cx, ddz = p.z - cz, dd = Math.hypot(ddx, ddz), need = BIKE.SOLID_R;
+    if (dd < need) { if (dd < 1e-4) { ddx = Math.cos(bk.h); ddz = -Math.sin(bk.h); dd = 1; } p.x = cx + ddx / dd * need; p.z = cz + ddz / dd * need; }
   }
   /* placeholder actions: they only prove that buttons reach the simulation and the rage gate works */
   if (s.pressed.attack) { world.counters.attacks++; if (!world.combat.enabled) p.rage = Math.min(100, p.rage + 12); world.bus.emit('action', { type: 'attack' }); }
@@ -3717,6 +3761,11 @@ function createSfx() {
     s.buffer = nbuf; s.loop = true; f.type = 'bandpass'; f.Q.value = 1.1; f.frequency.setValueAtTime(260 + rn * 320 + thr * 380, t); f.frequency.exponentialRampToValueAtTime(110, t + dur * 0.8);
     g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime((0.16 + 0.22 * thr) * vol, t + 0.005); g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.8);
     s.connect(f); f.connect(g2); g2.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur);
+    /* the hollow tube of the long silencer: a resonant 'dug' under the pulse, deeper and longer at low revs */
+    var o2 = ac.createOscillator(), g3 = ac.createGain(), f3 = ac.createBiquadFilter(), d3 = dur * 1.5;
+    o2.type = 'sine'; o2.frequency.setValueAtTime(f0 * 0.5 * jit, t); o2.frequency.exponentialRampToValueAtTime(f0 * 0.36, t + d3);
+    f3.type = 'lowpass'; f3.frequency.value = 220; g3.gain.setValueAtTime(0.0001, t); g3.gain.exponentialRampToValueAtTime((0.55 + 0.25 * thr) * vol, t + 0.012); g3.gain.exponentialRampToValueAtTime(0.0001, t + d3);
+    o2.connect(f3); f3.connect(g3); g3.connect(master); o2.start(t); o2.stop(t + d3 + 0.02);
   }
   function scrub(level) {
     if (!eng.scrubS) {
@@ -3759,8 +3808,8 @@ function createSfx() {
     /* st: {rpm 0..1, thr 0..1, speed, drifting, braking, air}. Called every frame while he rides. */
     engine: function (dt, st) {
       if (!on || !ctx()) return;
-      var rn = Math.max(0, Math.min(1, st.rpm)), hz = 5.5 + rn * 20 * (st.air ? 0.8 : 1);
-      eng.acc += dt * hz; var n = 0;
+      var rn = Math.max(0, Math.min(1, st.rpm)), hz = 4.4 + rn * 17 * (st.air ? 0.8 : 1);
+      eng.acc += dt * hz * (0.88 + Math.random() * 0.24);          /* a single cylinder never keeps perfect time */ var n = 0;
       while (eng.acc >= 1 && n++ < 3) { eng.acc -= 1; eng.odd++; firePulse(rn, st.thr, (eng.odd % 7 === 0 ? 0.6 : 1) * (st.air ? 0.7 : 1)); }
       if (eng.acc > 3) eng.acc = 0;
       if (eng.thr > 0.6 && st.thr < 0.1 && st.speed > 6) { var k = 1 + (Math.random() * 3 | 0), q; for (q = 0; q < k; q++) { burst(0.05, 0.4, 'bandpass', 900 + Math.random() * 500, 300, 0.05 + q * 0.09 + Math.random() * 0.05, 1.4); thump(95, 50, 0.08, 0.4, 0.05 + q * 0.09); } }   /* lift-off pops */

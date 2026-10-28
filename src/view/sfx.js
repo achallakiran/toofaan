@@ -41,6 +41,11 @@ function createSfx() {
     s.buffer = nbuf; s.loop = true; f.type = 'bandpass'; f.Q.value = 1.1; f.frequency.setValueAtTime(260 + rn * 320 + thr * 380, t); f.frequency.exponentialRampToValueAtTime(110, t + dur * 0.8);
     g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime((0.16 + 0.22 * thr) * vol, t + 0.005); g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.8);
     s.connect(f); f.connect(g2); g2.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur);
+    /* the hollow tube of the long silencer: a resonant 'dug' under the pulse, deeper and longer at low revs */
+    var o2 = ac.createOscillator(), g3 = ac.createGain(), f3 = ac.createBiquadFilter(), d3 = dur * 1.5;
+    o2.type = 'sine'; o2.frequency.setValueAtTime(f0 * 0.5 * jit, t); o2.frequency.exponentialRampToValueAtTime(f0 * 0.36, t + d3);
+    f3.type = 'lowpass'; f3.frequency.value = 220; g3.gain.setValueAtTime(0.0001, t); g3.gain.exponentialRampToValueAtTime((0.55 + 0.25 * thr) * vol, t + 0.012); g3.gain.exponentialRampToValueAtTime(0.0001, t + d3);
+    o2.connect(f3); f3.connect(g3); g3.connect(master); o2.start(t); o2.stop(t + d3 + 0.02);
   }
   function scrub(level) {
     if (!eng.scrubS) {
@@ -83,8 +88,8 @@ function createSfx() {
     /* st: {rpm 0..1, thr 0..1, speed, drifting, braking, air}. Called every frame while he rides. */
     engine: function (dt, st) {
       if (!on || !ctx()) return;
-      var rn = Math.max(0, Math.min(1, st.rpm)), hz = 5.5 + rn * 20 * (st.air ? 0.8 : 1);
-      eng.acc += dt * hz; var n = 0;
+      var rn = Math.max(0, Math.min(1, st.rpm)), hz = 4.4 + rn * 17 * (st.air ? 0.8 : 1);
+      eng.acc += dt * hz * (0.88 + Math.random() * 0.24);          /* a single cylinder never keeps perfect time */ var n = 0;
       while (eng.acc >= 1 && n++ < 3) { eng.acc -= 1; eng.odd++; firePulse(rn, st.thr, (eng.odd % 7 === 0 ? 0.6 : 1) * (st.air ? 0.7 : 1)); }
       if (eng.acc > 3) eng.acc = 0;
       if (eng.thr > 0.6 && st.thr < 0.1 && st.speed > 6) { var k = 1 + (Math.random() * 3 | 0), q; for (q = 0; q < k; q++) { burst(0.05, 0.4, 'bandpass', 900 + Math.random() * 500, 300, 0.05 + q * 0.09 + Math.random() * 0.05, 1.4); thump(95, 50, 0.08, 0.4, 0.05 + q * 0.09); } }   /* lift-off pops */

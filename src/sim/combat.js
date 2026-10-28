@@ -103,7 +103,7 @@ function playerStrike(world, entry) {
     var e = c.enemies[i];
     if (e.dead || e.st === 'dead' || e.st === 'getup' || (e.st === 'down' && !counter)) continue;     /* counters keep hitting enemies on the floor */
     var d = dist(e, p), K = KINDS[e.kind];
-    if (d > spec.reach + K.radius) continue;
+    if (d > spec.reach + K.radius + (world.mounted ? 1.0 : 0)) continue;           /* from the saddle he swings a little further */
     if (spec.arc < 180) {
       var a = Math.atan2(e.x - p.x, e.z - p.z);
       if (Math.abs(angDiff(a, p.face)) > spec.arc * Math.PI / 180) continue;
@@ -228,14 +228,14 @@ function step(world, input) {
      until he falls, and every blow, gap-closing step and counter goes to him */
   var tgt = findEnemy(c, c.target);
   if (tgt && (tgt.dead || tgt.st === 'dead' || tgt.st === 'down' || tgt.st === 'getup' || dist(tgt, p) > 6)) { c.target = 0; tgt = null; }
-  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block) {
+  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block && !world.mounted) {
     var pick = pickTarget(c, p, s.mx, -s.my, tgt);
     if (pick) { c.target = pick.id; tgt = pick; }
   }
   if (tgt && !p.down && p.stun <= 0 && world.attackLock) {                          /* mid-move: stay square on him and close the gap, like a lunge */
     var tx = tgt.x - p.x, tz = tgt.z - p.z, td = Math.hypot(tx, tz) || 1;
     p.face = Math.atan2(tx, tz);
-    if (td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
+    if (!world.mounted && td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
   }
   /* Block pressed once the alert is up (from the yellow phase on): the hero answers at once with a counter */
   if (s.pressed.block && !p.down && p.stun <= 0 && !p.invuln) {

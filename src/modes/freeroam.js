@@ -72,7 +72,6 @@ function createFreeroam() {
         S.sfx.crash(!!e.hard); S.cine.shake(e.hard ? 0.25 : 0.1, 0.4); S.fx.spawn('blockspark', { x: e.x, y: 1.0, z: e.z }, e.hard ? 1.6 : 0.3);
         S.txt.say(e.hard ? 'smash' : 'thud', { x: e.x, y: 1.4, z: e.z }, view.camera, !!e.hard); if (e.with === 'landing') flash('BAD LANDING');
       }));
-      scope.add(ctx.bus.on('ride:roll', function (e) { S.sfx.roll(); flash('360 ROLL  +500'); S.cine.shake(0.06, 0.2); }));
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -165,12 +164,17 @@ function createFreeroam() {
       var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
       S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
       var B3 = S.bike; B3.root.position.set(bx, by, bz); B3.root.rotation.y = bh;
-      B3.lean.rotation.z = bk.lean + bk.slip * 0.5 + (bk.rolling ? bk.roll : 0);
+      B3.lean.rotation.z = bk.lean + bk.slip * 0.5;
       B3.pitch.rotation.x = -bk.pitch - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
       B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
       var rideP = null;
       if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
-      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(!ctx.world.mounted);
+      if (S.mountW > 0.5) {                     /* blows and guard from the saddle: the upper body only, turned toward the man; the legs stay on the pegs */
+        var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), side = Math.max(-1.1, Math.min(1.1, ctx.world.rideSide || 0));
+        if (mo) { var up2 = {}, k2; for (k2 in mo.pose) up2[k2] = mo.pose[k2]; up2['spine.ry'] = (up2['spine.ry'] || 0) + side * 38; pose = posemath.layer(pose, up2, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, bw2, bw2, bw2); }
+      }
+      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-(mounted ? 30 : 14) * dt));
       if (S.mountW > 0.02) {
@@ -215,10 +219,10 @@ function createFreeroam() {
       var bd = mounted ? 99 : worldMod.bikeDistance(ctx.world), near = bd < BIKE.MOUNT_SHOW, can = !mounted && worldMod.canMount(ctx.world);
       if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
       if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
-      var u2 = S.ui2, hint = mounted ? (bk.air ? 'ATTACK: roll in the air' : (Math.abs(bk.speed) < BIKE.PARK_SPEED ? 'ATTACK: park and get off' : 'Stick: ride   Block: brake / drift   Attack: boost')) : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
+      var u2 = S.ui2, hint = mounted ? (Math.abs(bk.speed) < BIKE.PARK_SPEED ? (ctx.world.combat.enemies.length ? 'ATTACK: punch   BLOCK: guard / counter' : 'BLOCK: park and get off') : 'Stick: ride   Attack: punch / hold to boost   Block: guard / counter') : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
       if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
       u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
-      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h' + (bk.score ? '   ' + bk.score : ''); u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
+      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h'; u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
       if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();

@@ -394,15 +394,16 @@ function ride(b, env, n, c) { for (var i = 0; i < n; i++) bikeMod.step(b, typeof
 var GO = { throttle: 1, brake: 0, steer: 0, boost: false, drift: false, stunt: false };
 test('bike: builds speed gradually, never above top speed, and brakes to a stop', function () {
   var b = bikeMod.createBike(0, 0, 0), env = flat();
-  ride(b, env, 60, GO); assert(b.speed > 4 && b.speed < 12, 'after 1 s ' + b.speed);
-  ride(b, env, 1500, GO); assert(b.speed <= BIKE.MAX_SPEED + 0.01 && b.speed > BIKE.MAX_SPEED - 3, 'top ' + b.speed);
+  ride(b, env, 60, GO); assert(b.speed > 2.5 && b.speed < 8, 'after 1 s ' + b.speed);
+  var t60 = 0, c60 = bikeMod.createBike(0, 0, 0); while (c60.speed < 16.7 && t60 < 3000) { ride(c60, env, 1, GO); t60++; } assert(t60 / 60 > 5 && t60 / 60 < 14, '0 to 60 km/h takes ' + t60 / 60 + ' s: a Bullet, not a sports bike');
+  ride(b, env, 1500, GO); assert(b.speed <= BIKE.MAX_SPEED + 0.01 && b.speed > BIKE.MAX_SPEED - 4, 'top ' + b.speed);
   ride(b, env, 600, { throttle: 0, brake: 1, steer: 0, boost: false, drift: false, stunt: false }); assert(b.speed <= 0.3, 'stopped ' + b.speed);
 });
 test('bike: boost raises the top speed and drains the meter; a heavy cruiser turns in a wide arc at speed', function () {
   var b = bikeMod.createBike(0, 0, 0); ride(b, flat(), 1200, GO); var s0 = b.speed;
   ride(b, flat(), 120, { throttle: 1, brake: 0, steer: 0, boost: true, drift: false, stunt: false }); assert(b.speed > s0 + 2 && b.boost < 1, 'boost');
   var c = bikeMod.createBike(0, 0, 0); ride(c, flat(), 900, GO); var h0 = c.h; ride(c, flat(), 60, { throttle: 1, brake: 0, steer: 1, boost: false, drift: false, stunt: false });
-  var turn = h0 - c.h; assert(turn > 0.3 && turn < 1.4, 'one second at full lock turns ' + turn + ' rad (right turn lowers heading)');
+  var turn = h0 - c.h; assert(turn > 0.2 && turn < 1.2, 'one second at full lock turns ' + turn + ' rad (right turn lowers heading)');
 });
 test('bike: a wall stops it and a hard hit crashes it; it cannot end up inside the footprint', function () {
   var env = { groundAt: function () { return 0; }, solidsNear: function () { return [{ x0: 30, z0: -5, x1: 40, z1: 5, y1: 10 }]; } };
@@ -416,25 +417,14 @@ test('bike: a ramp throws it into the air for about a second, then it lands', fu
   var maxY = 0, air = 0; for (var i = 0; i < 1200; i++) { bikeMod.step(b, GO, rampEnv(), 1 / 60, bus); if (b.air) air++; maxY = Math.max(maxY, b.y); }
   assert.deepStrictEqual(ev, ['j', 'l']); assert(air > 40 && air < 120, 'air ticks ' + air); assert(maxY > 3.0, 'maxY ' + maxY); assert.strictEqual(b.y, 0);
 });
-test('bike: a full roll in the air scores and refills boost; landing half-rolled crashes', function () {
-  function jump(rollAt, stay) {
-    var b = bikeMod.createBike(-30, 0, Math.PI / 2), bus = busMod.createBus(), rolled = 0, bad = 0; bus.on('ride:roll', function () { rolled++; }); bus.on('ride:crash', function (e) { if (e.with === 'landing') bad++; });
-    var wasAir = false, t = 0; b.boost = 0.2;
-    for (var i = 0; i < 1500; i++) { var st = false; if (b.air) { if (!wasAir) t = 0; t++; st = t === rollAt; } wasAir = b.air; bikeMod.step(b, { throttle: 1, brake: 0, steer: 0, boost: false, drift: false, stunt: st }, rampEnv(), 1 / 60, bus); }
-    return { rolled: rolled, bad: bad, score: b.score, boost: b.boost };
-  }
-  var good = jump(8), late = jump(45);
-  assert.strictEqual(good.rolled, 1, 'rolled ' + good.rolled); assert.strictEqual(good.score, 500); assert(good.boost > 0.9);
-  assert.strictEqual(late.rolled, 0); assert.strictEqual(late.bad, 1, 'bad landing ' + late.bad);
-});
-test('world: walk up to the bike, Attack mounts, riding moves the player and the streaming, Attack at a standstill parks and steps off beside it', function () {
+test('world: walk up to the bike, Attack mounts, riding moves the player and the streaming, Block at a standstill parks and steps off beside it', function () {
   var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), ev = [];
   ['ride:mount', 'ride:park'].forEach(function (n) { bus.on(n, function () { ev.push(n); }); });
   function run(n, mx, my, atk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', atk && i === 0); inp.tick(w.tick); worldMod.step(w, inp); } }
   run(2, 0, 0, false); run(2, 0, 0, true); assert(w.mounted, 'mounted');
   run(300, 0, 1, false); assert(w.bike.speed > 5 && w.player.x > 10, 'moved ' + w.player.x); assert.strictEqual(w.player.x, w.bike.x);
-  inp.setButton('block', true); run(400, 0, 0, false); inp.setButton('block', false); assert(w.bike.speed < 0.7, 'slow ' + w.bike.speed);
-  run(2, 0, 0, true); assert(!w.mounted, 'dismounted'); assert(Math.hypot(w.player.x - w.bike.x, w.player.z - w.bike.z) < 1.5);
+  var g0 = 0; while (w.bike.speed > 0.3 && g0++ < 2000) run(1, 0, -1, false); run(60, 0, 0, false); assert(Math.abs(w.bike.speed) < 0.7, 'slow ' + w.bike.speed); assert(w.mounted, 'still seated at a standstill');
+  run(2, 0, 0, false); inp.setButton('block', true); run(2, 0, 0, false); inp.setButton('block', false); assert(!w.mounted, 'dismounted'); assert(Math.hypot(w.player.x - w.bike.x, w.player.z - w.bike.z) < 1.5);
   assert.deepStrictEqual(ev, ['ride:mount', 'ride:park']);
 });
 test('world: climbing on is easy beside either wheel, still works with a man a few steps away, and is refused only when one is right beside him', function () {
@@ -452,5 +442,32 @@ test('world: the same seed and the same inputs give the same hash with the bike 
   assert.strictEqual(go(), go());
 });
 
+test('world: the parked bike is solid; he walks around it, not through it', function () {
+  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), b = w.bike, fx = Math.sin(b.h), fz = Math.cos(b.h);
+  w.combat.enabled = false; w.player.x = b.x + fz * 2.5; w.player.z = b.z - fx * 2.5;
+  for (var i = 0; i < 240; i++) { inp.setAxis(-fz, fx); inp.tick(w.tick); worldMod.step(w, inp); }       /* walk straight at the bike from the side */
+  var side = (w.player.x - b.x) * fz - (w.player.z - b.z) * fx; assert(side > 0.6, 'pushed out of the bike, side distance ' + side);
+});
+function rideWorld() { var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(); w.combat.enemies.length = 0; w.combat.enabled = false; w.mounted = true; w.mountTick = -99; w.atkArmed = true;
+  return { w: w, inp: inp, bus: bus, stop: function () { var g = 0; while (Math.abs(w.bike.speed) > 0.3 && g++ < 2000) this.run(1, 0, w.bike.speed > 0 ? -1 : 0, false); this.run(60, 0, 0, false); },
+  run: function (n, mx, my, atk, blk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', typeof atk === 'function' ? atk(i) : !!atk); inp.setButton('block', !!blk); inp.tick(w.tick); worldMod.step(w, inp); } } }; }
+test('ride controls: a held Attack boosts, a tap with nobody near does nothing, a tap beside a man fights', function () {
+  var R = rideWorld(), w = R.w, acts = 0; R.bus.on('action', function () { acts++; });
+  R.run(200, 0, 1, false); var s0 = w.bike.speed, seen = false; for (var q = 0; q < 50; q++) { R.run(1, 0, 1, true); if (w.bike.boosting) seen = true; } assert(seen && w.bike.speed > s0 && w.bike.boost < 1, 'hold boosts');
+  R.run(5, 0, 1, false); acts = 0; R.run(8, 0, 1, function (i) { return i < 4; }); assert.strictEqual(acts, 0, 'tap alone is no punch');
+  R.run(5, 0, 0, false); w.combat.enabled = true; combatMod.spawn(w, 'thug', w.bike.x + Math.cos(w.bike.h) * 1.6, w.bike.z - Math.sin(w.bike.h) * 1.6);
+  R.run(2, 0, 0, function (i) { return i === 0; }); assert(acts >= 1, 'tap beside a man starts a blow'); assert(!w.bike.boosting, 'that hold is not a boost');
+});
+test('ride controls: Block parks only at a standstill with nobody close; a man close means Block is for the fight', function () {
+  var R = rideWorld(), w = R.w; R.run(200, 0, 1, false); R.run(4, 0, 0, false, true); assert(w.mounted, 'no parking at speed');
+  R.stop(); w.combat.enabled = true; combatMod.spawn(w, 'thug', w.bike.x + 2.5, w.bike.z); R.run(2, 0, 0, false, true); assert(w.mounted, 'a man close: no parking'); w.combat.enemies.length = 0; w.combat.enabled = false;
+  R.run(2, 0, 0, false); R.run(2, 0, 0, false, true); assert(!w.mounted, 'parked');
+});
+test('ride fight: blows from the saddle hurt a man beside the bike and not one far off; a blow rocks the bike', function () {
+  var R = rideWorld(), w = R.w, side = { x: Math.cos(w.bike.h), z: -Math.sin(w.bike.h) }; w.combat.enemies.length = 0; w.combat.enabled = true; w.attackLock = true;
+  combatMod.spawn(w, 'thug', w.bike.x + side.x * 1.7, w.bike.z + side.z * 1.7); combatMod.spawn(w, 'thug', w.bike.x - side.x * 9, w.bike.z - side.z * 9); var near = w.combat.enemies[0], far = w.combat.enemies[1], hp0 = near.hp, hf = far.hp;
+  R.run(3, 0, 0, false); R.run(1, 0, 0, true); for (var i = 0; i < 4; i++) { w.pendingStrikes.push({ move: 'cross', last: false }); R.run(1, 0, 0, false); }
+  assert(near.hp < hp0, 'near man hurt ' + near.hp + '/' + hp0); assert.strictEqual(far.hp, hf, 'far man untouched');
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
