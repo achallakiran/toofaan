@@ -1,0 +1,13 @@
+{
+  "name": "toofan-brawler",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Voxel bike-and-brawl game. Single offline HTML build.",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tests/run.js",
+    "check": "node tools/check-boundaries.js",
+    "audit": "node tools/anim-audit.js",
+    "all": "node tools/check-boundaries.js && node tests/run.js && node tools/anim-audit.js && node tools/build.js"
+  }
+}
