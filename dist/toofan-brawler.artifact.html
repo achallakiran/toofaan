@@ -358,7 +358,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 34',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 35',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1057,7 +1057,7 @@ function createFreeroam() {
       if (S.mountW > 0.5) {                     /* blows and guard from the saddle: the upper body only, turned toward the man; the legs stay on the pegs */
         var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), side = Math.max(-1.1, Math.min(1.1, ctx.world.rideSide || 0));
         if (mo) { var up2 = {}, k2; for (k2 in mo.pose) up2[k2] = mo.pose[k2]; up2['spine.ry'] = (up2['spine.ry'] || 0) + side * 38; pose = posemath.layer(pose, up2, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
-        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, bw2, bw2, bw2); }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, 0, bw2, 0); }          /* one forearm up across the head, the other hand stays on the bar */
       }
       S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
       S.fx.update(dt);
@@ -1879,6 +1879,7 @@ function rideStep(world, input) {
   p.px = p.x; p.pz = p.z; p.moving = false;
   var hp0 = p.hp;
   if (!s.held.attack) world.atkArmed = true;
+  var prevHold = world.atkHold || 0;
   world.atkHold = s.held.attack ? (world.atkHold || 0) + 1 : 0;
   var foe = s.pressed.attack && world.atkArmed && !p.down && p.stun <= 0 ? foeInReach(world, 2.7) : null;
   var tapped = false;
@@ -1886,9 +1887,11 @@ function rideStep(world, input) {
     c.target = foe.id; world.atkArmed = false; tapped = true;
     var rel = Math.atan2(foe.x - b.x, foe.z - b.z) - b.h; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); world.rideSide = rel;
     world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
-  } else if (s.released.attack && world.atkArmed && !p.down && p.stun <= 0) {
-    var f2 = foeInReach(world, 2.7);                    /* a short tap that found nobody on the press: a late blow if he has closed in */
-    if (f2 && world.tick - (world.lastRelease || -99) > 0) { c.target = f2.id; var r2 = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; world.rideSide = Math.atan2(Math.sin(r2), Math.cos(r2)); world.bus.emit('action', { type: 'attack' }); }
+  } else if (s.released.attack && world.atkArmed && prevHold < BIKE.BOOST_HOLD && !p.down && p.stun <= 0) {
+    /* a short tap with nobody beside him is still a swing (toward the nearest man, else the near side), so the button always answers */
+    var f2 = foeInReach(world, 6), rl = 0;
+    if (f2) { c.target = f2.id; rl = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; rl = Math.atan2(Math.sin(rl), Math.cos(rl)); } else rl = -1.0;
+    world.rideSide = rl; world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
   }
   var boost = !!s.held.attack && world.atkArmed && world.atkHold >= BIKE.BOOST_HOLD;
   var alert = alertNear(world);

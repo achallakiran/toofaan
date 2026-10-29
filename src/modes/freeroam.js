@@ -172,7 +172,7 @@ function createFreeroam() {
       if (S.mountW > 0.5) {                     /* blows and guard from the saddle: the upper body only, turned toward the man; the legs stay on the pegs */
         var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), side = Math.max(-1.1, Math.min(1.1, ctx.world.rideSide || 0));
         if (mo) { var up2 = {}, k2; for (k2 in mo.pose) up2[k2] = mo.pose[k2]; up2['spine.ry'] = (up2['spine.ry'] || 0) + side * 38; pose = posemath.layer(pose, up2, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
-        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, bw2, bw2, bw2); }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, 0, bw2, 0); }          /* one forearm up across the head, the other hand stays on the bar */
       }
       S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
       S.fx.update(dt);

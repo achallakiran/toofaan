@@ -48,6 +48,7 @@ function rideStep(world, input) {
   p.px = p.x; p.pz = p.z; p.moving = false;
   var hp0 = p.hp;
   if (!s.held.attack) world.atkArmed = true;
+  var prevHold = world.atkHold || 0;
   world.atkHold = s.held.attack ? (world.atkHold || 0) + 1 : 0;
   var foe = s.pressed.attack && world.atkArmed && !p.down && p.stun <= 0 ? foeInReach(world, 2.7) : null;
   var tapped = false;
@@ -55,9 +56,11 @@ function rideStep(world, input) {
     c.target = foe.id; world.atkArmed = false; tapped = true;
     var rel = Math.atan2(foe.x - b.x, foe.z - b.z) - b.h; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); world.rideSide = rel;
     world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
-  } else if (s.released.attack && world.atkArmed && !p.down && p.stun <= 0) {
-    var f2 = foeInReach(world, 2.7);                    /* a short tap that found nobody on the press: a late blow if he has closed in */
-    if (f2 && world.tick - (world.lastRelease || -99) > 0) { c.target = f2.id; var r2 = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; world.rideSide = Math.atan2(Math.sin(r2), Math.cos(r2)); world.bus.emit('action', { type: 'attack' }); }
+  } else if (s.released.attack && world.atkArmed && prevHold < BIKE.BOOST_HOLD && !p.down && p.stun <= 0) {
+    /* a short tap with nobody beside him is still a swing (toward the nearest man, else the near side), so the button always answers */
+    var f2 = foeInReach(world, 6), rl = 0;
+    if (f2) { c.target = f2.id; rl = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; rl = Math.atan2(Math.sin(rl), Math.cos(rl)); } else rl = -1.0;
+    world.rideSide = rl; world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
   }
   var boost = !!s.held.attack && world.atkArmed && world.atkHold >= BIKE.BOOST_HOLD;
   var alert = alertNear(world);

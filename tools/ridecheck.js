@@ -60,7 +60,7 @@ function check(name, ok, info) { console.log((ok ? 'PASS  ' : 'FAIL  ') + name +
   await page.keyboard.down('ArrowDown'); try { await page.waitForFunction(function () { var b = window.__game.ctx.world.bike; return !b.air && Math.abs(b.speed) < 0.3; }, null, { timeout: 30000 }); } catch (e) { } await page.keyboard.up('Shift');
   var sp = await W(function () { var b = window.__game.ctx.world.bike; return b.speed; });
   check('7. stick down brakes the bike to a standstill', Math.abs(sp) < 0.7, sp);
-  await page.keyboard.up('ArrowDown'); await page.waitForTimeout(300); await page.keyboard.press('Shift'); await page.waitForTimeout(700);
+  await page.keyboard.up('ArrowDown'); await page.waitForTimeout(300); await page.keyboard.down('Shift'); await page.waitForTimeout(200); await page.keyboard.up('Shift'); await page.waitForTimeout(700);
   var d = await W(function () { var w = window.__game.ctx.world; return { m: w.mounted, d: Math.hypot(w.bike.x - w.player.x, w.bike.z - w.player.z) }; });
   check('8. Block at a standstill parks the bike and he steps off beside it', !d.m && d.d < 1.6, d); await shot('ride_6_parked');
   await page.keyboard.down('ArrowLeft'); try { await page.waitForFunction(function () { var w = window.__game.ctx.world; return Math.hypot(w.bike.x - w.player.x, w.bike.z - w.player.z) > 4; }, null, { timeout: 15000 }); } catch (e) { } await page.keyboard.up('ArrowLeft');

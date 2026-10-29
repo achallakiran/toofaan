@@ -451,10 +451,10 @@ test('world: the parked bike is solid; he walks around it, not through it', func
 function rideWorld() { var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(); w.combat.enemies.length = 0; w.combat.enabled = false; w.mounted = true; w.mountTick = -99; w.atkArmed = true;
   return { w: w, inp: inp, bus: bus, stop: function () { var g = 0; while (Math.abs(w.bike.speed) > 0.3 && g++ < 2000) this.run(1, 0, w.bike.speed > 0 ? -1 : 0, false); this.run(60, 0, 0, false); },
   run: function (n, mx, my, atk, blk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', typeof atk === 'function' ? atk(i) : !!atk); inp.setButton('block', !!blk); inp.tick(w.tick); worldMod.step(w, inp); } } }; }
-test('ride controls: a held Attack boosts, a tap with nobody near does nothing, a tap beside a man fights', function () {
+test('ride controls: a held Attack boosts, a tap with nobody near still swings, a tap beside a man fights', function () {
   var R = rideWorld(), w = R.w, acts = 0; R.bus.on('action', function () { acts++; });
   R.run(200, 0, 1, false); var s0 = w.bike.speed, seen = false; for (var q = 0; q < 50; q++) { R.run(1, 0, 1, true); if (w.bike.boosting) seen = true; } assert(seen && w.bike.speed > s0 && w.bike.boost < 1, 'hold boosts');
-  R.run(5, 0, 1, false); acts = 0; R.run(8, 0, 1, function (i) { return i < 4; }); assert.strictEqual(acts, 0, 'tap alone is no punch');
+  R.run(5, 0, 1, false); acts = 0; R.run(8, 0, 1, function (i) { return i < 4; }); assert(acts >= 1, 'a tap always swings');
   R.run(5, 0, 0, false); w.combat.enabled = true; combatMod.spawn(w, 'thug', w.bike.x + Math.cos(w.bike.h) * 1.6, w.bike.z - Math.sin(w.bike.h) * 1.6);
   R.run(2, 0, 0, function (i) { return i === 0; }); assert(acts >= 1, 'tap beside a man starts a blow'); assert(!w.bike.boosting, 'that hold is not a boost');
 });
