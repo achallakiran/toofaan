@@ -358,7 +358,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 40',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 41',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1796,8 +1796,8 @@ function generate(seed, cx, cz) {
   var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND, kind = kindOf(cx, cz), spec;
   /* the old street keeps its look: the road chunks come straight from the street generator, a hash-salted copy per chunk */
   var salt = (cx * 31 + cz * 17) | 0;
-  if (kind === 'roadH') spec = gen.generateChunk(seed ^ (cz === 0 ? 0 : 0x5bd1e995), cx, cz === 0 ? 0 : (cz + salt) | 0, { road: true });
-  else if (kind === 'roadV') spec = swapXZ(gen.generateChunk(seed ^ 0x2c1b3c6d, cz, (cx + salt) | 0, { road: true }));
+  if (kind === 'roadH') spec = gen.generateChunk(seed ^ (cz === 0 ? 0 : 0x5bd1e995), cx, cz === 0 ? 0 : (cz + salt) | 0, { road: true, noRamp: true });
+  else if (kind === 'roadV') spec = swapXZ(gen.generateChunk(seed ^ 0x2c1b3c6d, cz, (cx + salt) | 0, { road: true, noRamp: true }));
   else if (kind === 'block') spec = gen.generateChunk(seed ^ 0x1f3d5b79, cx, cz, { road: false });
   else {
     var boxes = [], solids = [], k, p;

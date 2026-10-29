@@ -34,25 +34,7 @@ function check(name, ok, info) { console.log((ok ? 'PASS  ' : 'FAIL  ') + name +
   var fh = await W(function () { var e = window.__foe, w = window.__game.ctx.world; return { hp: e.hp, max: e.maxHp, mounted: w.mounted }; });
   check('5. tapping Attack beside a man fights from the saddle (he is hurt, Toofan stays seated)', fh.hp < fh.max && fh.mounted, fh); await shot('ride_fight_1');
   await W(function () { var c = window.__game.ctx.world.combat; c.enemies.length = 0; c.enabled = false; });
-  /* jump: put the bike on a run-up to the nearest ramp,  */
-  var rp = await W(function () {
-    var g = window.__game.ctx.world, specs = g.streaming.snapshotSpecs(), best = null, i, k;
-    for (i = 0; i < specs.length; i++) for (k = 0; k < specs[i].ramps.length; k++) { var r = specs[i].ramps[k], cx = specs[i].ox + (r.x0 + r.x1) / 2, cz = specs[i].oz + (r.z0 + r.z1) / 2, d = Math.hypot(cx - g.bike.x, cz - g.bike.z); if (!best || d < best.d) best = { d: d, r: r, ox: specs[i].ox, oz: specs[i].oz }; }
-    if (!best) return null; var r2 = best.r, z = best.oz + (r2.z0 + r2.z1) / 2, x = best.ox + (r2.axis === 'x' ? r2.x0 - 26 : (r2.x0 + r2.x1) / 2), h = r2.axis === 'x' ? Math.PI / 2 : 0;
-    if (r2.axis === 'z') { z = best.oz + r2.z0 - 26; x = best.ox + (r2.x0 + r2.x1) / 2; }
-    g.bike.x = x; g.bike.z = z; g.bike.h = h; g.bike.speed = 20; g.player.x = x; g.player.z = z; return { x: x, z: z, axis: r2.axis };
-  });
-  check('4. found a ramp near the road', !!rp, rp);
-  if (rp) {
-    var air = false;
-    for (var i = 0; i < 160 && !air; i++) {
-      await page.waitForTimeout(40);
-      var st = await W(function () { var b = window.__game.ctx.world.bike; return { air: b.air, airT: b.airT, y: b.y }; });
-      if (st.air) { air = true; await shot('ride_4_air'); }
-    }
-    check('6. the ramp throws the bike into the air', air);
-    await page.waitForTimeout(800); await shot('ride_5_landed');
-  }
+  check('6. the city has no jump ramps', await W(function () { return window.__game.ctx.world.streaming.snapshotSpecs().every(function (sp) { return !sp.ramps.length; }); }));
   /* wall: aim at the nearest building */
   await W(function () { var g = window.__game.ctx.world; g.bike.h = Math.PI; g.bike.speed = 18; });
   await page.keyboard.up('ArrowUp'); await page.waitForTimeout(150);

@@ -380,10 +380,12 @@ test('city: every chunk keeps its boxes and footprints inside it; roadways are c
   }
   assert.strictEqual(citygen.generate(11, 0, 0).ramps.length, 0);
 });
-test('city: streaming with the city keeps within the chunk budget and ground height follows a ramp', function () {
-  var bus = busMod.createBus(), st = streamMod.createStreaming(5, bus, citygen.generate), found = null, cx, cz;
+test('city: no jump ramps in the city; streaming keeps within the chunk budget and ground height follows a ramp when a generator provides one', function () {
+  var bus0 = busMod.createBus(), st0 = streamMod.createStreaming(5, bus0, citygen.generate), q, r2; st0.update(0, 0);
+  for (q = -8; q <= 8; q++) for (r2 = -8; r2 <= 8; r2++) assert.strictEqual(citygen.generate(5, q, r2).ramps.length, 0, 'ramp at ' + q + ',' + r2);
+  var bus = busMod.createBus(), st = streamMod.createStreaming(5, bus), found = null, cx, cz;
   st.update(0, 0);
-  for (cx = -6; cx <= 6 && !found; cx++) for (cz = -6; cz <= 6 && !found; cz++) { var c = citygen.generate(5, cx, cz); if (c.ramps.length) found = c; }
+  for (cx = -6; cx <= 6 && !found; cx++) for (cz = -6; cz <= 6 && !found; cz++) { var c = gen.generateChunk(5, cx, cz); if (c.ramps.length) found = c; }
   assert(found, 'some ramp exists'); st.update(found.ox, found.oz);
   var r = found.ramps[0], mid = (r.z0 + r.z1) / 2;
   assert(st.groundAt(found.ox + r.x0 + 0.1, found.oz + mid) < 0.5); assert(Math.abs(st.groundAt(found.ox + r.x1 - 0.01, found.oz + mid) - r.h) < 0.1);
