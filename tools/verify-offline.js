@@ -21,7 +21,7 @@ var shotDir = process.argv[2] || path.resolve(__dirname, '..', 'dist');
 
   await page.evaluate(function () { window.__game.ctx.world.combat.enabled = false; });      /* the streaming walk must not be interrupted by thugs */
   await page.keyboard.down('KeyD');
-  await page.waitForTimeout(9000);
+  await page.waitForFunction(function () { return window.__game.ctx.world.player.x > 26; }, null, { timeout: 30000 }).catch(function () { });      /* headless software GL runs slower than real time, so wait for the distance, not for seconds */
   await page.keyboard.up('KeyD');
   for (var i = 0; i < 9; i++) { await page.keyboard.down('KeyJ'); await page.waitForTimeout(60); await page.keyboard.up('KeyJ'); await page.waitForTimeout(60); }
   await page.waitForTimeout(500);

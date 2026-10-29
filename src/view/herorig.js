@@ -9,6 +9,8 @@ var hv = require('./herovox');
 
 var D2R = Math.PI / 180, VS = SK.VS;
 var caches = {};
+/* R1: every part of a rig is one skinned mesh (one draw call) instead of ~20 separate meshes. ?skin=0 in the address brings the old per-part meshes back, to compare. */
+var SKIN = !(typeof location !== 'undefined' && /[#?&]skin=0/.test(location.href || ''));
 
 function getTemplate(variant) {
   variant = variant || 'hero';
@@ -35,13 +37,19 @@ function getTemplate(variant) {
 }
 
 function createHeroRig(variant) {
-  var T = getTemplate(variant), root = new THREE.Group(), body = new THREE.Group(), joints = [], meshes = [];
+  var T = getTemplate(variant), root = new THREE.Group(), body = new THREE.Group(), joints = [], meshes = [], skinParts = [];
   root.add(body);
   function G(parent, pos, name) {
-    var g = new THREE.Group(); g.position.set(pos[0] * VS, pos[1] * VS, pos[2] * VS); parent.add(g);
+    var g = SKIN ? new THREE.Bone() : new THREE.Group(); g.position.set(pos[0] * VS, pos[1] * VS, pos[2] * VS); parent.add(g);
     joints.push({ name: name, obj: g, parent: parent }); return g;
   }
-  function M(parent, name) { var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m; }
+  function M(parent, name) {
+    if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
+      if (!(variant === 'thug' && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      return null;
+    }
+    var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
+  }
 
   var hips = G(body, [0, SK.hipY, 0], 'hips'); M(hips, 'pelvis');
   var spine = G(hips, SK.spine, 'spine'); M(spine, 'torso');
@@ -82,6 +90,36 @@ function createHeroRig(variant) {
     o.toe = G(o.ankle, SK.toe, 'toe' + S); M(o.toe, 'toe' + S);
     side[S] = o;
   });
+
+  if (SKIN) buildSkin();
+  function buildSkin() {
+    root.updateMatrixWorld(true);
+    var bones = joints.map(function (j) { return j.obj; });
+    if (!T.skin) {                                                     /* the merged geometry is the same for every rig of this variant: build it once */
+      var vc = 0, ic = 0, i, n;
+      skinParts.forEach(function (p) { var g = T.geo[p.name]; vc += g.attributes.position.count; ic += g.index.count; });
+      var pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), col = new Float32Array(vc * 3), idx = new Uint32Array(ic), si = new Uint16Array(vc * 4), sw = new Float32Array(vc * 4);
+      var vo = 0, io = 0, v = new THREE.Vector3(), nm = new THREE.Matrix3();
+      skinParts.forEach(function (p) {
+        var g = T.geo[p.name], pa = g.attributes.position, na = g.attributes.normal, ca = g.attributes.color, m = p.joint.matrixWorld, bi = bones.indexOf(p.joint);
+        nm.getNormalMatrix(m); n = pa.count;
+        for (i = 0; i < n; i++) {
+          v.fromBufferAttribute(pa, i).applyMatrix4(m); pos[(vo + i) * 3] = v.x; pos[(vo + i) * 3 + 1] = v.y; pos[(vo + i) * 3 + 2] = v.z;
+          v.fromBufferAttribute(na, i).applyMatrix3(nm).normalize(); nor[(vo + i) * 3] = v.x; nor[(vo + i) * 3 + 1] = v.y; nor[(vo + i) * 3 + 2] = v.z;
+          col[(vo + i) * 3] = ca.getX(i); col[(vo + i) * 3 + 1] = ca.getY(i); col[(vo + i) * 3 + 2] = ca.getZ(i);
+          si[(vo + i) * 4] = bi; sw[(vo + i) * 4] = 1;
+        }
+        for (i = 0; i < g.index.count; i++) idx[io + i] = g.index.getX(i) + vo;
+        vo += n; io += g.index.count;
+      });
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4)); geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      T.skin = { geo: geo, mat: new THREE.MeshLambertMaterial({ vertexColors: true, skinning: true }) };
+    }
+    var sm = new THREE.SkinnedMesh(T.skin.geo, T.skin.mat); sm.frustumCulled = false; root.add(sm);
+    sm.bind(new THREE.Skeleton(bones)); meshes.push(sm);
+  }
 
   /* points that must not sink below the floor: [object, local voxel point, radius in voxels] */
   var samples = [];

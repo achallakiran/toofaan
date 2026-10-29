@@ -358,7 +358,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 41',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 42',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -370,6 +370,13 @@ var CONFIG = {
   STREAM_RADIUS: 2,          /* chunks kept loaded around the player: (2r+1)^2 */
   CACHE_SPECS: 30,           /* generated chunk specs kept after unload (cheap data, no GPU memory) */
   BUDGET: { maxLoadedChunks: 25, maxTriangles: 120000, maxDrawCalls: 80 },
+
+  /* quality tiers: phones start on 'low', computers on 'high'. pr = pixel-ratio cap, lod = metres within which fine props show, fogFar = where the world fades out */
+  TIERS: {
+    low: { pr: 1.5, aa: false, lod: 36, fogFar: 78 },
+    medium: { pr: 2, aa: true, lod: 46, fogFar: 85 },
+    high: { pr: 2, aa: true, lod: 52, fogFar: 85 }
+  },
 
   PLAYER: { walkSpeed: 4.0, radius: 0.35, height: 1.9 },
 
@@ -943,7 +950,9 @@ function boot() {
   var bus = busMod.createBus();
   var input = inputMod.createInput();
   var world = worldMod.createWorld(seed, bus);
-  var view = viewMod.createView(document.getElementById('game'));
+  var tierName = params.get('tier');
+  if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
+  var view = viewMod.createView(document.getElementById('game'), tierName);
   var hud = hudMod.createHud(document.getElementById('hud'));
   controls.attachKeyboard(input, window);
   var touch = controls.attachTouch(input, document.getElementById('touch'));
@@ -1256,7 +1265,7 @@ function createFreeroam() {
         tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
         tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
       } else tg.box.style.display = 'none';
-      ctx.view.updateLod(x, z, 52);
+      ctx.view.updateLod(x, z, ctx.view.tier.lod);
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
@@ -1266,7 +1275,7 @@ function createFreeroam() {
         ctx.hud.update({
           mode: 'street test', tick: ctx.world.tick, chunks: st.loadedCount(), maxChunks: ctx.config.BUDGET.maxLoadedChunks,
           triangles: vs.triangles, calls: vs.calls, bytes: vs.bytes, loads: st.stats.loads, unloads: st.stats.unloads,
-          saveOk: ctx.save.persistent(), rage: p.rage
+          saveOk: ctx.save.persistent(), rage: p.rage, ms: vs.ms, tier: vs.tier
         });
         ctx.touch.setFinisherVisible(p.rage >= 100);
       }
@@ -2790,12 +2799,14 @@ defs["view/app"]=function(module,exports,require){
 var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
 
-function createView(canvas) {
-  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+function createView(canvas, tierName) {
+  var tier = CONFIG.TIERS[tierName] || CONFIG.TIERS.high, tierId = CONFIG.TIERS[tierName] ? tierName : 'high';
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: tier.aa, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, tier.pr));
+  var lastT = 0, frameMs = 16;
   var scene = new THREE.Scene();
   scene.background = new THREE.Color('#9fb6c9');
-  scene.fog = new THREE.Fog('#9fb6c9', 40, 85);
+  scene.fog = new THREE.Fog('#9fb6c9', 40, tier.fogFar);
   var camera = new THREE.PerspectiveCamera(46, 1, 0.05, 140);
   var hemi = new THREE.HemisphereLight('#dfeaff', '#7a6a58', 0.85); scene.add(hemi);
   var sun = new THREE.DirectionalLight('#fff3dc', 0.75); sun.position.set(-20, 40, 15); scene.add(sun);
@@ -2810,10 +2821,11 @@ function createView(canvas) {
   window.addEventListener('resize', resize); resize();
 
   return {
+    tier: tier, tierId: tierId,
     scene: scene, camera: camera, renderer: renderer, canvas: canvas,
     /* mode-specific look. fog:false for the studio */
     setSky: function (color, fog) {
-      scene.background.set(color); scene.fog.color.set(color); scene.fog.near = fog ? 40 : 500; scene.fog.far = fog ? 85 : 900;
+      scene.background.set(color); scene.fog.color.set(color); scene.fog.near = fog ? 40 : 500; scene.fog.far = fog ? tier.fogFar : 900;
       hemi.intensity = fog ? 0.85 : 0.95; sun.intensity = fog ? 0.75 : 0.8;
     },
     addChunk: function (spec) {
@@ -2846,10 +2858,13 @@ function createView(canvas) {
       camera.position.set(shot.x, shot.y, shot.z); camera.lookAt(shot.lx, shot.ly, shot.lz);
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }
     },
-    render: function () { renderer.render(scene, camera); },
+    render: function () {
+      var n = performance.now(); if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      renderer.render(scene, camera);
+    },
     stats: function () {
       var i = renderer.info;
-      return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries };
+      return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries, ms: frameMs, tier: tierId };
     },
     resize: resize,
     dispose: function () {
@@ -3453,6 +3468,8 @@ var hv = require('./herovox');
 
 var D2R = Math.PI / 180, VS = SK.VS;
 var caches = {};
+/* R1: every part of a rig is one skinned mesh (one draw call) instead of ~20 separate meshes. ?skin=0 in the address brings the old per-part meshes back, to compare. */
+var SKIN = !(typeof location !== 'undefined' && /[#?&]skin=0/.test(location.href || ''));
 
 function getTemplate(variant) {
   variant = variant || 'hero';
@@ -3479,13 +3496,19 @@ function getTemplate(variant) {
 }
 
 function createHeroRig(variant) {
-  var T = getTemplate(variant), root = new THREE.Group(), body = new THREE.Group(), joints = [], meshes = [];
+  var T = getTemplate(variant), root = new THREE.Group(), body = new THREE.Group(), joints = [], meshes = [], skinParts = [];
   root.add(body);
   function G(parent, pos, name) {
-    var g = new THREE.Group(); g.position.set(pos[0] * VS, pos[1] * VS, pos[2] * VS); parent.add(g);
+    var g = SKIN ? new THREE.Bone() : new THREE.Group(); g.position.set(pos[0] * VS, pos[1] * VS, pos[2] * VS); parent.add(g);
     joints.push({ name: name, obj: g, parent: parent }); return g;
   }
-  function M(parent, name) { var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m; }
+  function M(parent, name) {
+    if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
+      if (!(variant === 'thug' && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      return null;
+    }
+    var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
+  }
 
   var hips = G(body, [0, SK.hipY, 0], 'hips'); M(hips, 'pelvis');
   var spine = G(hips, SK.spine, 'spine'); M(spine, 'torso');
@@ -3526,6 +3549,36 @@ function createHeroRig(variant) {
     o.toe = G(o.ankle, SK.toe, 'toe' + S); M(o.toe, 'toe' + S);
     side[S] = o;
   });
+
+  if (SKIN) buildSkin();
+  function buildSkin() {
+    root.updateMatrixWorld(true);
+    var bones = joints.map(function (j) { return j.obj; });
+    if (!T.skin) {                                                     /* the merged geometry is the same for every rig of this variant: build it once */
+      var vc = 0, ic = 0, i, n;
+      skinParts.forEach(function (p) { var g = T.geo[p.name]; vc += g.attributes.position.count; ic += g.index.count; });
+      var pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), col = new Float32Array(vc * 3), idx = new Uint32Array(ic), si = new Uint16Array(vc * 4), sw = new Float32Array(vc * 4);
+      var vo = 0, io = 0, v = new THREE.Vector3(), nm = new THREE.Matrix3();
+      skinParts.forEach(function (p) {
+        var g = T.geo[p.name], pa = g.attributes.position, na = g.attributes.normal, ca = g.attributes.color, m = p.joint.matrixWorld, bi = bones.indexOf(p.joint);
+        nm.getNormalMatrix(m); n = pa.count;
+        for (i = 0; i < n; i++) {
+          v.fromBufferAttribute(pa, i).applyMatrix4(m); pos[(vo + i) * 3] = v.x; pos[(vo + i) * 3 + 1] = v.y; pos[(vo + i) * 3 + 2] = v.z;
+          v.fromBufferAttribute(na, i).applyMatrix3(nm).normalize(); nor[(vo + i) * 3] = v.x; nor[(vo + i) * 3 + 1] = v.y; nor[(vo + i) * 3 + 2] = v.z;
+          col[(vo + i) * 3] = ca.getX(i); col[(vo + i) * 3 + 1] = ca.getY(i); col[(vo + i) * 3 + 2] = ca.getZ(i);
+          si[(vo + i) * 4] = bi; sw[(vo + i) * 4] = 1;
+        }
+        for (i = 0; i < g.index.count; i++) idx[io + i] = g.index.getX(i) + vo;
+        vo += n; io += g.index.count;
+      });
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4)); geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      T.skin = { geo: geo, mat: new THREE.MeshLambertMaterial({ vertexColors: true, skinning: true }) };
+    }
+    var sm = new THREE.SkinnedMesh(T.skin.geo, T.skin.mat); sm.frustumCulled = false; root.add(sm);
+    sm.bind(new THREE.Skeleton(bones)); meshes.push(sm);
+  }
 
   /* points that must not sink below the floor: [object, local voxel point, radius in voxels] */
   var samples = [];
@@ -4029,13 +4082,14 @@ function createHud(root) {
     '<div class="row"><b>Chunks</b><i id="hChunks">0</i></div>' +
     '<div class="row"><b>Triangles</b><i id="hTri">0</i></div>' +
     '<div class="row"><b>Draw calls</b><i id="hCalls">0</i></div>' +
+    '<div class="row"><b>Frame</b><i id="hMs">-</i></div>' +
     '<div class="row"><b>Geometry</b><i id="hMem">0</i></div>' +
     '<div class="row"><b>Loads / unloads</b><i id="hLoads">0 / 0</i></div>' +
     '<div class="row"><b>Storage</b><i id="hSave">-</i></div>' +
     '<div class="bar" title="Rage"><div id="hRage"></div></div>' +
     '</div>';
   var el = {};
-  ['hMode', 'hTick', 'hChunks', 'hTri', 'hCalls', 'hMem', 'hLoads', 'hSave', 'hRage'].forEach(function (id) { el[id] = root.querySelector('#' + id); });
+  ['hMode', 'hTick', 'hChunks', 'hTri', 'hCalls', 'hMs', 'hMem', 'hLoads', 'hSave', 'hRage'].forEach(function (id) { el[id] = root.querySelector('#' + id); });
   function kb(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'; }
   return {
     update: function (s) {
@@ -4043,6 +4097,7 @@ function createHud(root) {
       el.hChunks.textContent = s.chunks + ' / ' + s.maxChunks;
       el.hTri.textContent = s.triangles.toLocaleString();
       el.hCalls.textContent = s.calls;
+      if (s.ms) el.hMs.textContent = s.ms.toFixed(1) + ' ms (' + Math.round(1000 / s.ms) + ' fps) ' + s.tier;
       el.hMem.textContent = kb(s.bytes);
       el.hLoads.textContent = s.loads + ' / ' + s.unloads;
       el.hSave.textContent = s.saveOk ? 'saved on device' : 'in memory only';

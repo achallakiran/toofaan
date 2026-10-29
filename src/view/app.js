@@ -4,12 +4,14 @@
 var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
 
-function createView(canvas) {
-  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+function createView(canvas, tierName) {
+  var tier = CONFIG.TIERS[tierName] || CONFIG.TIERS.high, tierId = CONFIG.TIERS[tierName] ? tierName : 'high';
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: tier.aa, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, tier.pr));
+  var lastT = 0, frameMs = 16;
   var scene = new THREE.Scene();
   scene.background = new THREE.Color('#9fb6c9');
-  scene.fog = new THREE.Fog('#9fb6c9', 40, 85);
+  scene.fog = new THREE.Fog('#9fb6c9', 40, tier.fogFar);
   var camera = new THREE.PerspectiveCamera(46, 1, 0.05, 140);
   var hemi = new THREE.HemisphereLight('#dfeaff', '#7a6a58', 0.85); scene.add(hemi);
   var sun = new THREE.DirectionalLight('#fff3dc', 0.75); sun.position.set(-20, 40, 15); scene.add(sun);
@@ -24,10 +26,11 @@ function createView(canvas) {
   window.addEventListener('resize', resize); resize();
 
   return {
+    tier: tier, tierId: tierId,
     scene: scene, camera: camera, renderer: renderer, canvas: canvas,
     /* mode-specific look. fog:false for the studio */
     setSky: function (color, fog) {
-      scene.background.set(color); scene.fog.color.set(color); scene.fog.near = fog ? 40 : 500; scene.fog.far = fog ? 85 : 900;
+      scene.background.set(color); scene.fog.color.set(color); scene.fog.near = fog ? 40 : 500; scene.fog.far = fog ? tier.fogFar : 900;
       hemi.intensity = fog ? 0.85 : 0.95; sun.intensity = fog ? 0.75 : 0.8;
     },
     addChunk: function (spec) {
@@ -60,10 +63,13 @@ function createView(canvas) {
       camera.position.set(shot.x, shot.y, shot.z); camera.lookAt(shot.lx, shot.ly, shot.lz);
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }
     },
-    render: function () { renderer.render(scene, camera); },
+    render: function () {
+      var n = performance.now(); if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      renderer.render(scene, camera);
+    },
     stats: function () {
       var i = renderer.info;
-      return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries };
+      return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries, ms: frameMs, tier: tierId };
     },
     resize: resize,
     dispose: function () {

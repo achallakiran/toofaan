@@ -2,7 +2,7 @@
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 41',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 42',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -14,6 +14,13 @@ var CONFIG = {
   STREAM_RADIUS: 2,          /* chunks kept loaded around the player: (2r+1)^2 */
   CACHE_SPECS: 30,           /* generated chunk specs kept after unload (cheap data, no GPU memory) */
   BUDGET: { maxLoadedChunks: 25, maxTriangles: 120000, maxDrawCalls: 80 },
+
+  /* quality tiers: phones start on 'low', computers on 'high'. pr = pixel-ratio cap, lod = metres within which fine props show, fogFar = where the world fades out */
+  TIERS: {
+    low: { pr: 1.5, aa: false, lod: 36, fogFar: 78 },
+    medium: { pr: 2, aa: true, lod: 46, fogFar: 85 },
+    high: { pr: 2, aa: true, lod: 52, fogFar: 85 }
+  },
 
   PLAYER: { walkSpeed: 4.0, radius: 0.35, height: 1.9 },
 

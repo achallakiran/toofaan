@@ -272,7 +272,7 @@ function createFreeroam() {
         tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
         tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
       } else tg.box.style.display = 'none';
-      ctx.view.updateLod(x, z, 52);
+      ctx.view.updateLod(x, z, ctx.view.tier.lod);
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
@@ -282,7 +282,7 @@ function createFreeroam() {
         ctx.hud.update({
           mode: 'street test', tick: ctx.world.tick, chunks: st.loadedCount(), maxChunks: ctx.config.BUDGET.maxLoadedChunks,
           triangles: vs.triangles, calls: vs.calls, bytes: vs.bytes, loads: st.stats.loads, unloads: st.stats.unloads,
-          saveOk: ctx.save.persistent(), rage: p.rage
+          saveOk: ctx.save.persistent(), rage: p.rage, ms: vs.ms, tier: vs.tier
         });
         ctx.touch.setFinisherVisible(p.rage >= 100);
       }

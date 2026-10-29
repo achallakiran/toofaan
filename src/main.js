@@ -26,7 +26,9 @@ function boot() {
   var bus = busMod.createBus();
   var input = inputMod.createInput();
   var world = worldMod.createWorld(seed, bus);
-  var view = viewMod.createView(document.getElementById('game'));
+  var tierName = params.get('tier');
+  if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
+  var view = viewMod.createView(document.getElementById('game'), tierName);
   var hud = hudMod.createHud(document.getElementById('hud'));
   controls.attachKeyboard(input, window);
   var touch = controls.attachTouch(input, document.getElementById('touch'));
