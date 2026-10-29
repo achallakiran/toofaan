@@ -1,6 +1,7 @@
 /* modes: Street test. Walk the streamed street with the real hero rig. Locomotion is time-based
    until move clips arrive; attacks play the keyframed combo (jab, cross, knee, elbow, roundhouse); the rage finisher is a guitar whirl with a cinematic camera. */
 'use strict';
+var AIM_SIGN = 1;
 
 var worldMod = require('../sim/world');
 var herorig = require('../view/herorig');
@@ -169,10 +170,15 @@ function createFreeroam() {
       B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
       var rideP = null;
       if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
-      if (S.mountW > 0.5) {                     /* blows and guard from the saddle: the upper body only, turned toward the man; the legs stay on the pegs */
-        var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), side = Math.max(-1.1, Math.min(1.1, ctx.world.rideSide || 0));
-        if (mo) { var up2 = {}, k2; for (k2 in mo.pose) up2[k2] = mo.pose[k2]; up2['spine.ry'] = (up2['spine.ry'] || 0) + side * 38; pose = posemath.layer(pose, up2, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
+      if (S.mountW > 0.5) {                     /* in the saddle he turns shoulders and head to the nearest man; blows and guard are layered on, legs stay on the pegs */
+        var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), en2 = ctx.world.combat.enemies, nd = 7, nb = 0, qi;
+        for (qi = 0; qi < en2.length; qi++) { var ee = en2[qi]; if (ee.dead || ee.st === 'dead') continue; var dd2 = Math.hypot(ee.x - bk.x, ee.z - bk.z); if (dd2 < nd) { nd = dd2; nb = Math.atan2(ee.x - bk.x, ee.z - bk.z) - bk.h; nb = Math.atan2(Math.sin(nb), Math.cos(nb)); } }
+        var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
+        S.aim = (S.aim || 0) + (aimT - (S.aim || 0)) * (1 - Math.exp(-10 * dt));
+        var tw = {}; tw['spine.ry'] = S.aim * 0.5; tw['neck.ry'] = S.aim * 0.2; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1;
+        if (mo) { pose = posemath.layer(pose, mo.pose, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
         else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, 0, bw2, 0); }          /* one forearm up across the head, the other hand stays on the bar */
+        tw['spine.ry'] += pose['spine.ry'] || 0; tw['neck.ry'] += pose['neck.ry'] || 0; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1; pose = posemath.layer(pose, tw, 1, fw, 0, 0);
       }
       S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
       S.fx.update(dt);
