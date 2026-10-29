@@ -20,7 +20,7 @@ function frame(spec, axis) {                                  /* axis 'x': road 
   function B(u0, y0, v0, u1, y1, v1, c) {
     var a = Math.max(-LIM, Math.min(u0, u1)), b = Math.min(LIM, Math.max(u0, u1)), d = Math.max(-LIM, Math.min(v0, v1)), e = Math.min(LIM, Math.max(v0, v1));
     if (b - a < 0.02 || e - d < 0.02) return;
-    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c });
+    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c, d: 1 } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c, d: 1 });
   }
   function S(u0, v0, u1, v1, y1) {                              /* a solid footprint */
     var a = Math.min(u0, u1), b = Math.max(u0, u1), d = Math.min(v0, v1), e = Math.max(v0, v1);
@@ -80,6 +80,8 @@ function facade(f, rng, b, side, shops) {
     signboard(f, rng, b.u0 + 0.3, b.u1 - 0.3, 2.65, fv, out, 0.22);
     if (rng.chance(0.55)) { var c1 = pick(rng, BRIGHT), c2 = pick(rng, BRIGHT); f.B(b.u0 + 0.5, 2.3, fv, b.u0 + 0.5 + (w - 1) / 2, 2.45, fv + out * 1.15, c1); f.B(b.u0 + 0.5 + (w - 1) / 2, 2.3, fv, b.u1 - 0.5, 2.45, fv + out * 1.15, c2); }
   }
+  f.B(b.u0 - 0.1, h, fv - out * 0.05, b.u1 + 0.1, h + 0.55, fv + out * 0.3, P.CONCRETE);                                                  /* parapet */
+  f.B(b.u0 - 0.05, shops ? 3.7 : 2.6, fv, b.u1 + 0.05, shops ? 3.95 : 2.85, fv + out * 0.12, pick(rng, BRIGHT));                              /* a painted band above the shops */
   var rows = 0; y = shops ? 4.2 : 3.0;
   while (y + 2 < h && rows < 3) {
     n = Math.min(3, Math.floor(w / 2.6));
@@ -101,6 +103,32 @@ function facade(f, rng, b, side, shops) {
     f.B(b.u0 + 0.3, h, fv + out * 0.1, b.u0 + 0.3 + hw, h + 2.6, fv + out * 0.34, c); f.B(b.u0 + 0.7, h + 0.5, fv + out * 0.34, b.u0 + 0.3 + hw - 0.4, h + 2.0, fv + out * 0.38, pick(rng, [P.CREAM, P.WHITE, P.YELLOW]));
   }
   if (rng.chance(0.3)) { u = b.u0 + rng.range(0.5, w - 0.5); f.B(u, h, b.vm, u + 0.08, h + 2.2, b.vm + 0.08, P.BLACK); }                                  /* antenna */
+}
+
+/* trees, roadside shrines and strings of bunting: the life between the buildings */
+function trees(f, rng, half, len) {
+  var u, side, k;
+  for (side = -1; side <= 1; side += 2) for (u = -len + rng.range(1, 5); u < len; u += rng.range(9, 15)) {
+    if (rng.chance(0.35)) continue;
+    var v = side * (half + 1.55), h = rng.range(2.4, 3.4), g = pick(rng, [6, 36, 37, 6]);
+    f.B(u - 0.14, 0, v - 0.14, u + 0.14, h, v + 0.14, 7); f.S(u - 0.14, v - 0.14, u + 0.14, v + 0.14, h);
+    f.B(u - 1.3, h, v - 1.3, u + 1.3, h + 1.0, v + 1.3, g); f.B(u - 1.0, h + 1.0, v - 1.0, u + 1.0, h + 1.8, v + 1.0, g); f.B(u - 0.55, h + 1.8, v - 0.55, u + 0.55, h + 2.3, v + 0.55, g);
+    f.B(u - 0.4, 0, v - 0.4, u + 0.4, 0.25, v + 0.4, P.CONCRETE);
+  }
+  if (rng.chance(0.55)) {
+    var us = rng.range(-len + 3, len - 3), sv = rng.chance(0.5) ? 1 : -1, vs = sv * (half + 2.0);
+    f.B(us - 0.6, 0, vs - 0.6, us + 0.6, 0.5, vs + 0.6, P.CONCRETE); f.B(us - 0.45, 0.5, vs - 0.45, us + 0.45, 1.5, vs + 0.45, P.SAFFRON); f.B(us - 0.55, 1.5, vs - 0.55, us + 0.55, 1.7, vs + 0.55, P.RED);
+    f.B(us - 0.25, 1.7, vs - 0.25, us + 0.25, 2.2, vs + 0.25, P.SAFFRON); f.B(us - 0.05, 2.2, vs - 0.05, us + 0.05, 2.9, vs + 0.05, P.BLACK); f.B(us + 0.05, 2.5, vs - 0.03, us + 0.55, 2.9, vs + 0.03, P.RED);
+    f.B(us - 0.4, 0.5, vs + sv * -0.5, us + 0.4, 0.62, vs - sv * 0.45, 29); f.S(us - 0.6, vs - 0.6, us + 0.6, vs + 0.6, 2.9);
+  }
+}
+function bunting(f, rng, half) {
+  var n = rng.int(1, 2), i, k;
+  for (i = 0; i < n; i++) {
+    var u = rng.range(-12, 12), cols = [P.SAFFRON, P.MAGENTA, P.TEAL, P.LIME, P.YELLOW, P.RED];
+    f.B(u, 5.4, -half - 1.7, u + 0.05, 5.45, half + 1.9, P.BLACK);
+    for (k = -half - 1; k < half + 1; k += 0.8) { var sag = 0.25 * Math.abs(Math.sin((k + half) * 0.26)); f.B(u - 0.12, 5.4 - 0.4 - sag, k, u + 0.17, 5.4 - sag, k + 0.4, cols[Math.floor((k + 20) / 0.8) % 6]); }
+  }
 }
 
 function poles(f, rng, half, len) {
@@ -144,7 +172,7 @@ function decorate(spec, seed, cx, cz, kind) {
     var s = bl[j], u0 = axis === 'x' ? s.x0 : s.z0, u1 = axis === 'x' ? s.x1 : s.z1, v0 = axis === 'x' ? s.z0 : s.x0, v1 = axis === 'x' ? s.z1 : s.x1;
     facade(f, rng, { u0: u0, u1: u1, v0: v0, v1: v1, vm: (v0 + v1) / 2, h: s.y1 }, v0 > 0 ? 1 : -1, true);
   }
-  poles(f, rng, half, len); stalls(f, rng, half, len);
+  poles(f, rng, half, len); stalls(f, rng, half, len); trees(f, rng, half, len); bunting(f, rng, half);
   return spec;
 }
 

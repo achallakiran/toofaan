@@ -272,6 +272,7 @@ function createFreeroam() {
         tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
         tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
       } else tg.box.style.display = 'none';
+      ctx.view.updateLod(x, z, 52);
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;

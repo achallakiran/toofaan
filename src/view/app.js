@@ -32,20 +32,27 @@ function createView(canvas) {
     },
     addChunk: function (spec) {
       if (chunks[spec.key]) return;
-      var a = boxmesh.boxesToArrays(spec.boxes, CONFIG.PALETTE);
-      var g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
-      g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3));
-      g.setIndex(new THREE.BufferAttribute(a.indices, 1));
-      var m = new THREE.Mesh(g, chunkMat);
-      m.position.set(spec.ox, 0, spec.oz);
-      g.computeBoundingSphere();
-      scene.add(m); chunks[spec.key] = { mesh: m, bytes: a.bytes }; chunkBytes += a.bytes;
+      /* the structure (ground, walls, big shapes) is always drawn; the fine detail (signs, balconies, trees, wires...) is a second mesh drawn only when near */
+      var main = [], fine = [], i;
+      for (i = 0; i < spec.boxes.length; i++) (spec.boxes[i].d ? fine : main).push(spec.boxes[i]);
+      function build(list) {
+        var a = boxmesh.boxesToArrays(list, CONFIG.PALETTE), g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+        g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3));
+        g.setIndex(new THREE.BufferAttribute(a.indices, 1));
+        var m = new THREE.Mesh(g, chunkMat); m.position.set(spec.ox, 0, spec.oz); g.computeBoundingSphere(); scene.add(m); return { m: m, bytes: a.bytes };
+      }
+      var A = build(main), Bf = fine.length ? build(fine) : null;
+      chunks[spec.key] = { mesh: A.m, fine: Bf && Bf.m, ox: spec.ox, oz: spec.oz, bytes: A.bytes + (Bf ? Bf.bytes : 0) }; chunkBytes += chunks[spec.key].bytes;
     },
     removeChunk: function (key) {
       var c = chunks[key]; if (!c) return;
-      scene.remove(c.mesh); c.mesh.geometry.dispose(); chunkBytes -= c.bytes; delete chunks[key];
+      scene.remove(c.mesh); c.mesh.geometry.dispose(); if (c.fine) { scene.remove(c.fine); c.fine.geometry.dispose(); } chunkBytes -= c.bytes; delete chunks[key];
+    },
+    /* near-detail LOD: fine meshes show only within `r` metres of the focus (the fog hides everything past ~85 m anyway) */
+    updateLod: function (fx, fz, r) {
+      var k, c, d; for (k in chunks) { c = chunks[k]; if (!c.fine) continue; d = Math.hypot(c.ox - fx, c.oz - fz); c.fine.visible = d < r; }
     },
     clearChunks: function () { for (var k in chunks) this.removeChunk(k); },
     followCamera: function (x, z, shot) {

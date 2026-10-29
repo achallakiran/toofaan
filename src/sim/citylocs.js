@@ -27,7 +27,7 @@ function frame(spec, axis, side) {                    /* (u along the road, w = 
     var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
     if (d > e) { t = d; d = e; e = t; }
     if (b - a < 0.02 || e - d < 0.02) return;
-    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c });
+    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c, d: 1 } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c, d: 1 });
   }
   function S(u0, w0, u1, w1, y1) {
     var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
