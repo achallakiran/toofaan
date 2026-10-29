@@ -99,6 +99,7 @@ function createSfx() {
     engineOff: function () { if (eng.scrubG && ac) eng.scrubG.gain.setTargetAtTime(0, ac.currentTime, 0.05); eng.acc = 0; },
     shift: function () { if (!on || !ctx()) return; burst(0.03, 0.35, 'highpass', 2500, 1800, 0); thump(180, 90, 0.05, 0.3); },
     start: function () { if (!on || !ctx()) return; var i; for (i = 0; i < 5; i++) { thump(70, 40, 0.1, 0.5, i * 0.11); burst(0.06, 0.25, 'lowpass', 600, 200, i * 0.11); } },
+    honk: function () { if (!on || !ctx()) return; var t = ac.currentTime, f = [392, 466][Math.random() < 0.5 ? 0 : 1], k; for (k = 0; k < 2; k++) { var o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f * (1 + k * 0.5); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.02); g.gain.setValueAtTime(0.09, t + 0.28); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.36); } },
     land: function (vy) { if (!on || !ctx()) return; var p = Math.min(1, vy / 10); thump(70, 28, 0.3, 0.7 + p * 0.6); burst(0.18, 0.3 + p * 0.3, 'lowpass', 1500, 200); },
     crash: function (hard) { if (!on || !ctx()) return; thump(80, 25, hard ? 0.7 : 0.35, hard ? 1.5 : 0.9); burst(hard ? 0.5 : 0.25, hard ? 0.9 : 0.5, 'lowpass', 2200, 120); burst(0.12, 0.7, 'highpass', 2600, 1200, 0.02); if (hard) { burst(0.35, 0.5, 'bandpass', 3000, 900, 0.08, 2); } },
     roll: function () { if (!on || !ctx()) return; burst(0.3, 0.4, 'bandpass', 500, 2400, 0, 1.4); thump(130, 60, 0.15, 0.6, 0.02); this.twang(); },

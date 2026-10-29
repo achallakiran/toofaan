@@ -4,6 +4,8 @@
 var AIM_SIGN = 1;
 
 var worldMod = require('../sim/world');
+var ambient = require('../view/ambientvox');
+var trafficData = require('../data/traffic');
 var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 var moveplayer = require('../view/moveplayer');
@@ -41,6 +43,7 @@ function createFreeroam() {
       S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
       scope.add(function () { view.scene.remove(S.rig.root); });
       S.bike = bikevox.createBike(); view.scene.add(S.bike.root); scope.add(function () { view.scene.remove(S.bike.root); });
+      S.amb = {}; scope.add(function () { Object.keys(S.amb).forEach(function (k) { view.scene.remove(S.amb[k]); }); S.amb = {}; ambient.dispose(); });
       S.rc = ridecam.createRideCam(); S.mountW = ctx.world.mounted ? 1 : 0; S.wheelA = 0; S.bPrev = null; S.flash = null; S.flashT = 0; S.rideHint = '';
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
@@ -62,9 +65,16 @@ function createFreeroam() {
         el.style.cssText = 'position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:700 12px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000';
         el.innerHTML = '<div id="rdFlash" style="font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;height:36px;opacity:0;transition:opacity .25s"></div><div id="rdSpeed" style="font:900 26px system-ui,sans-serif;display:none"></div><div id="rdBoost" style="width:150px;height:6px;margin:4px auto;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;display:none"><div style="height:100%;width:100%;background:linear-gradient(90deg,#ffc21a,#ff6a3d)"></div></div><div id="rdHint" style="font-weight:600;opacity:.9"></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
+        var tg = document.createElement('div');
+        tg.style.cssText = 'position:fixed;left:50%;top:max(96px,env(safe-area-inset-top));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:800 13px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000;display:none';
+        tg.innerHTML = '<span id="tgArrow" style="display:inline-block;font-size:20px;color:#ffc21a;margin-right:8px">&#9650;</span><span id="tgText"></span>';
+        document.body.appendChild(tg); scope.add(function () { tg.remove(); });
+        S.tg = { box: tg, arrow: tg.querySelector('#tgArrow'), text: tg.querySelector('#tgText') };
         S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
       })();
       function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
+      scope.add(ctx.bus.on('npc:honk', function () { S.sfx.honk(); }));
+      scope.add(ctx.bus.on('npc:bump', function (e) { S.sfx.hit('jab', 0.4); S.cine.shake(0.04, 0.15); }));
       scope.add(ctx.bus.on('ride:bump', function (e) { S.sfx.land(2 + e.power * 6); S.cine.shake(0.03 + 0.07 * e.power, 0.18); }));
       scope.add(ctx.bus.on('ride:mount', function () { S.mp.cancel(); S.sfx.start(); }));
       scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
@@ -244,6 +254,24 @@ function createFreeroam() {
       u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
       if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h'; u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
       if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
+      /* the street's people and vehicles: meshes follow the sim's list, interpolated */
+      var tl = ctx.world.traffic.list, seen = {}, ti;
+      for (ti = 0; ti < tl.length; ti++) {
+        var te = tl[ti], tm = S.amb[te.id]; seen[te.id] = 1;
+        if (!tm) { tm = S.amb[te.id] = ambient.createMesh(te); ctx.view.scene.add(tm); }
+        var tk = trafficData.KINDS[te.kind], tdh = Math.atan2(Math.sin(te.h - te.ph), Math.cos(te.h - te.ph)), bob = 0, sway = 0;
+        if (te.kind === 'ped') { bob = Math.abs(Math.sin(te.phase)) * 0.05; sway = Math.sin(te.phase) * 0.06; } else if (te.kind === 'dog') bob = Math.abs(Math.sin(te.phase)) * 0.04; else if (tk.kind === 'veh' && te.v > 0.5) bob = Math.sin(S.t * 22 + te.id) * 0.008;
+        tm.position.set(te.px + (te.x - te.px) * alpha, bob, te.pz + (te.z - te.pz) * alpha); tm.rotation.y = te.ph + tdh * alpha;
+        tm.rotation.z = te.state === 'down' ? 1.45 : sway; tm.position.y += te.state === 'down' ? 0.25 : 0;
+      }
+      for (var tid in S.amb) if (!seen[tid]) { ctx.view.scene.remove(S.amb[tid]); delete S.amb[tid]; }
+      /* where the next fight is */
+      var nx = ctx.world.locs.next, tg = S.tg;
+      if (nx && !ctx.world.locs.active) {
+        var tdx = nx.x - p.x, tdz = nx.z - p.z, td = Math.hypot(tdx, tdz), rel = Math.atan2(tdx, tdz) - (mounted ? bh : S.camYaw || Math.PI);
+        tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
+        tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
+      } else tg.box.style.display = 'none';
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;

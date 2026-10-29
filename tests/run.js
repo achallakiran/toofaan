@@ -374,8 +374,8 @@ test('city: every chunk keeps its boxes and footprints inside it; roadways are c
     var c = citygen.generate(11, cx, cz);
     assert(c.boxes.every(function (b) { return b.x0 >= -S - 1e-6 && b.x1 <= S + 1e-6 && b.z0 >= -S - 1e-6 && b.z1 <= S + 1e-6; }), 'box outside ' + c.key);
     assert(c.solids.every(function (q) { return q.x0 >= -S - 1e-6 && q.x1 <= S + 1e-6 && q.z0 >= -S - 1e-6 && q.z1 <= S + 1e-6; }), 'footprint outside ' + c.key);
-    if (c.kind === 'roadH') assert(c.solids.every(function (q) { return q.z0 >= 7.3 || q.z1 <= -7.3; }), 'footprint in the roadway ' + c.key);
-    if (c.kind === 'roadV') assert(c.solids.every(function (q) { return q.x0 >= 7.3 || q.x1 <= -7.3; }), 'footprint in the roadway ' + c.key);
+    if (c.kind === 'roadH' && !(c.loc && !c.loc.side)) assert(c.solids.every(function (q) { return q.z0 >= 7.3 || q.z1 <= -7.3; }), 'footprint in the roadway ' + c.key);
+    if (c.kind === 'roadV' && !(c.loc && !c.loc.side)) assert(c.solids.every(function (q) { return q.x0 >= 7.3 || q.x1 <= -7.3; }), 'footprint in the roadway ' + c.key);
     if (c.kind === 'cross') assert(c.solids.every(function (q) { return (q.x0 >= 7 || q.x1 <= -7) && (q.z0 >= 7 || q.z1 <= -7); }), 'footprint in the junction');
   }
   assert.strictEqual(citygen.generate(11, 0, 0).ramps.length, 0);
@@ -490,6 +490,53 @@ test('city detail: road chunks carry potholes and speed breakers inside the chun
   var b = bikeMod.createBike(0, 0, Math.PI / 2), bumps = 0, bus = busMod.createBus(), vmax = 0, vAfter = 0; bus.on('ride:bump', function () { bumps++; });
   for (var i = 0; i < 1500; i++) { bikeMod.step(b, GO, env, 1 / 60, bus); if (b.x < 40) vmax = b.speed; if (b.x > 42 && !vAfter) vAfter = b.speed; }
   assert(bumps >= 2 && vAfter < vmax, 'bumps ' + bumps + ' before ' + vmax + ' after ' + vAfter);
+});
+test('locations: forced ones sit near the start, are deterministic, stay inside the chunk and leave the road passable', function () {
+  var locsMod = req('sim/citylocs'), loc = req('data/locations');
+  ['2,0', '-1,0', '3,0', '1,1', '1,-1', '-3,0'].forEach(function (k) { var a = k.split(','), c = citygen.generate(5, +a[0], +a[1]); assert(c.loc && c.loc.type === loc.FORCED[k], k + ' ' + (c.loc && c.loc.type)); assert.deepStrictEqual(c.loc, citygen.generate(5, +a[0], +a[1]).loc); });
+  var types = {}, n = 0, cx, cz;
+  for (cx = -12; cx <= 12; cx++) for (cz = -12; cz <= 12; cz++) {
+    var c = citygen.generate(9, cx, cz); if (!c.loc) continue; n++; types[c.loc.type] = 1;
+    assert.strictEqual(c.loc.spawns.length, c.loc.n);
+    c.boxes.forEach(function (b) { assert(b.x0 >= -16 - 1e-6 && b.x1 <= 16 + 1e-6 && b.z0 >= -16 - 1e-6 && b.z1 <= 16 + 1e-6, 'box outside ' + c.key); });
+    var lane = c.loc.axis === 'x' ? function (q) { return q.z1 > -5.5 && q.z0 < 5.5 && q.x1 > -16; } : function (q) { return q.x1 > -5.5 && q.x0 < 5.5 && q.z1 > -16; };
+    var inRoad = c.solids.filter(lane).filter(function (q) { return q.y1 > 0.5; });
+    var spans = []; inRoad.forEach(function (q) { var a = c.loc.axis === 'x' ? [q.z0, q.z1] : [q.x0, q.x1]; spans.push([Math.max(-6, a[0]), Math.min(6, a[1])]); });
+    spans.sort(function (a, b) { return a[0] - b[0]; }); var edge = -6, gap = 0; spans.forEach(function (s2) { gap = Math.max(gap, s2[0] - edge); edge = Math.max(edge, s2[1]); }); gap = Math.max(gap, 6 - edge);
+    assert(gap >= 1.6 || spans.length === 0, 'a bike can pass ' + c.key + ' ' + c.loc.type + ' gap ' + gap);
+  }
+  assert(n > 20 && Object.keys(types).length >= 8, 'variety ' + n + ' ' + Object.keys(types).join());
+});
+test('traffic: vehicles appear on the lanes (left-hand side), stop for the bike, and the same run gives the same life', function () {
+  function run() { var bus = busMod.createBus(), w = worldMod.createWorld(4, bus), inp = inputMod.createInput(); w.combat.enabled = false; w.player.x = 40; w.player.z = 0; w.bike.x = 40; w.bike.z = 0; w.mounted = true;
+    for (var i = 0; i < 1800; i++) { inp.setAxis(0, 0); inp.tick(w.tick); worldMod.step(w, inp); } return w; }
+  var w = run(), w2 = run(); assert.strictEqual(worldMod.hash(w), worldMod.hash(w2));
+  var kinds = {}; w.traffic.list.forEach(function (e) { kinds[e.kind] = 1; }); assert(w.traffic.list.length >= 8, 'population ' + w.traffic.list.length);
+  w.traffic.list.forEach(function (e) {
+    var K = req('data/traffic').KINDS[e.kind]; if (K.kind !== 'veh') return;
+    var off = e.axis === 'x' ? e.z - e.road : e.x - e.road; assert(Math.abs(Math.abs(off) - 3) < 0.3 || e.t < 5 || Math.abs(off) > 5, 'on its lane ' + off);
+  });
+});
+test('traffic: the bike hits a vehicle like a wall and knocks a walker over', function () {
+  var bus = busMod.createBus(), w = worldMod.createWorld(4, bus), crashes = 0, bumps = 0; bus.on('ride:crash', function (e) { if (e.with === 'bus') crashes++; }); bus.on('npc:bump', function () { bumps++; });
+  w.combat.enabled = false; w.mounted = true; w.bike.x = 0; w.bike.z = 0; w.bike.h = Math.PI / 2; w.bike.speed = 14; w.player.x = 0; w.player.z = 0;
+  w.traffic.list.push({ id: 1, kind: 'bus', x: 6, z: 0, px: 6, pz: 0, h: Math.PI / 2, ph: Math.PI / 2, v: 0, axis: 'x', road: 0, dir: 1, state: 'go', t: 10, wait: 99, phase: 0, hit: 0, dx: 0, dz: 0 });
+  var trafficMod = req('sim/traffic'); for (var i = 0; i < 30; i++) { bikeMod.step(w.bike, { throttle: 0, brake: 0, steer: 0 }, flat(), 1 / 60, null); trafficMod.collide(w.traffic, w); }
+  assert(crashes >= 1 && w.bike.speed < 10 && w.bike.x < 6 - 1, 'bus stops the bike ' + w.bike.speed + ' ' + w.bike.x);
+  w.traffic.list.length = 0; w.bike.x = 0; w.bike.speed = 10; w.traffic.list.push({ id: 2, kind: 'ped', x: 1.5, z: 0, px: 1.5, pz: 0, h: 0, ph: 0, v: 0, axis: 'x', road: 0, dir: 1, state: 'go', t: 10, wait: 0, phase: 0, hit: 0, dx: 0, dz: 0 });
+  for (i = 0; i < 20; i++) { bikeMod.step(w.bike, { throttle: 0, brake: 0, steer: 0 }, flat(), 1 / 60, null); trafficMod.collide(w.traffic, w); }
+  assert(bumps >= 1 && w.traffic.list[0].state === 'down', 'walker knocked down');
+});
+test('locations: arriving at an uncleared place starts its fight; clearing it marks it and the pointer moves on; the first wave no longer repeats forever', function () {
+  var bus = busMod.createBus(), w = worldMod.createWorld(5, bus), inp = inputMod.createInput(), started = [], cleared = [];
+  bus.on('location:start', function (e) { started.push(e.name); }); bus.on('location:clear', function (e) { cleared.push(e.name); });
+  combatMod.begin(w); w.combat.enemies.length = 0; w.player.x = 64; w.player.z = 0; w.bike.x = 5000;
+  for (var i = 0; i < 70; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
+  assert.deepStrictEqual(started, ['Market lane']); assert(w.combat.enemies.length >= 5, 'men ' + w.combat.enemies.length);
+  w.combat.enemies.forEach(function (e) { e.dead = true; e.st = 'dead'; });
+  for (i = 0; i < 70; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
+  assert.deepStrictEqual(cleared, ['Market lane']); assert(w.locs.cleared['2,0']); assert(!w.locs.active);
+  w.combat.enemies.length = 0; for (i = 0; i < 600; i++) { inp.tick(w.tick); worldMod.step(w, inp); } assert.strictEqual(w.combat.enemies.length, 0, 'no endless waves'); assert.notStrictEqual(w.locs.next.key, '2,0');
 });
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

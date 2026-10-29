@@ -46,10 +46,18 @@ function startWave(world) {
   world.bus.emit('wave', { wave: c.wave, count: n });
 }
 
+/* a fight at a place: `n` men (`stick` of them armed) appear at the given points around the hero's arrival */
+function startLocation(world, name, points, n, stick) {
+  var c = world.combat, i;
+  c.wave++; c.auto = false;
+  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, i >= n - stick ? 'stick' : 'thug', pt.x, pt.z); }
+  c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
+}
+
 function begin(world) {
   var c = world.combat; c.enabled = true; c.enemies.length = 0; c.wave = 0; c.kills = 0; c.combo = 0;
   world.player.hp = world.player.maxHp; world.player.rage = 0; world.player.stun = 0; world.player.down = false;
-  startWave(world);
+  startWave(world); c.auto = false;           /* one opening wave; after that the fights come from the places in the city */
 }
 
 /* who is allowed to close in: one man at a time (sometimes a pair), the nearest, and a man keeps his place while he is fighting */
@@ -286,9 +294,8 @@ function step(world, input) {
   if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down! Resetting...'; c.bannerT = 150; }
   if (p.down && ++c.downT > 170) begin(world);
   else if (!p.down && alive === 0 && c.enemies.every(function (q) { return q.st === 'dead' || q.dead; })) {
-    if (!c.waveGap) c.waveGap = 110;
-    if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); }
+    if (c.auto) { if (!c.waveGap) c.waveGap = 110; if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); } }
   }
 }
 
-module.exports = { createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+module.exports = { startLocation: startLocation, createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };

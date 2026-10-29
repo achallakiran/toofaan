@@ -365,7 +365,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 38',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 39',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -430,6 +430,32 @@ var GUARD_HITS = 2, GUARD_COOLDOWN = 300, GUARD_BREAK = 55;
 var RAGE = { hit: 5, counterHit: 3, block: 3, timedBlock: 16, hurt: 2 };
 
 module.exports = { KINDS: KINDS, STRIKES: STRIKES, RAGE: RAGE, GUARD_HITS: GUARD_HITS, GUARD_COOLDOWN: GUARD_COOLDOWN, GUARD_BREAK: GUARD_BREAK };
+
+};
+defs["data/locations"]=function(module,exports,require){
+/* data layer: the places where trouble happens. Each location is a set piece on one road chunk (see sim/citylocs.js); entering its zone while it is
+   uncleared starts a fight there. `n` is how many men, `stick` how many of them carry a stick, `r` the trigger radius from the chunk centre. */
+'use strict';
+
+var LOCATIONS = {
+  market:       { name: 'Market lane',       n: 5, stick: 1, r: 15, side: true },
+  petrol:       { name: 'Petrol pump',       n: 4, stick: 1, r: 14, side: true },
+  busstand:     { name: 'Bus stand',         n: 5, stick: 1, r: 15, side: true },
+  construction: { name: 'Construction site', n: 6, stick: 2, r: 15, side: true },
+  temple:       { name: 'Temple square',     n: 5, stick: 1, r: 15, side: true },
+  warehouse:    { name: 'Warehouse yard',    n: 6, stick: 2, r: 15, side: true },
+  slum:         { name: 'Slum lane',         n: 5, stick: 1, r: 14, side: true },
+  railway:      { name: 'Railway crossing',  n: 4, stick: 1, r: 14, side: false },
+  toll:         { name: 'Toll plaza',        n: 6, stick: 2, r: 15, side: false },
+  flyover:      { name: 'Flyover underpass', n: 5, stick: 1, r: 15, side: false }
+};
+var ORDER = ['market', 'petrol', 'busstand', 'construction', 'temple', 'warehouse', 'slum', 'railway', 'toll', 'flyover'];
+
+/* chunks near the start that always hold a location, so the first ride has somewhere to go */
+var FORCED = { '2,0': 'market', '-1,0': 'petrol', '3,0': 'busstand', '1,1': 'construction', '1,-1': 'temple', '-3,0': 'slum' };
+var CHANCE = 0.2;           /* any other straight road chunk */
+
+module.exports = { LOCATIONS: LOCATIONS, ORDER: ORDER, FORCED: FORCED, CHANCE: CHANCE };
 
 };
 defs["data/moves"]=function(module,exports,require){
@@ -874,6 +900,27 @@ var SKEL = {
 module.exports = SKEL;
 
 };
+defs["data/traffic"]=function(module,exports,require){
+/* data layer: the life on the street. Sizes in metres; `speed` is the cruising speed in m/s; `r` the collision radius around the body line. */
+'use strict';
+
+var KINDS = {
+  auto:    { len: 2.6, r: 0.75, speed: 7.5, w: 5, kind: 'veh' },
+  bus:     { len: 8.0, r: 1.3,  speed: 6.0, w: 2, kind: 'veh' },
+  truck:   { len: 6.0, r: 1.2,  speed: 5.5, w: 2, kind: 'veh' },
+  car:     { len: 3.8, r: 0.9,  speed: 9.0, w: 4, kind: 'veh' },
+  scooter: { len: 1.6, r: 0.4,  speed: 8.0, w: 5, kind: 'veh' },
+  cow:     { len: 1.6, r: 0.55, speed: 0.0, w: 0, kind: 'animal' },
+  dog:     { len: 0.6, r: 0.25, speed: 2.4, w: 0, kind: 'animal' },
+  ped:     { len: 0.3, r: 0.3,  speed: 1.2, w: 0, kind: 'ped' }
+};
+var WEIGHTS = [['auto', 5], ['scooter', 5], ['car', 4], ['bus', 2], ['truck', 2]];
+var LIMITS = { veh: 7, ped: 6, animal: 2 };
+var SPAWN_MIN = 42, SPAWN_MAX = 70, DESPAWN = 96;          /* metres from the hero */
+
+module.exports = { KINDS: KINDS, WEIGHTS: WEIGHTS, LIMITS: LIMITS, SPAWN_MIN: SPAWN_MIN, SPAWN_MAX: SPAWN_MAX, DESPAWN: DESPAWN };
+
+};
 defs["main"]=function(module,exports,require){
 /* entry: wires the layers together. This is the only place that knows about all of them. */
 'use strict';
@@ -948,6 +995,8 @@ defs["modes/freeroam"]=function(module,exports,require){
 var AIM_SIGN = 1;
 
 var worldMod = require('../sim/world');
+var ambient = require('../view/ambientvox');
+var trafficData = require('../data/traffic');
 var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 var moveplayer = require('../view/moveplayer');
@@ -985,6 +1034,7 @@ function createFreeroam() {
       S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
       scope.add(function () { view.scene.remove(S.rig.root); });
       S.bike = bikevox.createBike(); view.scene.add(S.bike.root); scope.add(function () { view.scene.remove(S.bike.root); });
+      S.amb = {}; scope.add(function () { Object.keys(S.amb).forEach(function (k) { view.scene.remove(S.amb[k]); }); S.amb = {}; ambient.dispose(); });
       S.rc = ridecam.createRideCam(); S.mountW = ctx.world.mounted ? 1 : 0; S.wheelA = 0; S.bPrev = null; S.flash = null; S.flashT = 0; S.rideHint = '';
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
@@ -1006,9 +1056,16 @@ function createFreeroam() {
         el.style.cssText = 'position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:700 12px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000';
         el.innerHTML = '<div id="rdFlash" style="font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;height:36px;opacity:0;transition:opacity .25s"></div><div id="rdSpeed" style="font:900 26px system-ui,sans-serif;display:none"></div><div id="rdBoost" style="width:150px;height:6px;margin:4px auto;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;display:none"><div style="height:100%;width:100%;background:linear-gradient(90deg,#ffc21a,#ff6a3d)"></div></div><div id="rdHint" style="font-weight:600;opacity:.9"></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
+        var tg = document.createElement('div');
+        tg.style.cssText = 'position:fixed;left:50%;top:max(96px,env(safe-area-inset-top));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:800 13px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000;display:none';
+        tg.innerHTML = '<span id="tgArrow" style="display:inline-block;font-size:20px;color:#ffc21a;margin-right:8px">&#9650;</span><span id="tgText"></span>';
+        document.body.appendChild(tg); scope.add(function () { tg.remove(); });
+        S.tg = { box: tg, arrow: tg.querySelector('#tgArrow'), text: tg.querySelector('#tgText') };
         S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
       })();
       function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
+      scope.add(ctx.bus.on('npc:honk', function () { S.sfx.honk(); }));
+      scope.add(ctx.bus.on('npc:bump', function (e) { S.sfx.hit('jab', 0.4); S.cine.shake(0.04, 0.15); }));
       scope.add(ctx.bus.on('ride:bump', function (e) { S.sfx.land(2 + e.power * 6); S.cine.shake(0.03 + 0.07 * e.power, 0.18); }));
       scope.add(ctx.bus.on('ride:mount', function () { S.mp.cancel(); S.sfx.start(); }));
       scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
@@ -1188,6 +1245,24 @@ function createFreeroam() {
       u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
       if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h'; u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
       if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
+      /* the street's people and vehicles: meshes follow the sim's list, interpolated */
+      var tl = ctx.world.traffic.list, seen = {}, ti;
+      for (ti = 0; ti < tl.length; ti++) {
+        var te = tl[ti], tm = S.amb[te.id]; seen[te.id] = 1;
+        if (!tm) { tm = S.amb[te.id] = ambient.createMesh(te); ctx.view.scene.add(tm); }
+        var tk = trafficData.KINDS[te.kind], tdh = Math.atan2(Math.sin(te.h - te.ph), Math.cos(te.h - te.ph)), bob = 0, sway = 0;
+        if (te.kind === 'ped') { bob = Math.abs(Math.sin(te.phase)) * 0.05; sway = Math.sin(te.phase) * 0.06; } else if (te.kind === 'dog') bob = Math.abs(Math.sin(te.phase)) * 0.04; else if (tk.kind === 'veh' && te.v > 0.5) bob = Math.sin(S.t * 22 + te.id) * 0.008;
+        tm.position.set(te.px + (te.x - te.px) * alpha, bob, te.pz + (te.z - te.pz) * alpha); tm.rotation.y = te.ph + tdh * alpha;
+        tm.rotation.z = te.state === 'down' ? 1.45 : sway; tm.position.y += te.state === 'down' ? 0.25 : 0;
+      }
+      for (var tid in S.amb) if (!seen[tid]) { ctx.view.scene.remove(S.amb[tid]); delete S.amb[tid]; }
+      /* where the next fight is */
+      var nx = ctx.world.locs.next, tg = S.tg;
+      if (nx && !ctx.world.locs.active) {
+        var tdx = nx.x - p.x, tdz = nx.z - p.z, td = Math.hypot(tdx, tdz), rel = Math.atan2(tdx, tdz) - (mounted ? bh : S.camYaw || Math.PI);
+        tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
+        tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
+      } else tg.box.style.display = 'none';
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
@@ -1679,6 +1754,7 @@ defs["sim/citygen"]=function(module,exports,require){
 var CONFIG = require('../data/config');
 var gen = require('./chunkgen');
 var detail = require('./citydetail');
+var locs = require('./citylocs');
 var rngMod = require('../core/rng');
 
 var PERIOD = 3;
@@ -1721,12 +1797,165 @@ function generate(seed, cx, cz) {
     spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
   }
   spec.hazards = spec.hazards || [];
+  var loc = locs.place(spec, seed, cx, cz, kind);
   if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
+  spec.loc = loc;
   spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;
   return spec;
 }
 
 module.exports = { generate: generate, kindOf: kindOf, roadH: roadH, roadV: roadV, PERIOD: PERIOD };
+
+};
+defs["sim/citylocs"]=function(module,exports,require){
+/* sim: fight locations. A location is a set piece built onto a straight road chunk: the row of buildings on one side is cleared for a yard
+   (market lane, petrol pump, bus stand, construction site, temple square, warehouse yard, slum lane) or the road itself is dressed (railway
+   crossing, toll plaza, flyover underpass). `typeAt` is a pure hash, so the world can look for the nearest location without building chunks. */
+'use strict';
+
+var rngMod = require('../core/rng');
+var D = require('../data/locations');
+var CONFIG = require('../data/config');
+var LIM = CONFIG.CHUNK_SIZE / 2;
+var P = { GREY: 0, ROAD: 1, CONCRETE: 8, YELLOW: 14, BLACK: 15, SAFFRON: 16, MAGENTA: 17, TEAL: 18, LIME: 19, BLUE: 20, RED: 21, CREAM: 22, PURPLE: 23, DIRT: 24, WHITE: 25, RUST: 26, PINK: 27, GREYP: 13 };
+var BRIGHT = [P.SAFFRON, P.MAGENTA, P.TEAL, P.LIME, P.BLUE, P.RED, P.YELLOW, P.PURPLE, P.PINK];
+
+function typeAt(seed, cx, cz, kind) {
+  var key = cx + ',' + cz;
+  if (D.FORCED[key]) return D.FORCED[key];
+  if (cx === 0 && cz === 0) return null;
+  var m3x = ((cx % 3) + 3) % 3, m3z = ((cz % 3) + 3) % 3, isH = m3z === 0 && m3x !== 1, isV = m3x === 1 && m3z !== 0;
+  if (!isH && !isV) return null;
+  var r = rngMod.createRng(rngMod.hash32(seed ^ 0x1b873593, cx, cz));
+  if (r.next() >= D.CHANCE) return null;
+  return D.ORDER[r.int(0, D.ORDER.length - 1)];
+}
+
+function frame(spec, axis, side) {                    /* (u along the road, w = distance into the yard on `side`) */
+  function clampv(a) { return Math.max(-LIM, Math.min(LIM, a)); }
+  function B(u0, y0, w0, u1, y1, w1, c) {
+    var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
+    if (d > e) { t = d; d = e; e = t; }
+    if (b - a < 0.02 || e - d < 0.02) return;
+    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c });
+  }
+  function S(u0, w0, u1, w1, y1) {
+    var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
+    if (d > e) { t = d; d = e; e = t; }
+    spec.solids.push(axis === 'x' ? { x0: a, z0: d, x1: b, z1: e, y1: y1 } : { x0: d, z0: a, x1: e, z1: b, y1: y1 });
+  }
+  return { B: B, S: S };
+}
+function pick(r, a) { return a[Math.floor(r.next() * a.length) % a.length]; }
+
+/* remove the buildings on one side of the road (everything out past the lamp posts) */
+function clearSide(spec, axis, side) {
+  function out(b) { var v0 = axis === 'x' ? b.z0 : b.x0, v1 = axis === 'x' ? b.z1 : b.x1; return side > 0 ? v0 >= 7.9 : v1 <= -7.9; }
+  spec.boxes = spec.boxes.filter(function (b) { return !out(b); });
+  spec.solids = spec.solids.filter(function (q) { return !out(q); });
+}
+
+var PIECES = {
+  market: function (f, r) {
+    var u, k;
+    for (u = -13; u < 12; u += 4.4) {
+      var c = pick(r, BRIGHT), c2 = pick(r, BRIGHT);
+      f.B(u, 0, 8.4, u + 3.2, 0.9, 9.8, P.RUST); f.B(u + 0.1, 0.9, 8.5, u + 3.1, 1.25, 9.7, pick(r, [P.RED, P.SAFFRON, P.LIME, P.YELLOW, P.MAGENTA]));
+      for (k = 0; k < 4; k++) f.B(u + 0.3 + k * 0.7, 1.25, 8.8, u + 0.7 + k * 0.7, 1.55, 9.2, pick(r, [P.RED, P.LIME, P.SAFFRON, P.YELLOW]));
+      f.B(u, 2.3, 8.2, u + 3.2, 2.45, 10.2, k % 2 ? c : c2); f.B(u, 0, 10.1, u + 0.1, 2.3, 10.2, P.BLACK); f.B(u + 3.1, 0, 10.1, u + 3.2, 2.3, 10.2, P.BLACK);
+      f.S(u, 8.4, u + 3.2, 9.8, 1.6);
+    }
+    f.B(-16, 0, 11, 16, 6.5, 16, pick(r, [P.CREAM, P.SAFFRON, P.TEAL])); f.S(-16, 11, 16, 16, 6.5);
+    for (u = -15; u < 14; u += 5) f.B(u, 2.7, 10.8, u + 3.5, 3.5, 11.0, pick(r, BRIGHT));
+  },
+  petrol: function (f, r) {
+    f.B(-9, 4.6, 8.5, 9, 5.0, 15.5, P.WHITE); f.B(-9, 5.0, 8.5, 9, 5.5, 15.5, P.RED); f.B(-9, 5.5, 8.5, 9, 5.65, 15.5, P.YELLOW);
+    [[-8.5, 9], [8.2, 9], [-8.5, 15], [8.2, 15]].forEach(function (q) { f.B(q[0], 0, q[1], q[0] + 0.4, 4.6, q[1] + 0.4, P.GREYP); f.S(q[0], q[1], q[0] + 0.4, q[1] + 0.4, 4.6); });
+    [-4, 4].forEach(function (u) { f.B(u - 0.4, 0, 11.6, u + 0.4, 1.6, 12.4, P.RED); f.B(u - 0.35, 1.0, 11.55, u + 0.35, 1.4, 11.6, P.BLACK); f.B(u - 0.5, 0, 11.4, u + 0.5, 0.15, 12.6, P.CONCRETE); f.S(u - 0.5, 11.4, u + 0.5, 12.6, 1.6); });
+    f.B(10.5, 0, 9.5, 15.5, 3.2, 15.5, P.CREAM); f.B(10.5, 3.2, 9.4, 15.5, 3.6, 15.6, P.RED); f.S(10.5, 9.5, 15.5, 15.5, 3.6);
+    f.B(-13.6, 0, 9, -13.2, 7.5, 9.4, P.GREYP); f.B(-15, 7.5, 8.8, -11.8, 9.5, 9.6, P.YELLOW); f.B(-14.7, 7.8, 8.7, -12.1, 9.2, 8.8, P.RED); f.S(-13.6, 9, -13.2, 9.4, 9.5);
+  },
+  busstand: function (f, r) {
+    f.B(-6, 0, 8.4, 6, 0.3, 11.5, P.CONCRETE); f.B(-6, 2.9, 8.4, 6, 3.2, 11.5, P.TEAL);
+    [-5.8, 5.5].forEach(function (u) { f.B(u, 0, 8.5, u + 0.3, 2.9, 8.8, P.GREYP); });
+    f.B(-5.8, 0.3, 11.2, 5.8, 2.9, 11.5, P.BLUE); f.B(-4, 0.3, 11.0, 4, 0.8, 11.2, P.RUST); f.B(-4, 0.8, 11.2, 4, 1.0, 11.5, P.RUST);
+    f.B(-5, 1.0, 11.45, 5, 2.4, 11.5, P.CREAM); f.B(-4.6, 1.4, 11.5, -1.6, 2.1, 11.55, P.RED); f.B(0.4, 1.4, 11.5, 4.4, 2.1, 11.55, P.SAFFRON);
+    f.B(8, 0, 9, 8.2, 4.2, 9.2, P.GREYP); f.B(7.2, 4.2, 8.9, 9.4, 5.2, 9.3, P.BLUE); f.S(-6, 8.4, 6, 11.5, 3.2);
+    f.B(-16, 0, 12.5, 16, 7.5, 16, pick(r, [P.SAFFRON, P.CREAM, P.PINK])); f.S(-16, 12.5, 16, 16, 7.5);
+  },
+  construction: function (f, r) {
+    var u, y, k;
+    for (u = -15; u < 15; u += 1.6) f.B(u, 0, 8.2, u + 1.3, 1.3, 8.35, P.SAFFRON);                            /* the orange mesh fence */
+    for (u = -15; u <= 15; u += 3.2) f.B(u, 0, 8.1, u + 0.12, 1.5, 8.22, P.GREYP);
+    for (y = 0; y < 3; y++) for (u = -6; u <= 6; u += 4) { f.B(u, y * 3, 11, u + 0.18, y * 3 + 3.1, 11.18, P.RUST); f.B(u, y * 3, 14, u + 0.18, y * 3 + 3.1, 14.18, P.RUST); }
+    for (y = 1; y <= 3; y++) { f.B(-6, y * 3 - 0.15, 11, 6.18, y * 3, 14.18, y % 2 ? P.GREYP : P.CONCRETE); }
+    f.S(-6, 11, 6.2, 14.2, 9.2);
+    f.B(8, 0, 9, 11.5, 1.6, 12, P.DIRT); f.B(9, 1.6, 9.8, 10.5, 2.2, 11.2, P.DIRT); f.S(8, 9, 11.5, 12, 2.2);
+    for (k = 0; k < 3; k++) { f.B(-14 + k * 2.4, 0, 12.5, -12.4 + k * 2.4, 1.2, 13.6, P.RED); f.S(-14 + k * 2.4, 12.5, -12.4 + k * 2.4, 13.6, 1.2); }
+    f.B(11, 0, 14, 12.6, 7, 15.6, P.YELLOW); f.B(8, 7, 14.2, 15, 7.5, 15.4, P.YELLOW); f.S(11, 14, 12.6, 15.6, 7.5);
+  },
+  temple: function (f, r) {
+    f.B(-8, 0, 8.4, 8, 0.5, 16, P.CREAM); f.B(-7, 0.5, 8.9, 7, 0.9, 16, P.CREAM); f.B(-6, 0.9, 9.4, 6, 1.3, 16, P.CREAM);
+    f.B(-3.2, 1.3, 11.6, 3.2, 4.6, 15.6, P.SAFFRON); f.B(-2.6, 4.6, 12.1, 2.6, 6.0, 15.1, P.SAFFRON); f.B(-2.0, 6.0, 12.6, 2.0, 7.2, 14.6, P.RED); f.B(-1.3, 7.2, 13.0, 1.3, 8.2, 14.2, P.SAFFRON); f.B(-0.5, 8.2, 13.4, 0.5, 9.2, 13.8, P.YELLOW);
+    f.B(-1.2, 1.3, 11.4, 1.2, 3.0, 11.6, P.BLACK);
+    f.S(-3.2, 11.6, 3.2, 15.6, 9.2);
+    f.B(6, 0.5, 9.6, 6.25, 6.5, 9.85, P.GREYP); f.B(6.25, 5.8, 9.65, 8.6, 6.4, 9.8, P.RED); f.B(6.25, 6.4, 9.65, 8.1, 6.8, 9.8, P.SAFFRON); f.S(6, 9.6, 6.25, 9.85, 6.5);
+    f.B(-5.2, 0.9, 9.8, -4.6, 2.2, 10.4, P.GREYP); f.B(-5.2, 2.2, 9.8, -4.6, 2.5, 10.4, P.YELLOW); f.S(-5.2, 9.8, -4.6, 10.4, 2.5);
+    f.B(-16, 0, 13.5, -9, 6, 16, pick(r, [P.TEAL, P.PINK])); f.B(9, 0, 13.5, 16, 6, 16, pick(r, [P.CREAM, P.LIME])); f.S(-16, 13.5, -9, 16, 6); f.S(9, 13.5, 16, 16, 6);
+  },
+  warehouse: function (f, r) {
+    var cols = [P.RED, P.BLUE, P.TEAL, P.SAFFRON, P.GREYP], u, k;
+    for (k = 0; k < 4; k++) { u = -14 + k * 7.4; var c = pick(r, cols); f.B(u, 0, 9, u + 6, 2.6, 11.4, c); f.S(u, 9, u + 6, 11.4, 2.6); if (k % 2 === 0) { f.B(u + 0.4, 2.6, 9.2, u + 5.6, 5.2, 11.2, pick(r, cols)); f.S(u + 0.4, 9.2, u + 5.6, 11.2, 5.2); } }
+    for (k = 0; k < 5; k++) { u = -13 + k * 5.5; f.B(u, 0, 12.6, u + 1.3, 1.2, 13.9, P.RUST); f.B(u + 0.1, 1.2, 12.7, u + 1.2, 2.2, 13.8, P.RUST); f.S(u, 12.6, u + 1.3, 13.9, 2.2); }
+    f.B(-16, 0, 14.6, 16, 6.5, 16, P.GREYP); f.S(-16, 14.6, 16, 16, 6.5);
+  },
+  slum: function (f, r) {
+    var u = -15, k = 0;
+    while (u < 13) {
+      var w = r.range(3.2, 5.2), h = r.range(2.3, 3.2), c = pick(r, [P.BLUE, P.RUST, P.WHITE, P.TEAL, P.SAFFRON, P.GREYP]), d = r.range(8.6, 10.4);
+      f.B(u, 0, d, u + w, h, d + r.range(3.2, 4.4), c); f.B(u - 0.2, h, d - 0.2, u + w + 0.2, h + 0.18, d + 4.6, pick(r, [P.GREYP, P.RUST, P.BLUE]));
+      f.B(u + 0.5, 0, d - 0.04, u + 1.3, 1.9, d, P.BLACK); f.B(u + w - 1.4, 1.6, d - 0.3, u + w - 0.4, 2.0, d, pick(r, BRIGHT));
+      f.S(u, d, u + w, d + 3.6, h + 0.2); u += w + r.range(0.4, 1.0); k++;
+    }
+  },
+  railway: function (f, r) {
+    var y;
+    for (var v = -16; v < 16; v += 1.1) f.B(-1.7, 0.02, v, 1.7, 0.1, v + 0.45, P.DIRT);
+    f.B(-0.95, 0.1, -16, -0.8, 0.2, 16, P.GREYP); f.B(0.8, 0.1, -16, 0.95, 0.2, 16, P.GREYP);
+    [-7.5, 7.5].forEach(function (v) { f.B(-0.1, 0, v, 0.1, 2.4, v + 0.2, P.WHITE); for (var k = 0; k < 8; k++) f.B(-0.1, 2.4 + (k % 2) * 0.01, v - 3.2 + k * 0.8 - (v < 0 ? -3.2 : 0) + 3.2, 0.1, 2.5, v + 0.2 + (v > 0 ? -1 : 0), k % 2 ? P.RED : P.WHITE); });
+    f.B(-0.6, 0, 8.6, 0.6, 1.6, 9.6, P.RED);
+  },
+  toll: function (f, r) {
+    var v;
+    f.B(-3, 5.2, -9, 3, 5.8, 9, P.YELLOW); f.B(-3, 5.8, -9, 3, 6.4, 9, P.BLUE);
+    [-8.4, -3.6, 0, 3.6, 8.4].forEach(function (v) { f.B(-1.4, 0, v - 0.6, 1.4, 5.2, v + 0.6, v === -8.4 || v === 8.4 ? P.GREYP : P.CREAM); f.S(-1.4, v - 0.6, 1.4, v + 0.6, 5.2); });
+    [-4.8, -1.8, 1.8, 4.8].forEach(function (v) { f.B(-0.05, 0.9, v - 0.05, 0.05, 1.0, v + 0.05, P.RED); f.B(-2.6, 0, v - 0.05, -0.4, 0.15, v + 0.05, P.WHITE); });
+    f.B(-1.5, 3.2, -3.5, 1.5, 4.4, -3.6, P.TEAL);
+  },
+  flyover: function (f, r) {
+    f.B(-6, 5.6, -16, 6, 6.8, 16, P.CONCRETE); f.B(-6, 6.8, -16, 6, 7.2, 16, P.GREYP); f.B(-6.2, 5.4, -16, -6, 7.4, 16, P.GREYP);
+    [-8.6, 0, 8.6].forEach(function (v) { f.B(-3.2, 0, v - 0.7, 3.2, 5.6, v + 0.7, P.CONCRETE); f.B(-3.3, 0, v - 0.75, 3.3, 0.5, v + 0.75, P.GREYP); f.S(-3.2, v - 0.7, 3.2, v + 0.7, 5.6); });
+    for (var v = -14; v < 14; v += 4) f.B(-5, 1.2, v, -4.9, 2.4, v + 2.5, pick(r, BRIGHT));
+  }
+};
+
+/* build the location on a finished road-chunk spec; returns the descriptor the sim uses, or null */
+function place(spec, seed, cx, cz, kind) {
+  var type = typeAt(seed, cx, cz); if (!type || (kind !== 'roadH' && kind !== 'roadV')) return null;
+  var axis = kind === 'roadV' ? 'z' : 'x', def = D.LOCATIONS[type], r = rngMod.createRng(rngMod.hash32(seed ^ 0x85ebca6b, cx, cz));
+  var side = r.chance(0.5) ? 1 : -1;
+  if (def.side) clearSide(spec, axis, side);
+  var f = frame(spec, axis, def.side ? side : 1);
+  PIECES[type](f, r);
+  var spawns = [], i;                                          /* men appear on the road and the yard edge, spread along the road */
+  for (i = 0; i < def.n; i++) {
+    var u = -9 + (i + 0.5) * 18 / def.n + r.range(-1, 1), v = r.range(-4.5, 4.5) + (def.side ? side * 1.5 : 0);
+    spawns.push(axis === 'x' ? { x: u, z: v } : { x: v, z: u });
+  }
+  return { type: type, name: def.name, n: def.n, stick: def.stick, r: def.r, x: spec.ox, z: spec.oz, spawns: spawns.map(function (s) { return { x: s.x + spec.ox, z: s.z + spec.oz }; }), side: def.side ? side : 0, axis: axis };
+}
+
+module.exports = { typeAt: typeAt, place: place };
 
 };
 defs["sim/combat"]=function(module,exports,require){
@@ -1778,10 +2007,18 @@ function startWave(world) {
   world.bus.emit('wave', { wave: c.wave, count: n });
 }
 
+/* a fight at a place: `n` men (`stick` of them armed) appear at the given points around the hero's arrival */
+function startLocation(world, name, points, n, stick) {
+  var c = world.combat, i;
+  c.wave++; c.auto = false;
+  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, i >= n - stick ? 'stick' : 'thug', pt.x, pt.z); }
+  c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
+}
+
 function begin(world) {
   var c = world.combat; c.enabled = true; c.enemies.length = 0; c.wave = 0; c.kills = 0; c.combo = 0;
   world.player.hp = world.player.maxHp; world.player.rage = 0; world.player.stun = 0; world.player.down = false;
-  startWave(world);
+  startWave(world); c.auto = false;           /* one opening wave; after that the fights come from the places in the city */
 }
 
 /* who is allowed to close in: one man at a time (sometimes a pair), the nearest, and a man keeps his place while he is fighting */
@@ -2018,12 +2255,11 @@ function step(world, input) {
   if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down! Resetting...'; c.bannerT = 150; }
   if (p.down && ++c.downT > 170) begin(world);
   else if (!p.down && alive === 0 && c.enemies.every(function (q) { return q.st === 'dead' || q.dead; })) {
-    if (!c.waveGap) c.waveGap = 110;
-    if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); }
+    if (c.auto) { if (!c.waveGap) c.waveGap = 110; if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); } }
   }
 }
 
-module.exports = { createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+module.exports = { startLocation: startLocation, createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
 
 };
 defs["sim/streaming"]=function(module,exports,require){
@@ -2117,6 +2353,135 @@ function createStreaming(seed, bus, genFn) {
 module.exports = { createStreaming: createStreaming };
 
 };
+defs["sim/traffic"]=function(module,exports,require){
+/* sim: ambient life. Autos, scooters, cars, buses and trucks drive the lanes (on the left); people walk the pavements; cows stand in the
+   road; dogs trot about. They appear out of sight around the hero and go away when he is far. Deterministic: all randomness comes from world.rng.
+   The bike can hit any of them: vehicles and cows are walls with a name, people and dogs are knocked over. No graphics here. */
+'use strict';
+
+var D = require('../data/traffic');
+var CONFIG = require('../data/config');
+var BIKE = require('../data/bike');
+var S = CONFIG.CHUNK_SIZE;
+
+function mod(a, n) { return ((a % n) + n) % n; }
+function create() { return { list: [], nextId: 1, tick: 0 }; }
+
+function pickKind(rng) {
+  var tot = 0, i; for (i = 0; i < D.WEIGHTS.length; i++) tot += D.WEIGHTS[i][1];
+  var r = rng.next() * tot; for (i = 0; i < D.WEIGHTS.length; i++) { r -= D.WEIGHTS[i][1]; if (r <= 0) return D.WEIGHTS[i][0]; }
+  return 'auto';
+}
+function count(t, cls) { var n = 0, i; for (i = 0; i < t.list.length; i++) if (D.KINDS[t.list[i].kind].kind === cls) n++; return n; }
+
+/* the road grid: east-west roads at z = 96*k (chunk rows divisible by 3), north-south roads at x = 32 + 96*k (columns = 1 mod 3) */
+function roadsNear(x, z) {
+  var out = [], cz0 = Math.round(z / S), cx0 = Math.round(x / S), k;
+  for (k = -3; k <= 3; k++) {
+    var cz = cz0 + k, cx = cx0 + k;
+    if (mod(cz, 3) === 0) out.push({ axis: 'x', c: cz * S });
+    if (mod(cx, 3) === 1) out.push({ axis: 'z', c: cx * S });
+  }
+  return out;
+}
+
+function spawnOne(t, world, cls) {
+  var p = world.player, rng = world.rng, roads = roadsNear(p.x, p.z), i;
+  if (!roads.length) return;
+  var rd = roads[rng.int(0, roads.length - 1)], ang = rng.next() < 0.5 ? -1 : 1, d = rng.range(D.SPAWN_MIN, D.SPAWN_MAX) * ang;
+  var along = (rd.axis === 'x' ? p.x : p.z) + d, e;
+  if (cls === 'veh') {
+    var kind = pickKind(rng), dir = rng.next() < 0.5 ? 1 : -1, lane;
+    if (rd.axis === 'x') { lane = dir > 0 ? -3.0 : 3.0; e = { x: along, z: rd.c + lane, h: dir > 0 ? Math.PI / 2 : -Math.PI / 2 }; }
+    else { lane = dir > 0 ? 3.0 : -3.0; e = { x: rd.c + lane, z: along, h: dir > 0 ? 0 : Math.PI }; }
+    e.kind = kind; e.v = 0; e.axis = rd.axis; e.road = rd.c; e.dir = dir;
+  } else if (cls === 'ped') {
+    var side = rng.next() < 0.5 ? 1 : -1, off = side * rng.range(7.2, 7.9), dr = rng.next() < 0.5 ? 1 : -1;
+    e = rd.axis === 'x' ? { x: along, z: rd.c + off, h: dr > 0 ? Math.PI / 2 : -Math.PI / 2 } : { x: rd.c + off, z: along, h: dr > 0 ? 0 : Math.PI };
+    e.kind = 'ped'; e.v = D.KINDS.ped.speed * rng.range(0.7, 1.2); e.axis = rd.axis; e.road = rd.c; e.dir = dr; e.look = rng.int(0, 5);
+  } else {
+    var isCow = rng.next() < 0.55, off2 = isCow ? (rng.next() < 0.5 ? -1 : 1) * rng.range(1.5, 4.5) : (rng.next() < 0.5 ? -1 : 1) * rng.range(6.5, 8);
+    e = rd.axis === 'x' ? { x: along, z: rd.c + off2, h: rng.range(-3, 3) } : { x: rd.c + off2, z: along, h: rng.range(-3, 3) };
+    e.kind = isCow ? 'cow' : 'dog'; e.v = 0; e.axis = rd.axis; e.road = rd.c; e.dir = 1; e.look = rng.int(0, 2);
+  }
+  for (i = 0; i < t.list.length; i++) if (Math.hypot(t.list[i].x - e.x, t.list[i].z - e.z) < 9) return;
+  e.id = t.nextId++; e.px = e.x; e.pz = e.z; e.ph = e.h; e.state = 'go'; e.t = 0; e.wait = 0; e.phase = rng.next() * 6.28; e.hit = 0; e.dx = 0; e.dz = 0;
+  t.list.push(e);
+}
+
+function distToBody(e, x, z) {
+  var K = D.KINDS[e.kind], hl = K.len / 2 - K.r, fx = Math.sin(e.h), fz = Math.cos(e.h), ax = x - e.x, az = z - e.z, u = Math.max(-hl, Math.min(hl, ax * fx + az * fz));
+  return Math.hypot(ax - fx * u, az - fz * u);
+}
+
+/* something in the way, straight ahead and close? (vehicles stop; cows and other vehicles and the bike all count) */
+function blocked(t, e, world) {
+  var K = D.KINDS[e.kind], fx = Math.sin(e.h), fz = Math.cos(e.h), reach = K.len / 2 + 3.5 + e.v * 0.6, i, b = world.bike;
+  function ahead(x, z, r) { var dx = x - e.x, dz = z - e.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); return along > K.len / 2 - 0.2 && along < reach + r && side < K.r + r + 0.5; }
+  if (ahead(b.x, b.z, BIKE.RADIUS)) return 'bike';
+  if (!world.mounted && ahead(world.player.x, world.player.z, 0.4)) return 'bike';
+  for (i = 0; i < t.list.length; i++) { var o = t.list[i]; if (o === e || o.state === 'down') continue; var ok = D.KINDS[o.kind]; if (ok.kind === 'ped') continue; if (ahead(o.x, o.z, ok.r + ok.len / 2 * 0.5)) return 'thing'; }
+  return null;
+}
+
+function step(t, world) {
+  var p = world.player, rng = world.rng, dt = 1 / 60, i, e;
+  t.tick++;
+  if (t.tick % 20 === 0) {
+    var cls = ['veh', 'ped', 'animal'][t.tick / 20 % 3 | 0];
+    if (count(t, cls) < D.LIMITS[cls]) spawnOne(t, world, cls);
+  }
+  for (i = t.list.length - 1; i >= 0; i--) {
+    e = t.list[i]; e.px = e.x; e.pz = e.z; e.ph = e.h; e.t++;
+    if (Math.hypot(e.x - p.x, e.z - p.z) > D.DESPAWN) { t.list.splice(i, 1); continue; }
+    var K = D.KINDS[e.kind], fx = Math.sin(e.h), fz = Math.cos(e.h);
+    if (e.state === 'down') { e.hit -= dt; e.x += e.dx * dt; e.z += e.dz * dt; e.dx *= 0.9; e.dz *= 0.9; if (e.hit <= 0) e.state = 'go'; continue; }
+    if (K.kind === 'veh') {
+      var bl = blocked(t, e, world), target = bl ? 0 : K.speed;
+      if (e.wait > 0) { e.wait -= dt; target = 0; }
+      e.v += (target - e.v) * Math.min(1, (bl ? 3.5 : 0.9) * dt);
+      if (bl === 'bike' && e.v < 1.2 && e.t % 90 === 0) world.bus.emit('npc:honk', { x: e.x, z: e.z, kind: e.kind });
+      e.x += fx * e.v * dt; e.z += fz * e.v * dt;
+    } else if (K.kind === 'ped') {
+      e.x += fx * e.v * dt; e.z += fz * e.v * dt; e.phase += e.v * dt * 3.2;
+      if (e.t % 400 === 0 && rng.next() < 0.35) { e.h += Math.PI; e.dir = -e.dir; }
+    } else if (e.kind === 'dog') {
+      var bd = Math.hypot(world.bike.x - e.x, world.bike.z - e.z);
+      if (bd < 7 && Math.abs(world.bike.speed) > 3) { e.h = Math.atan2(e.x - world.bike.x, e.z - world.bike.z); e.v = 4.6; } else if (e.t % 150 === 0) { e.h += rng.range(-1.5, 1.5); e.v = rng.next() < 0.4 ? 0 : K.speed; }
+      e.x += Math.sin(e.h) * e.v * dt; e.z += Math.cos(e.h) * e.v * dt; e.phase += e.v * dt * 4;
+    }
+  }
+}
+
+/* the bike against everything: vehicles and cows are walls (a named crash); people and dogs are knocked flying */
+function collide(t, world) {
+  var b = world.bike, i, e, bus = world.bus;
+  if (world.mounted === false && Math.abs(b.speed) < 0.1) return;
+  for (i = 0; i < t.list.length; i++) {
+    e = t.list[i]; if (e.state === 'down') continue;
+    if (Math.abs(e.x - b.x) > 6 || Math.abs(e.z - b.z) > 6) continue;
+    var K = D.KINDS[e.kind], d = distToBody(e, b.x, b.z), need = BIKE.RADIUS + K.r;
+    if (d >= need) continue;
+    var nx = b.x - e.x, nz = b.z - e.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+    var fx = Math.sin(b.h), fz = Math.cos(b.h), into = Math.max(0, -(fx * nx + fz * nz) * b.speed);
+    if (K.kind === 'veh' || e.kind === 'cow') {
+      b.x += nx * (need - d); b.z += nz * (need - d);
+      if (into > 1.5) {
+        var hard = into > 9; b.speed *= hard ? 0.1 : (1 - 0.55 * Math.min(1, into / 9)); if (hard) b.crash = 0.9; else if (into > 4) b.crash = 0.3;
+        e.v = 0; e.wait = 1.2; e.dx = 0; e.dz = 0;
+        if (into > 3) bus.emit('ride:crash', { x: b.x, z: b.z, speed: into, hard: hard, with: e.kind });
+        if (K.kind === 'veh') bus.emit('npc:honk', { x: e.x, z: e.z, kind: e.kind });
+      }
+    } else if (Math.abs(b.speed) > 2) {
+      e.state = 'down'; e.hit = 2.5; e.dx = fx * b.speed * 0.5 + nx * 2; e.dz = fz * b.speed * 0.5 + nz * 2; b.speed *= e.kind === 'ped' ? 0.85 : 0.95;
+      bus.emit('npc:bump', { x: e.x, z: e.z, kind: e.kind, speed: Math.abs(b.speed) });
+    }
+  }
+}
+
+module.exports = { create: create, step: step, collide: collide, roadsNear: roadsNear };
+
+};
 defs["sim/world"]=function(module,exports,require){
 /* sim: the game state and its per-tick update. No graphics, no audio, no DOM.
    Phase 0 content is a walking placeholder player so the loop, input and streaming can be tested. */
@@ -2127,6 +2492,7 @@ var rngMod = require('../core/rng');
 var streamingMod = require('./streaming');
 var combatMod = require('./combat');
 var citygen = require('./citygen');
+var trafficMod = require('./traffic'), locsMod = require('./citylocs'), LOCD = require('../data/locations');
 var bikeMod = require('./bike');
 var BIKE = require('../data/bike');
 
@@ -2140,10 +2506,39 @@ function createWorld(seed, bus) {
     counters: { attacks: 0, blocks: 0, finishers: 0 },
     streaming: streamingMod.createStreaming(seed, bus, citygen.generate),
     bike: bikeMod.createBike(1.7, -1.2, Math.PI / 2), mounted: false, mountTick: -999,
+    traffic: trafficMod.create(), locs: { cleared: {}, active: null, next: null, clearedCount: 0 },
     bus: bus
   };
   world.streaming.update(0, 0);
   return world;
+}
+
+/* fight locations: arriving at an uncleared one starts its fight; killing the last man clears it. Every half second the nearest uncleared one
+   is looked up (by hash, no chunk building) so the HUD can point the way. */
+function locationStep(world) {
+  var L = world.locs, p = world.player, c = world.combat, S = CONFIG.CHUNK_SIZE;
+  if (!c.enabled) return;
+  if (L.active) {
+    var alive = false, i;
+    for (i = 0; i < c.enemies.length; i++) if (!c.enemies[i].dead && c.enemies[i].st !== 'dead') { alive = true; break; }
+    if (!alive && !p.down) { L.cleared[L.active.key] = true; L.clearedCount++; world.bus.emit('location:clear', { key: L.active.key, name: L.active.name, x: L.active.x, z: L.active.z }); c.banner = L.active.name + ' cleared'; c.bannerT = 170; L.active = null; }
+    else if (p.down) L.active = null;
+  }
+  if (world.tick % 30 === 0) {
+    var ccx = Math.round(p.x / S), ccz = Math.round(p.z / S), bestD = 1e9, best = null, cx, cz;
+    for (cx = ccx - 7; cx <= ccx + 7; cx++) for (cz = ccz - 7; cz <= ccz + 7; cz++) {
+      var t = locsMod.typeAt(world.seed, cx, cz); if (!t) continue; var key = cx + ',' + cz; if (L.cleared[key]) continue;
+      var d = Math.hypot(cx * S - p.x, cz * S - p.z); if (d < bestD) { bestD = d; best = { key: key, type: t, name: LOCD.LOCATIONS[t].name, x: cx * S, z: cz * S, dist: d }; }
+    }
+    L.next = best;
+  }
+  if (!L.active && L.next && !L.cleared[L.next.key] && Math.hypot(L.next.x - p.x, L.next.z - p.z) < LOCD.LOCATIONS[L.next.type].r && c.enemies.every(function (q) { return q.dead || q.st === 'dead'; })) {
+    var sp = world.streaming.specAt(L.next.x, L.next.z);
+    if (sp && sp.loc) {
+      var D2 = LOCD.LOCATIONS[sp.loc.type]; L.active = { key: L.next.key, name: sp.loc.name, x: sp.loc.x, z: sp.loc.z };
+      combatMod.startLocation(world, sp.loc.name, sp.loc.spawns, D2.n, D2.stick); world.bus.emit('location:start', { key: L.next.key, name: sp.loc.name });
+    }
+  }
 }
 
 /* the nearest living man within reach of the saddle, or null */
@@ -2193,7 +2588,7 @@ function rideStep(world, input) {
     world.bus.emit('ride:park', { x: b.x, z: b.z });
     world.streaming.update(p.x, p.z); world.tick++; return;
   }
-  combatMod.step(world, input);
+  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
   if (p.hp < hp0) b.speed *= 0.82;                    /* a blow rocks the bike */
   p.x = b.x; p.z = b.z;
   world.streaming.update(p.x, p.z);
@@ -2248,7 +2643,7 @@ function step(world, input) {
   if (s.pressed.attack) { world.counters.attacks++; if (!world.combat.enabled) p.rage = Math.min(100, p.rage + 12); world.bus.emit('action', { type: 'attack' }); }
   if (s.pressed.block) { world.counters.blocks++; world.bus.emit('action', { type: 'block' }); }
   if (s.pressed.finisher && p.rage >= 100) { world.counters.finishers++; p.rage = 0; world.bus.emit('action', { type: 'finisher' }); }
-  combatMod.step(world, input);
+  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
   world.streaming.update(p.x, p.z);
   world.tick++;
 }
@@ -2260,13 +2655,110 @@ function hash(world) {
   function mixf(f) { mix(Math.round(f * 10000)); }
   mix(world.tick); mixf(p.x); mixf(p.z); mixf(p.face); mix(p.rage);
   mix(world.counters.attacks); mix(world.counters.blocks); mix(world.counters.finishers);
-  mix(world.rng.getState()); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
+  mix(world.rng.getState()); mix(world.traffic.list.length); mix(world.locs.clearedCount); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
   var keys = world.streaming.loadedKeys();
   for (var i = 0; i < keys.length; i++) for (var j = 0; j < keys[i].length; j++) mix(keys[i].charCodeAt(j));
   return h >>> 0;
 }
 
 module.exports = { canMount: canMount, bikeDistance: bikeDistance, createWorld: createWorld, step: step, hash: hash, startFight: combatMod.begin };
+
+};
+defs["view/ambientvox"]=function(module,exports,require){
+/* view: the street's voxel population: autos, scooters, cars, buses, trucks, cows, dogs and people. One shared geometry per kind (and look),
+   one mesh per entity. Voxels are 10 cm. Forward is local +z, like the bike. */
+'use strict';
+
+var vg = require('./voxgrid');
+var h = vg.hex, VS = 0.1;
+var C = { blk: h('#17181b'), grey: h('#6b7078'), glass: h('#8fc1d8'), white: h('#f1efe8'), red: h('#c8372d'), yel: h('#f2c230'), grn: h('#2f8f4a'), blue: h('#2b57b8'),
+          sf: h('#f08a24'), tyre: h('#1d1e21'), lamp: h('#fff3c4'), skin: h('#b57a52'), skin2: h('#8a5a3a'), hair: h('#1a1410'), cow: h('#e8e2d2'), cowD: h('#8a6a4a'), horn: h('#d8cfa8'), dog: h('#b98a4f') };
+
+function wheel(g, x, z, r) { var y; for (y = 0; y <= r; y++) vg.box(g, x, y, z, x, y, z + (r > 1 ? 1 : 0), C.tyre); vg.box(g, x, 0, z, x, r, z + (r > 1 ? 1 : 0), C.tyre); }
+
+function auto(look) {                                        /* the three-wheeler: yellow body, black hood, green skirt */
+  var g = vg.createGrid(15, 20, 28), body = look ? C.grn : C.yel;
+  vg.box(g, 2, 3, 6, 12, 7, 26, body); vg.box(g, 2, 3, 6, 12, 4, 26, C.blk);              /* lower body and skirt */
+  vg.box(g, 3, 7, 14, 11, 8, 24, C.blk); vg.box(g, 3, 8, 6, 11, 14, 8, C.blk);            /* seat back */
+  vg.box(g, 2, 14, 4, 12, 15, 24, C.blk); vg.box(g, 3, 15, 6, 11, 15, 22, C.blk);         /* canvas hood */
+  vg.box(g, 2, 8, 24, 12, 13, 24, C.glass); vg.box(g, 6, 3, 25, 8, 5, 27, C.grey);         /* windscreen, front mudguard */
+  vg.box(g, 6, 5, 25, 8, 7, 26, C.lamp); vg.box(g, 3, 4, 3, 11, 5, 5, body);
+  vg.box(g, 1, 0, 4, 1, 3, 8, C.tyre); vg.box(g, 13, 0, 4, 13, 3, 8, C.tyre); vg.box(g, 7, 0, 24, 7, 3, 26, C.tyre);
+  vg.box(g, 6, 8, 20, 8, 9, 22, C.grey);
+  return g;
+}
+function scooter(look) {
+  var g = vg.createGrid(9, 16, 18), c = [C.red, C.blue, C.white, C.grn][look % 4];
+  vg.box(g, 3, 3, 3, 5, 7, 12, c); vg.box(g, 3, 7, 2, 5, 8, 6, C.blk); vg.box(g, 3, 4, 12, 5, 9, 14, c);
+  vg.box(g, 1, 9, 13, 7, 9, 13, C.blk); vg.box(g, 4, 9, 14, 4, 10, 14, C.lamp); vg.box(g, 4, 0, 14, 4, 3, 16, C.tyre); vg.box(g, 4, 0, 1, 4, 3, 4, C.tyre);
+  vg.box(g, 3, 8, 3, 5, 14, 5, [C.sf, C.blue, C.grn, C.red][(look + 1) % 4]);               /* rider's body */
+  vg.ellipsoid(g, 4, 15, 4, 1.7, 1.6, 1.7, C.skin); vg.box(g, 2, 14, 3, 6, 15, 5, [C.blk, C.red, C.blue][look % 3]);
+  vg.box(g, 3, 9, 9, 3, 10, 12, C.skin); vg.box(g, 5, 9, 9, 5, 10, 12, C.skin);
+  return g;
+}
+function car(look) {                                         /* the black-and-yellow taxi, or a plain hatch */
+  var g = vg.createGrid(19, 17, 40), body = look ? C.white : C.blk, roof = look ? C.white : C.yel;
+  vg.box(g, 2, 3, 3, 16, 8, 37, body); vg.box(g, 4, 8, 11, 14, 13, 28, roof); vg.box(g, 4, 9, 11, 14, 12, 11, C.glass); vg.box(g, 4, 9, 28, 14, 12, 28, C.glass);
+  vg.box(g, 4, 9, 12, 4, 12, 27, C.glass); vg.box(g, 14, 9, 12, 14, 12, 27, C.glass);
+  vg.box(g, 3, 6, 37, 15, 7, 37, C.lamp); vg.box(g, 3, 6, 2, 15, 7, 2, C.red); vg.box(g, 2, 5, 3, 16, 5, 37, look ? C.grey : C.yel);
+  [[1, 6], [17, 6], [1, 28], [17, 28]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 4, q[1] + 4, C.tyre); });
+  return g;
+}
+function bus(look) {                                         /* a long red state bus, or a green one */
+  var g = vg.createGrid(27, 30, 82), body = look ? C.grn : C.red;
+  vg.box(g, 2, 4, 3, 24, 22, 79, body); vg.box(g, 2, 12, 3, 24, 13, 79, C.white); vg.box(g, 2, 4, 3, 24, 6, 79, C.blk);
+  var z; for (z = 8; z < 74; z += 9) { vg.box(g, 2, 15, z, 2, 20, z + 6, C.glass); vg.box(g, 24, 15, z, 24, 20, z + 6, C.glass); }
+  vg.box(g, 3, 14, 79, 23, 21, 79, C.glass); vg.box(g, 3, 5, 79, 8, 7, 80, C.lamp); vg.box(g, 18, 5, 79, 23, 7, 80, C.lamp); vg.box(g, 9, 21, 79, 17, 22, 79, C.yel);
+  vg.box(g, 3, 22, 8, 23, 23, 76, C.white); vg.box(g, 6, 8, 2, 20, 10, 3, C.yel);
+  [[0, 9], [25, 9], [0, 60], [25, 60]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 5, q[1] + 6, C.tyre); });
+  return g;
+}
+function truck(look) {                                       /* a painted lorry */
+  var g = vg.createGrid(25, 30, 62), cab = [C.blue, C.sf, C.grn, C.red][look % 4], cargo = [C.yel, C.red, C.blue, C.sf][(look + 1) % 4];
+  vg.box(g, 2, 5, 38, 22, 17, 59, cab); vg.box(g, 3, 12, 59, 21, 17, 59, C.glass); vg.box(g, 2, 17, 38, 22, 19, 55, cab); vg.box(g, 4, 6, 60, 8, 8, 61, C.lamp); vg.box(g, 16, 6, 60, 20, 8, 61, C.lamp);
+  vg.box(g, 2, 5, 2, 22, 7, 38, C.blk); vg.box(g, 1, 7, 2, 23, 22, 37, cargo); vg.box(g, 1, 7, 2, 23, 9, 37, C.blk); vg.box(g, 2, 22, 3, 22, 23, 36, cargo);
+  vg.box(g, 6, 14, 1, 18, 17, 1, C.white);
+  [[0, 6], [23, 6], [0, 14], [23, 14], [0, 44], [23, 44]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 5, q[1] + 5, C.tyre); });
+  return g;
+}
+function cow(look) {
+  var g = vg.createGrid(9, 15, 20), c = look === 1 ? C.cowD : C.cow;
+  vg.box(g, 2, 6, 3, 6, 10, 14, c); vg.box(g, 3, 10, 12, 5, 12, 16, c); vg.box(g, 3, 8, 16, 5, 12, 18, c); vg.box(g, 3, 8, 18, 5, 9, 19, C.skin2);          /* body, neck, head */
+  vg.box(g, 2, 11, 16, 2, 12, 17, C.horn); vg.box(g, 6, 11, 16, 6, 12, 17, C.horn); vg.box(g, 4, 10, 11, 4, 11, 12, C.cowD);                          /* horns, hump */
+  vg.box(g, 2, 0, 3, 3, 6, 4, c); vg.box(g, 5, 0, 3, 6, 6, 4, c); vg.box(g, 2, 0, 12, 3, 6, 13, c); vg.box(g, 5, 0, 12, 6, 6, 13, c); vg.box(g, 4, 5, 1, 4, 9, 2, c);
+  if (look === 2) vg.box(g, 2, 6, 5, 6, 9, 8, C.cowD);
+  return g;
+}
+function dog(look) {
+  var g = vg.createGrid(5, 8, 12), c = [C.dog, C.cowD, C.white][look % 3];
+  vg.box(g, 1, 3, 2, 3, 5, 8, c); vg.box(g, 1, 5, 7, 3, 7, 10, c); vg.box(g, 2, 5, 10, 2, 6, 11, C.blk); vg.box(g, 1, 0, 2, 1, 3, 2, c); vg.box(g, 3, 0, 2, 3, 3, 2, c); vg.box(g, 1, 0, 7, 1, 3, 7, c); vg.box(g, 3, 0, 7, 3, 3, 7, c); vg.box(g, 2, 5, 0, 2, 7, 2, c);
+  return g;
+}
+var KURTA = [C.white, C.blue, C.sf, C.grn, C.red, C.yel], PANT = [C.blk, C.grey, C.white, C.blue, C.blk, C.grey];
+function ped(look) {                                         /* a walker: 1.7 m, kurta or saree */
+  var g = vg.createGrid(7, 18, 5), top = KURTA[look % 6], skin = look % 2 ? C.skin : C.skin2;
+  vg.box(g, 2, 0, 1, 2, 7, 2, PANT[look % 6]); vg.box(g, 4, 0, 1, 4, 7, 2, PANT[look % 6]);
+  vg.box(g, 2, 7, 1, 4, 13, 3, top); if (look % 3 === 0) vg.box(g, 2, 3, 1, 4, 7, 3, top);      /* a saree or long kurta to the knee */
+  vg.box(g, 1, 8, 1, 1, 12, 2, top); vg.box(g, 5, 8, 1, 5, 12, 2, top); vg.box(g, 1, 7, 1, 1, 8, 2, skin); vg.box(g, 5, 7, 1, 5, 8, 2, skin);
+  vg.box(g, 3, 13, 1, 3, 14, 3, skin); vg.ellipsoid(g, 3, 15.5, 2, 1.6, 1.8, 1.7, skin); vg.box(g, 2, 16, 1, 4, 17, 3, C.hair);
+  return g;
+}
+
+var BUILD = { auto: auto, scooter: scooter, car: car, bus: bus, truck: truck, cow: cow, dog: dog, ped: ped }, LOOKS = { auto: 2, scooter: 4, car: 2, bus: 2, truck: 4, cow: 3, dog: 3, ped: 6 };
+var cache = {}, mat = null;
+function geo(kind, look) {
+  var key = kind + look; if (cache[key]) return cache[key];
+  if (!mat) mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  var g = BUILD[kind](look), a = vg.meshGrid(g, { x: g.W / 2, y: 0, z: g.D / 2 }, VS, { jitter: 0.04, seed: key.length * 7 + look });
+  var bg = new THREE.BufferGeometry();
+  bg.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); bg.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  bg.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); bg.setIndex(new THREE.BufferAttribute(a.indices, 1)); bg.computeBoundingSphere();
+  return (cache[key] = bg);
+}
+function createMesh(e) { var m = new THREE.Mesh(geo(e.kind, (e.look !== undefined ? e.look : e.id) % LOOKS[e.kind]), (geo(e.kind, (e.look !== undefined ? e.look : e.id) % LOOKS[e.kind]), mat)); m.frustumCulled = true; return m; }
+function dispose() { Object.keys(cache).forEach(function (k) { cache[k].dispose(); }); cache = {}; if (mat) { mat.dispose(); mat = null; } }
+
+module.exports = { createMesh: createMesh, dispose: dispose, VS: VS };
 
 };
 defs["view/app"]=function(module,exports,require){
@@ -4104,6 +4596,7 @@ function createSfx() {
     engineOff: function () { if (eng.scrubG && ac) eng.scrubG.gain.setTargetAtTime(0, ac.currentTime, 0.05); eng.acc = 0; },
     shift: function () { if (!on || !ctx()) return; burst(0.03, 0.35, 'highpass', 2500, 1800, 0); thump(180, 90, 0.05, 0.3); },
     start: function () { if (!on || !ctx()) return; var i; for (i = 0; i < 5; i++) { thump(70, 40, 0.1, 0.5, i * 0.11); burst(0.06, 0.25, 'lowpass', 600, 200, i * 0.11); } },
+    honk: function () { if (!on || !ctx()) return; var t = ac.currentTime, f = [392, 466][Math.random() < 0.5 ? 0 : 1], k; for (k = 0; k < 2; k++) { var o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f * (1 + k * 0.5); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.02); g.gain.setValueAtTime(0.09, t + 0.28); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.36); } },
     land: function (vy) { if (!on || !ctx()) return; var p = Math.min(1, vy / 10); thump(70, 28, 0.3, 0.7 + p * 0.6); burst(0.18, 0.3 + p * 0.3, 'lowpass', 1500, 200); },
     crash: function (hard) { if (!on || !ctx()) return; thump(80, 25, hard ? 0.7 : 0.35, hard ? 1.5 : 0.9); burst(hard ? 0.5 : 0.25, hard ? 0.9 : 0.5, 'lowpass', 2200, 120); burst(0.12, 0.7, 'highpass', 2600, 1200, 0.02); if (hard) { burst(0.35, 0.5, 'bandpass', 3000, 900, 0.08, 2); } },
     roll: function () { if (!on || !ctx()) return; burst(0.3, 0.4, 'bandpass', 500, 2400, 0, 1.4); thump(130, 60, 0.15, 0.6, 0.02); this.twang(); },

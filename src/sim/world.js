@@ -7,6 +7,7 @@ var rngMod = require('../core/rng');
 var streamingMod = require('./streaming');
 var combatMod = require('./combat');
 var citygen = require('./citygen');
+var trafficMod = require('./traffic'), locsMod = require('./citylocs'), LOCD = require('../data/locations');
 var bikeMod = require('./bike');
 var BIKE = require('../data/bike');
 
@@ -20,10 +21,39 @@ function createWorld(seed, bus) {
     counters: { attacks: 0, blocks: 0, finishers: 0 },
     streaming: streamingMod.createStreaming(seed, bus, citygen.generate),
     bike: bikeMod.createBike(1.7, -1.2, Math.PI / 2), mounted: false, mountTick: -999,
+    traffic: trafficMod.create(), locs: { cleared: {}, active: null, next: null, clearedCount: 0 },
     bus: bus
   };
   world.streaming.update(0, 0);
   return world;
+}
+
+/* fight locations: arriving at an uncleared one starts its fight; killing the last man clears it. Every half second the nearest uncleared one
+   is looked up (by hash, no chunk building) so the HUD can point the way. */
+function locationStep(world) {
+  var L = world.locs, p = world.player, c = world.combat, S = CONFIG.CHUNK_SIZE;
+  if (!c.enabled) return;
+  if (L.active) {
+    var alive = false, i;
+    for (i = 0; i < c.enemies.length; i++) if (!c.enemies[i].dead && c.enemies[i].st !== 'dead') { alive = true; break; }
+    if (!alive && !p.down) { L.cleared[L.active.key] = true; L.clearedCount++; world.bus.emit('location:clear', { key: L.active.key, name: L.active.name, x: L.active.x, z: L.active.z }); c.banner = L.active.name + ' cleared'; c.bannerT = 170; L.active = null; }
+    else if (p.down) L.active = null;
+  }
+  if (world.tick % 30 === 0) {
+    var ccx = Math.round(p.x / S), ccz = Math.round(p.z / S), bestD = 1e9, best = null, cx, cz;
+    for (cx = ccx - 7; cx <= ccx + 7; cx++) for (cz = ccz - 7; cz <= ccz + 7; cz++) {
+      var t = locsMod.typeAt(world.seed, cx, cz); if (!t) continue; var key = cx + ',' + cz; if (L.cleared[key]) continue;
+      var d = Math.hypot(cx * S - p.x, cz * S - p.z); if (d < bestD) { bestD = d; best = { key: key, type: t, name: LOCD.LOCATIONS[t].name, x: cx * S, z: cz * S, dist: d }; }
+    }
+    L.next = best;
+  }
+  if (!L.active && L.next && !L.cleared[L.next.key] && Math.hypot(L.next.x - p.x, L.next.z - p.z) < LOCD.LOCATIONS[L.next.type].r && c.enemies.every(function (q) { return q.dead || q.st === 'dead'; })) {
+    var sp = world.streaming.specAt(L.next.x, L.next.z);
+    if (sp && sp.loc) {
+      var D2 = LOCD.LOCATIONS[sp.loc.type]; L.active = { key: L.next.key, name: sp.loc.name, x: sp.loc.x, z: sp.loc.z };
+      combatMod.startLocation(world, sp.loc.name, sp.loc.spawns, D2.n, D2.stick); world.bus.emit('location:start', { key: L.next.key, name: sp.loc.name });
+    }
+  }
 }
 
 /* the nearest living man within reach of the saddle, or null */
@@ -73,7 +103,7 @@ function rideStep(world, input) {
     world.bus.emit('ride:park', { x: b.x, z: b.z });
     world.streaming.update(p.x, p.z); world.tick++; return;
   }
-  combatMod.step(world, input);
+  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
   if (p.hp < hp0) b.speed *= 0.82;                    /* a blow rocks the bike */
   p.x = b.x; p.z = b.z;
   world.streaming.update(p.x, p.z);
@@ -128,7 +158,7 @@ function step(world, input) {
   if (s.pressed.attack) { world.counters.attacks++; if (!world.combat.enabled) p.rage = Math.min(100, p.rage + 12); world.bus.emit('action', { type: 'attack' }); }
   if (s.pressed.block) { world.counters.blocks++; world.bus.emit('action', { type: 'block' }); }
   if (s.pressed.finisher && p.rage >= 100) { world.counters.finishers++; p.rage = 0; world.bus.emit('action', { type: 'finisher' }); }
-  combatMod.step(world, input);
+  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
   world.streaming.update(p.x, p.z);
   world.tick++;
 }
@@ -140,7 +170,7 @@ function hash(world) {
   function mixf(f) { mix(Math.round(f * 10000)); }
   mix(world.tick); mixf(p.x); mixf(p.z); mixf(p.face); mix(p.rage);
   mix(world.counters.attacks); mix(world.counters.blocks); mix(world.counters.finishers);
-  mix(world.rng.getState()); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
+  mix(world.rng.getState()); mix(world.traffic.list.length); mix(world.locs.clearedCount); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
   var keys = world.streaming.loadedKeys();
   for (var i = 0; i < keys.length; i++) for (var j = 0; j < keys[i].length; j++) mix(keys[i].charCodeAt(j));
   return h >>> 0;

@@ -6,6 +6,7 @@
 var CONFIG = require('../data/config');
 var gen = require('./chunkgen');
 var detail = require('./citydetail');
+var locs = require('./citylocs');
 var rngMod = require('../core/rng');
 
 var PERIOD = 3;
@@ -48,7 +49,9 @@ function generate(seed, cx, cz) {
     spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
   }
   spec.hazards = spec.hazards || [];
+  var loc = locs.place(spec, seed, cx, cz, kind);
   if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
+  spec.loc = loc;
   spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;
   return spec;
 }
