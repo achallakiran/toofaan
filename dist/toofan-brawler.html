@@ -365,7 +365,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 36',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 37',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -674,6 +674,55 @@ function makeString(rand) {                                  /* rand: a () => 0.
 var COMBO = makeString(function () { return 0; });
 var SEQS = [COMBO];
 var MOVE_LABELS = [['counterBoom', 'Sonic boom'], ['counterSmash', 'Guitar smash'], ['counterWhirl', 'Guitar whirl'], ['finisherWhirl', 'Rage finisher'], ['counterCross', 'Counter cross'], ['hookB', 'Right hook'], ['axeKick', 'Axe kick'], ['uppercut', 'Uppercut'], ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['elbow', 'Elbow'], ['knee', 'Knee'], ['kick', 'Push kick'], ['roundhouse', 'Roundhouse']];
+
+/* ---- moves from the saddle. Only the arms (and one leg for kicks) move: the hips stay on the seat and the other hand stays on the bar;
+   the rider's shoulders are turned toward the man by the view. Authored for a man on the RIGHT (rear hand armB, right leg legB); the left-hand
+   versions are mirrored. L/R in a name is the side the man stands on. ---- */
+function mirrorPose(pz) {
+  var o = {}, k, n, v;
+  for (k in pz) { n = k.replace(/^(arm|leg)([AB])\./, function (m, a, b) { return a + (b === 'A' ? 'B' : 'A') + '.'; }); v = pz[k]; if (/\.(pr|sy)$/.test(n)) v = -v; o[n] = v; }
+  return o;
+}
+function cloneMove(m, mirror, keepLegs) {
+  var c = JSON.parse(JSON.stringify(m));
+  c.keys.forEach(function (ky) {
+    var o = {}, k; for (k in ky.pose) { if (/^(hip\.|spine\.ry|spine\.rz|head\.ry|head\.rz)/.test(k)) continue; if (!keepLegs && /^leg/.test(k)) continue; o[k] = ky.pose[k]; }
+    ky.pose = mirror ? mirrorPose(o) : o;
+  });
+  c.bike = true; return c;
+}
+var BK_SRC = { Jab: ['jab', false], Hook: ['hook', false], Cross: ['cross', true], Elbow: ['elbow', true] };       /* [source clip, uses the rear hand] */
+Object.keys(BK_SRC).forEach(function (n) {
+  var src = MOVES[BK_SRC[n][0]], rear = BK_SRC[n][1];
+  MOVES['bk' + n + 'R'] = cloneMove(src, !rear); MOVES['bk' + n + 'L'] = cloneMove(src, rear);
+});
+MOVES.bkKickR = { bike: true, legs: 'legB', hit: 0.2, cancel: 0.36, len: 0.55, damage: 1.8, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.12, ease: 'in', pose: { 'legB.hx': 64, 'legB.hz': 34, 'legB.k': 104, 'legB.a': 6, 'spine.rx': 6 } },
+  { t: 0.2, ease: 'snap', pose: { 'legB.hx': 36, 'legB.hz': 78, 'legB.k': 12, 'legB.a': -30, 'legB.t': 30, 'spine.rx': 4 } },
+  { t: 0.32, pose: { 'legB.hx': 38, 'legB.hz': 76, 'legB.k': 14, 'legB.a': -28, 'legB.t': 30, 'spine.rx': 4 } },
+  { t: 0.55, ease: 'io', pose: {} }
+] };
+MOVES.bkKickL = cloneMove(MOVES.bkKickR, true, true); MOVES.bkKickL.legs = 'legA';
+/* counters: an elbow first; a sweep once the man is hurt; two men at once earn the double sweep */
+MOVES.bkCElbowR = cloneMove(MOVES.elbow, false); MOVES.bkCElbowR.counter = true; MOVES.bkCElbowR.damage = 2.4;
+MOVES.bkCElbowL = cloneMove(MOVES.elbow, true); MOVES.bkCElbowL.counter = true; MOVES.bkCElbowL.damage = 2.4;
+MOVES.bkSweepR = { bike: true, counter: true, hit: 0.24, cancel: 0.45, len: 0.58, damage: 3.4, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.14, ease: 'in', pose: { 'armB.sx': 72, 'armB.sz': 78, 'armB.e': 146, 'armB.pr': 20, 'spine.rx': 12 } },
+  { t: 0.24, ease: 'snap', pose: { 'armB.sx': 62, 'armB.sz': 8, 'armB.e': 122, 'armB.pr': -30, 'spine.rx': 14 } },
+  { t: 0.34, pose: { 'armB.sx': 62, 'armB.sz': 6, 'armB.e': 122, 'armB.pr': -30, 'spine.rx': 14 } },
+  { t: 0.58, ease: 'io', pose: {} }
+] };
+MOVES.bkSweepL = cloneMove(MOVES.bkSweepR, true, true); MOVES.bkSweepL.counter = true;
+MOVES.bkDouble = { bike: true, counter: true, hit: 0.22, hits: [0.22, 0.42], cancel: 0.62, len: 0.8, damage: 4.2, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.14, ease: 'in', pose: { 'armA.sx': 72, 'armA.sz': 76, 'armA.e': 146, 'armB.sx': 72, 'armB.sz': 76, 'armB.e': 146, 'spine.rx': 10 } },
+  { t: 0.22, ease: 'snap', pose: { 'armA.sx': 64, 'armA.sz': 8, 'armA.e': 122, 'armB.sx': 70, 'armB.sz': 84, 'armB.e': 140, 'spine.rx': 12 } },
+  { t: 0.32, ease: 'io', pose: { 'armA.sx': 72, 'armA.sz': 76, 'armA.e': 146, 'armB.sx': 72, 'armB.sz': 76, 'armB.e': 146, 'spine.rx': 10 } },
+  { t: 0.42, ease: 'snap', pose: { 'armB.sx': 64, 'armB.sz': 8, 'armB.e': 122, 'armA.sx': 70, 'armA.sz': 84, 'armA.e': 140, 'spine.rx': 12 } },
+  { t: 0.8, ease: 'io', pose: {} }
+] };
 
 var COUNTERS = ['counterBoom', 'counterSmash', 'counterWhirl'];
 var FINISHER = 'finisherWhirl';
@@ -1004,6 +1053,7 @@ function createFreeroam() {
       scope.add(ctx.bus.on('counter', function (e) {
         /* a timed block earns a direct hit that cannot be guarded; two men at once earn the guitar whirl (double takedown);
            a half-full rage bar can be spent on a guitar counter instead */
+        if (ctx.world.mounted) { var sd = ctx.world.rideSide > 0 ? 'L' : 'R'; S.mp.play(e.kind === 'bkDouble' ? 'bkDouble' : (e.kind === 'bkSweep' ? 'bkSweep' + sd : 'bkCElbow' + sd)); return; }
         S.mp.play(e.kind === 'double' ? 'counterWhirl' : (e.kind === 'special' ? ['counterBoom', 'counterSmash'][S.counterIdx++ % 2] : 'counterCross'));
       }));
       scope.add(ctx.bus.on('lastKo', function (e) {                                  /* the last man of the huddle goes down: slow motion and a finishing shot */
@@ -1017,6 +1067,13 @@ function createFreeroam() {
       }));
       scope.add(ctx.bus.on('guardbreak', function () { S.mp.cancel(); S.hurtW = 1; S.cine.shake(0.12, 0.3); S.fx.spawn('spark', heroPoint(1.3), 1); }));
       scope.add(ctx.bus.on('action', function (e) {
+        if (e.type === 'attack' && ctx.world.mounted) {          /* from the saddle: a random punch, elbow or kick on the side the man stands */
+          if (ctx.input.state.held.block || ctx.world.player.stun > 0 || ctx.world.player.down) return;
+          var cur = S.mp.current(), cmv = cur && moveData.MOVES[cur];
+          if (cmv && S.mp.time() < cmv.cancel * 0.75) return;
+          var sd2 = ctx.world.rideSide > 0 ? 'L' : 'R', r = Math.random(), nm = r < 0.22 ? 'Jab' : (r < 0.42 ? 'Cross' : (r < 0.58 ? 'Hook' : (r < 0.72 ? 'Elbow' : 'Kick')));
+          S.mp.play('bk' + nm + sd2); return;
+        }
         if (e.type === 'attack' && !ctx.input.state.held.block && ctx.world.player.stun <= 0 && !ctx.world.player.down) S.mp.press();
         if (e.type === 'finisher') { S.mp.play(moveData.FINISHER); S.txt.say('finisher', { x: ctx.world.player.x, y: 2.3, z: ctx.world.player.z }, view.camera, true); S.sfx.mega(); }
       }));
@@ -1065,11 +1122,16 @@ function createFreeroam() {
       if (S.mountW > 0.5) {                     /* in the saddle he turns shoulders and head to the nearest man; blows and guard are layered on, legs stay on the pegs */
         var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), en2 = ctx.world.combat.enemies, nd = 7, nb = 0, qi;
         for (qi = 0; qi < en2.length; qi++) { var ee = en2[qi]; if (ee.dead || ee.st === 'dead') continue; var dd2 = Math.hypot(ee.x - bk.x, ee.z - bk.z); if (dd2 < nd) { nd = dd2; nb = Math.atan2(ee.x - bk.x, ee.z - bk.z) - bk.h; nb = Math.atan2(Math.sin(nb), Math.cos(nb)); } }
-        var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
+        S.nearRel = nd < 7 ? nb : 0; var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
         S.aim = (S.aim || 0) + (aimT - (S.aim || 0)) * (1 - Math.exp(-10 * dt));
         var tw = {}; tw['spine.ry'] = S.aim * 0.5; tw['neck.ry'] = S.aim * 0.2; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1;
-        if (mo) { pose = posemath.layer(pose, mo.pose, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
-        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, 0, bw2, 0); }          /* one forearm up across the head, the other hand stays on the bar */
+        if (mo) {
+          var mv2 = mo.move && moveData.MOVES[mo.move], mp2 = {}, k3, legK = mv2 && mv2.legs;
+          for (k3 in mo.pose) { if (/^hip\./.test(k3)) continue; if (/^leg/.test(k3) && !(legK && k3.indexOf(legK) === 0)) continue; mp2[k3] = mo.pose[k3]; }
+          var hands = !(legK), lw = legK ? mo.wLower * fw : 0;
+          pose = posemath.layer(pose, mp2, lw, mo.wUpper * fw * (legK ? 0.5 : 1), hands ? mo.wArmA * fw : 0, hands ? mo.wArmB * fw : 0);
+        }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw, gl = (S.nearRel || 0) >= 0; pose = posemath.layer(pose, posemath.named('block'), 0, 0, gl ? bw2 : 0, gl ? 0 : bw2); }          /* elbow guard on the side the man is on */          /* one forearm up across the head, the other hand stays on the bar */
         tw['spine.ry'] += pose['spine.ry'] || 0; tw['neck.ry'] += pose['neck.ry'] || 0; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1; pose = posemath.layer(pose, tw, 1, fw, 0, 0);
       }
       S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
@@ -1485,6 +1547,17 @@ var enemiesData = require('../data/enemies');
 var moves = require('../data/moves');
 
 var GH = enemiesData.GUARD_HITS, GCOOL = enemiesData.GUARD_COOLDOWN, GBREAK = enemiesData.GUARD_BREAK;
+/* strikes for the moves thrown from the saddle: each borrows the reach of the blow it is made from */
+(function () {
+  var map = { Jab: 'jab', Hook: 'hook', Cross: 'cross', Elbow: 'elbow', Kick: 'kick' }, n, sd, o, k;
+  function copy(sp, extra) { var c = {}, q; for (q in sp) c[q] = sp[q]; for (q in extra) c[q] = extra[q]; return c; }
+  for (n in map) for (sd = 0; sd < 2; sd++) { k = 'bk' + n + 'LR'[sd]; o = copy(enemiesData.STRIKES[map[n]], { label: map[n] }); if (n === 'Kick') { o.down = false; o.reach = 1.9; o.arc = 70; } enemiesData.STRIKES[k] = o; }
+  for (sd = 0; sd < 2; sd++) {
+    enemiesData.STRIKES['bkCElbow' + 'LR'[sd]] = { reach: 1.9, arc: 110, knock: 0.6, down: false, high: true };
+    enemiesData.STRIKES['bkSweep' + 'LR'[sd]] = { reach: 2.3, arc: 130, knock: 1.6, down: true, high: true };
+  }
+  enemiesData.STRIKES.bkDouble = { reach: 2.5, arc: 180, knock: 1.8, down: true, high: true };
+})();
 var TPS = 60, KINDS = enemiesData.KINDS, STRIKES = enemiesData.STRIKES, RAGE = enemiesData.RAGE;
 var TIMED_WINDOW = 12;
 
@@ -1600,7 +1673,7 @@ function playerStrike(world, entry) {
     if (broke) { c.seqId = best.id; c.seqT = 170; best.st = 'guardbreak'; best.t = 0; best.guardHits = 0; best.guardCool = GCOOL; best.guarding = false; best.kx = bx / bl * 0.05; best.kz = bz / bl * 0.05; }
     return;
   }
-  hurtEnemy(world, best, perHit, p, spec, direct ? 'counterCross' : move, last);
+  hurtEnemy(world, best, perHit, p, spec, direct ? 'counterCross' : (spec.label || move), last);
 }
 
 function enemyStrike(world, e, input) {
@@ -1730,8 +1803,12 @@ function step(world, input) {
       addRage(p, RAGE.timedBlock); c.guardHits = 0; pick.st = 'hurt'; pick.t = 0; pick.kx = 0; pick.kz = 0; pick.guarding = false;
       /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar half full the hero can spend it on a guitar counter instead. */
       var kind = near >= 2 ? 'double' : (p.rage >= 60 ? 'special' : 'direct');
+      if (world.mounted) {                                   /* from the saddle: an elbow first, a sweep once the man is hurt, a double sweep for two */
+        kind = near >= 2 ? 'bkDouble' : (pick.hp / pick.maxHp < 0.6 ? 'bkSweep' : 'bkElbow');
+        var rb = bearing - world.bike.h; world.rideSide = Math.atan2(Math.sin(rb), Math.cos(rb));
+      }
       if (kind === 'special') p.rage -= 50;
-      if (kind !== 'double') { p.face = bearing; c.target = pick.id; }
+      if (kind !== 'double' && kind !== 'bkDouble') { p.face = bearing; c.target = pick.id; }
       world.bus.emit('block', { timed: true, id: pick.id, x: p.x, z: p.z });
       world.bus.emit('counter', { id: pick.id, kind: kind });
     }
@@ -3463,7 +3540,7 @@ function createMovePlayer(opts) {
     var mv = moves.MOVES[P.move];
     dt *= impactSpeed(P);                                    /* the fist snaps in, bites into the target, then lets go */
     P.t += dt; P.fromT += dt;
-    (mv.hits || [mv.hit]).forEach(function (ht, hi) { if (!P.fired['h' + hi] && P.t >= ht) { P.fired['h' + hi] = 1; var hl = (mv.hits || [mv.hit]).length, lastHit = mv.counter ? hi === hl - 1 : (P.comboIdx >= 0 ? P.comboIdx === P.seq.length - 1 : true); P.hitListeners.forEach(function (f) { f(P.move, hi, lastHit); }); } });
+    (mv.hits || [mv.hit]).forEach(function (ht, hi) { if (!P.fired['h' + hi] && P.t >= ht) { P.fired['h' + hi] = 1; var hl = (mv.hits || [mv.hit]).length, lastHit = mv.counter ? hi === hl - 1 : (P.comboIdx >= 0 ? P.comboIdx === P.seq.length - 1 : !mv.bike); P.hitListeners.forEach(function (f) { f(P.move, hi, lastHit); }); } });
     (mv.fx || []).forEach(function (fx, fi) { if (!P.fired['f' + fi] && P.t >= fx.t) { P.fired['f' + fi] = 1; P.fxListeners.forEach(function (f) { f(fx.kind, P.move); }); } });
     if (P.queued && P.t >= mv.cancel && P.comboIdx >= 0 && P.comboIdx < P.seq.length - 1) {   /* chain: carry the current pose into the next move */
       start(P.seq[P.comboIdx + 1], P.comboIdx + 1, P.last); P.t = dt;

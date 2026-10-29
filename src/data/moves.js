@@ -243,6 +243,55 @@ var COMBO = makeString(function () { return 0; });
 var SEQS = [COMBO];
 var MOVE_LABELS = [['counterBoom', 'Sonic boom'], ['counterSmash', 'Guitar smash'], ['counterWhirl', 'Guitar whirl'], ['finisherWhirl', 'Rage finisher'], ['counterCross', 'Counter cross'], ['hookB', 'Right hook'], ['axeKick', 'Axe kick'], ['uppercut', 'Uppercut'], ['jab', 'Jab'], ['cross', 'Cross'], ['hook', 'Hook'], ['elbow', 'Elbow'], ['knee', 'Knee'], ['kick', 'Push kick'], ['roundhouse', 'Roundhouse']];
 
+/* ---- moves from the saddle. Only the arms (and one leg for kicks) move: the hips stay on the seat and the other hand stays on the bar;
+   the rider's shoulders are turned toward the man by the view. Authored for a man on the RIGHT (rear hand armB, right leg legB); the left-hand
+   versions are mirrored. L/R in a name is the side the man stands on. ---- */
+function mirrorPose(pz) {
+  var o = {}, k, n, v;
+  for (k in pz) { n = k.replace(/^(arm|leg)([AB])\./, function (m, a, b) { return a + (b === 'A' ? 'B' : 'A') + '.'; }); v = pz[k]; if (/\.(pr|sy)$/.test(n)) v = -v; o[n] = v; }
+  return o;
+}
+function cloneMove(m, mirror, keepLegs) {
+  var c = JSON.parse(JSON.stringify(m));
+  c.keys.forEach(function (ky) {
+    var o = {}, k; for (k in ky.pose) { if (/^(hip\.|spine\.ry|spine\.rz|head\.ry|head\.rz)/.test(k)) continue; if (!keepLegs && /^leg/.test(k)) continue; o[k] = ky.pose[k]; }
+    ky.pose = mirror ? mirrorPose(o) : o;
+  });
+  c.bike = true; return c;
+}
+var BK_SRC = { Jab: ['jab', false], Hook: ['hook', false], Cross: ['cross', true], Elbow: ['elbow', true] };       /* [source clip, uses the rear hand] */
+Object.keys(BK_SRC).forEach(function (n) {
+  var src = MOVES[BK_SRC[n][0]], rear = BK_SRC[n][1];
+  MOVES['bk' + n + 'R'] = cloneMove(src, !rear); MOVES['bk' + n + 'L'] = cloneMove(src, rear);
+});
+MOVES.bkKickR = { bike: true, legs: 'legB', hit: 0.2, cancel: 0.36, len: 0.55, damage: 1.8, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.12, ease: 'in', pose: { 'legB.hx': 64, 'legB.hz': 34, 'legB.k': 104, 'legB.a': 6, 'spine.rx': 6 } },
+  { t: 0.2, ease: 'snap', pose: { 'legB.hx': 36, 'legB.hz': 78, 'legB.k': 12, 'legB.a': -30, 'legB.t': 30, 'spine.rx': 4 } },
+  { t: 0.32, pose: { 'legB.hx': 38, 'legB.hz': 76, 'legB.k': 14, 'legB.a': -28, 'legB.t': 30, 'spine.rx': 4 } },
+  { t: 0.55, ease: 'io', pose: {} }
+] };
+MOVES.bkKickL = cloneMove(MOVES.bkKickR, true, true); MOVES.bkKickL.legs = 'legA';
+/* counters: an elbow first; a sweep once the man is hurt; two men at once earn the double sweep */
+MOVES.bkCElbowR = cloneMove(MOVES.elbow, false); MOVES.bkCElbowR.counter = true; MOVES.bkCElbowR.damage = 2.4;
+MOVES.bkCElbowL = cloneMove(MOVES.elbow, true); MOVES.bkCElbowL.counter = true; MOVES.bkCElbowL.damage = 2.4;
+MOVES.bkSweepR = { bike: true, counter: true, hit: 0.24, cancel: 0.45, len: 0.58, damage: 3.4, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.14, ease: 'in', pose: { 'armB.sx': 72, 'armB.sz': 78, 'armB.e': 146, 'armB.pr': 20, 'spine.rx': 12 } },
+  { t: 0.24, ease: 'snap', pose: { 'armB.sx': 62, 'armB.sz': 8, 'armB.e': 122, 'armB.pr': -30, 'spine.rx': 14 } },
+  { t: 0.34, pose: { 'armB.sx': 62, 'armB.sz': 6, 'armB.e': 122, 'armB.pr': -30, 'spine.rx': 14 } },
+  { t: 0.58, ease: 'io', pose: {} }
+] };
+MOVES.bkSweepL = cloneMove(MOVES.bkSweepR, true, true); MOVES.bkSweepL.counter = true;
+MOVES.bkDouble = { bike: true, counter: true, hit: 0.22, hits: [0.22, 0.42], cancel: 0.62, len: 0.8, damage: 4.2, keys: [
+  { t: 0.00, pose: {} },
+  { t: 0.14, ease: 'in', pose: { 'armA.sx': 72, 'armA.sz': 76, 'armA.e': 146, 'armB.sx': 72, 'armB.sz': 76, 'armB.e': 146, 'spine.rx': 10 } },
+  { t: 0.22, ease: 'snap', pose: { 'armA.sx': 64, 'armA.sz': 8, 'armA.e': 122, 'armB.sx': 70, 'armB.sz': 84, 'armB.e': 140, 'spine.rx': 12 } },
+  { t: 0.32, ease: 'io', pose: { 'armA.sx': 72, 'armA.sz': 76, 'armA.e': 146, 'armB.sx': 72, 'armB.sz': 76, 'armB.e': 146, 'spine.rx': 10 } },
+  { t: 0.42, ease: 'snap', pose: { 'armB.sx': 64, 'armB.sz': 8, 'armB.e': 122, 'armA.sx': 70, 'armA.sz': 84, 'armA.e': 140, 'spine.rx': 12 } },
+  { t: 0.8, ease: 'io', pose: {} }
+] };
+
 var COUNTERS = ['counterBoom', 'counterSmash', 'counterWhirl'];
 var FINISHER = 'finisherWhirl';
 module.exports = { GUARD: GUARD, MOVES: MOVES, COMBO: COMBO, SEQS: SEQS, makeString: makeString, COUNTERS: COUNTERS, FINISHER: FINISHER, MOVE_LABELS: MOVE_LABELS };

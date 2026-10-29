@@ -112,7 +112,7 @@ function createMovePlayer(opts) {
     var mv = moves.MOVES[P.move];
     dt *= impactSpeed(P);                                    /* the fist snaps in, bites into the target, then lets go */
     P.t += dt; P.fromT += dt;
-    (mv.hits || [mv.hit]).forEach(function (ht, hi) { if (!P.fired['h' + hi] && P.t >= ht) { P.fired['h' + hi] = 1; var hl = (mv.hits || [mv.hit]).length, lastHit = mv.counter ? hi === hl - 1 : (P.comboIdx >= 0 ? P.comboIdx === P.seq.length - 1 : true); P.hitListeners.forEach(function (f) { f(P.move, hi, lastHit); }); } });
+    (mv.hits || [mv.hit]).forEach(function (ht, hi) { if (!P.fired['h' + hi] && P.t >= ht) { P.fired['h' + hi] = 1; var hl = (mv.hits || [mv.hit]).length, lastHit = mv.counter ? hi === hl - 1 : (P.comboIdx >= 0 ? P.comboIdx === P.seq.length - 1 : !mv.bike); P.hitListeners.forEach(function (f) { f(P.move, hi, lastHit); }); } });
     (mv.fx || []).forEach(function (fx, fi) { if (!P.fired['f' + fi] && P.t >= fx.t) { P.fired['f' + fi] = 1; P.fxListeners.forEach(function (f) { f(fx.kind, P.move); }); } });
     if (P.queued && P.t >= mv.cancel && P.comboIdx >= 0 && P.comboIdx < P.seq.length - 1) {   /* chain: carry the current pose into the next move */
       start(P.seq[P.comboIdx + 1], P.comboIdx + 1, P.last); P.t = dt;

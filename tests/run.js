@@ -469,5 +469,18 @@ test('ride fight: blows from the saddle hurt a man beside the bike and not one f
   R.run(3, 0, 0, false); R.run(1, 0, 0, true); for (var i = 0; i < 4; i++) { w.pendingStrikes.push({ move: 'cross', last: false }); R.run(1, 0, 0, false); }
   assert(near.hp < hp0, 'near man hurt ' + near.hp + '/' + hp0); assert.strictEqual(far.hp, hf, 'far man untouched');
 });
+test('bike moves: every saddle move exists with a strike, left and right; counters escalate elbow, sweep, double', function () {
+  var moves = req('data/moves'), en = req('data/enemies'), names = ['Jab', 'Cross', 'Hook', 'Elbow', 'Kick'], n, sd;
+  for (n = 0; n < names.length; n++) for (sd = 0; sd < 2; sd++) { var k = 'bk' + names[n] + 'LR'[sd]; assert(moves.MOVES[k] && en.STRIKES[k], k); assert(!moves.MOVES[k].counter); }
+  ['bkCElbowL', 'bkCElbowR', 'bkSweepL', 'bkSweepR', 'bkDouble'].forEach(function (k) { assert(moves.MOVES[k] && moves.MOVES[k].counter && en.STRIKES[k], k); });
+  assert(moves.MOVES.bkJabL.keys[3].pose['armA.sx'] > 80 && moves.MOVES.bkJabR.keys[3].pose['armB.sx'] > 80, 'jab uses the near arm on each side');
+  function counterKind(hpFrac, two) {
+    var R = rideWorld(), w = R.w, kind = null; R.bus.on('counter', function (e) { kind = e.kind; }); w.combat.enabled = true; w.combat.enemies.length = 0;
+    combatMod.spawn(w, 'thug', w.bike.x + 1.5, w.bike.z); var e0 = w.combat.enemies[0]; e0.hp = e0.maxHp * hpFrac; e0.st = 'windup'; e0.t = Math.round(combatMod.KINDS.thug.windup * 60 * 0.5);
+    if (two) { combatMod.spawn(w, 'thug', w.bike.x - 1.5, w.bike.z); var e1 = w.combat.enemies[1]; e1.st = 'windup'; e1.t = e0.t; }
+    R.inp.setButton('block', true); R.inp.tick(w.tick); worldMod.step(w, R.inp); return kind;
+  }
+  assert.strictEqual(counterKind(1, false), 'bkElbow'); assert.strictEqual(counterKind(0.4, false), 'bkSweep'); assert.strictEqual(counterKind(1, true), 'bkDouble');
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

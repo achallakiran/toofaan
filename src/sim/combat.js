@@ -6,6 +6,17 @@ var enemiesData = require('../data/enemies');
 var moves = require('../data/moves');
 
 var GH = enemiesData.GUARD_HITS, GCOOL = enemiesData.GUARD_COOLDOWN, GBREAK = enemiesData.GUARD_BREAK;
+/* strikes for the moves thrown from the saddle: each borrows the reach of the blow it is made from */
+(function () {
+  var map = { Jab: 'jab', Hook: 'hook', Cross: 'cross', Elbow: 'elbow', Kick: 'kick' }, n, sd, o, k;
+  function copy(sp, extra) { var c = {}, q; for (q in sp) c[q] = sp[q]; for (q in extra) c[q] = extra[q]; return c; }
+  for (n in map) for (sd = 0; sd < 2; sd++) { k = 'bk' + n + 'LR'[sd]; o = copy(enemiesData.STRIKES[map[n]], { label: map[n] }); if (n === 'Kick') { o.down = false; o.reach = 1.9; o.arc = 70; } enemiesData.STRIKES[k] = o; }
+  for (sd = 0; sd < 2; sd++) {
+    enemiesData.STRIKES['bkCElbow' + 'LR'[sd]] = { reach: 1.9, arc: 110, knock: 0.6, down: false, high: true };
+    enemiesData.STRIKES['bkSweep' + 'LR'[sd]] = { reach: 2.3, arc: 130, knock: 1.6, down: true, high: true };
+  }
+  enemiesData.STRIKES.bkDouble = { reach: 2.5, arc: 180, knock: 1.8, down: true, high: true };
+})();
 var TPS = 60, KINDS = enemiesData.KINDS, STRIKES = enemiesData.STRIKES, RAGE = enemiesData.RAGE;
 var TIMED_WINDOW = 12;
 
@@ -121,7 +132,7 @@ function playerStrike(world, entry) {
     if (broke) { c.seqId = best.id; c.seqT = 170; best.st = 'guardbreak'; best.t = 0; best.guardHits = 0; best.guardCool = GCOOL; best.guarding = false; best.kx = bx / bl * 0.05; best.kz = bz / bl * 0.05; }
     return;
   }
-  hurtEnemy(world, best, perHit, p, spec, direct ? 'counterCross' : move, last);
+  hurtEnemy(world, best, perHit, p, spec, direct ? 'counterCross' : (spec.label || move), last);
 }
 
 function enemyStrike(world, e, input) {
@@ -251,8 +262,12 @@ function step(world, input) {
       addRage(p, RAGE.timedBlock); c.guardHits = 0; pick.st = 'hurt'; pick.t = 0; pick.kx = 0; pick.kz = 0; pick.guarding = false;
       /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar half full the hero can spend it on a guitar counter instead. */
       var kind = near >= 2 ? 'double' : (p.rage >= 60 ? 'special' : 'direct');
+      if (world.mounted) {                                   /* from the saddle: an elbow first, a sweep once the man is hurt, a double sweep for two */
+        kind = near >= 2 ? 'bkDouble' : (pick.hp / pick.maxHp < 0.6 ? 'bkSweep' : 'bkElbow');
+        var rb = bearing - world.bike.h; world.rideSide = Math.atan2(Math.sin(rb), Math.cos(rb));
+      }
       if (kind === 'special') p.rage -= 50;
-      if (kind !== 'double') { p.face = bearing; c.target = pick.id; }
+      if (kind !== 'double' && kind !== 'bkDouble') { p.face = bearing; c.target = pick.id; }
       world.bus.emit('block', { timed: true, id: pick.id, x: p.x, z: p.z });
       world.bus.emit('counter', { id: pick.id, kind: kind });
     }

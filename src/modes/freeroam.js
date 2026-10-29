@@ -112,6 +112,7 @@ function createFreeroam() {
       scope.add(ctx.bus.on('counter', function (e) {
         /* a timed block earns a direct hit that cannot be guarded; two men at once earn the guitar whirl (double takedown);
            a half-full rage bar can be spent on a guitar counter instead */
+        if (ctx.world.mounted) { var sd = ctx.world.rideSide > 0 ? 'L' : 'R'; S.mp.play(e.kind === 'bkDouble' ? 'bkDouble' : (e.kind === 'bkSweep' ? 'bkSweep' + sd : 'bkCElbow' + sd)); return; }
         S.mp.play(e.kind === 'double' ? 'counterWhirl' : (e.kind === 'special' ? ['counterBoom', 'counterSmash'][S.counterIdx++ % 2] : 'counterCross'));
       }));
       scope.add(ctx.bus.on('lastKo', function (e) {                                  /* the last man of the huddle goes down: slow motion and a finishing shot */
@@ -125,6 +126,13 @@ function createFreeroam() {
       }));
       scope.add(ctx.bus.on('guardbreak', function () { S.mp.cancel(); S.hurtW = 1; S.cine.shake(0.12, 0.3); S.fx.spawn('spark', heroPoint(1.3), 1); }));
       scope.add(ctx.bus.on('action', function (e) {
+        if (e.type === 'attack' && ctx.world.mounted) {          /* from the saddle: a random punch, elbow or kick on the side the man stands */
+          if (ctx.input.state.held.block || ctx.world.player.stun > 0 || ctx.world.player.down) return;
+          var cur = S.mp.current(), cmv = cur && moveData.MOVES[cur];
+          if (cmv && S.mp.time() < cmv.cancel * 0.75) return;
+          var sd2 = ctx.world.rideSide > 0 ? 'L' : 'R', r = Math.random(), nm = r < 0.22 ? 'Jab' : (r < 0.42 ? 'Cross' : (r < 0.58 ? 'Hook' : (r < 0.72 ? 'Elbow' : 'Kick')));
+          S.mp.play('bk' + nm + sd2); return;
+        }
         if (e.type === 'attack' && !ctx.input.state.held.block && ctx.world.player.stun <= 0 && !ctx.world.player.down) S.mp.press();
         if (e.type === 'finisher') { S.mp.play(moveData.FINISHER); S.txt.say('finisher', { x: ctx.world.player.x, y: 2.3, z: ctx.world.player.z }, view.camera, true); S.sfx.mega(); }
       }));
@@ -173,11 +181,16 @@ function createFreeroam() {
       if (S.mountW > 0.5) {                     /* in the saddle he turns shoulders and head to the nearest man; blows and guard are layered on, legs stay on the pegs */
         var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), en2 = ctx.world.combat.enemies, nd = 7, nb = 0, qi;
         for (qi = 0; qi < en2.length; qi++) { var ee = en2[qi]; if (ee.dead || ee.st === 'dead') continue; var dd2 = Math.hypot(ee.x - bk.x, ee.z - bk.z); if (dd2 < nd) { nd = dd2; nb = Math.atan2(ee.x - bk.x, ee.z - bk.z) - bk.h; nb = Math.atan2(Math.sin(nb), Math.cos(nb)); } }
-        var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
+        S.nearRel = nd < 7 ? nb : 0; var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
         S.aim = (S.aim || 0) + (aimT - (S.aim || 0)) * (1 - Math.exp(-10 * dt));
         var tw = {}; tw['spine.ry'] = S.aim * 0.5; tw['neck.ry'] = S.aim * 0.2; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1;
-        if (mo) { pose = posemath.layer(pose, mo.pose, 0, mo.wUpper * fw, mo.wArmA * fw, mo.wArmB * fw); }
-        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw; pose = posemath.layer(pose, posemath.named('block'), 0, 0, bw2, 0); }          /* one forearm up across the head, the other hand stays on the bar */
+        if (mo) {
+          var mv2 = mo.move && moveData.MOVES[mo.move], mp2 = {}, k3, legK = mv2 && mv2.legs;
+          for (k3 in mo.pose) { if (/^hip\./.test(k3)) continue; if (/^leg/.test(k3) && !(legK && k3.indexOf(legK) === 0)) continue; mp2[k3] = mo.pose[k3]; }
+          var hands = !(legK), lw = legK ? mo.wLower * fw : 0;
+          pose = posemath.layer(pose, mp2, lw, mo.wUpper * fw * (legK ? 0.5 : 1), hands ? mo.wArmA * fw : 0, hands ? mo.wArmB * fw : 0);
+        }
+        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw, gl = (S.nearRel || 0) >= 0; pose = posemath.layer(pose, posemath.named('block'), 0, 0, gl ? bw2 : 0, gl ? 0 : bw2); }          /* elbow guard on the side the man is on */          /* one forearm up across the head, the other hand stays on the bar */
         tw['spine.ry'] += pose['spine.ry'] || 0; tw['neck.ry'] += pose['neck.ry'] || 0; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1; pose = posemath.layer(pose, tw, 1, fw, 0, 0);
       }
       S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
