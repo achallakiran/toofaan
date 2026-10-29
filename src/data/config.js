@@ -2,7 +2,7 @@
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 37',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 38',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -20,7 +20,10 @@ var CONFIG = {
   /* palette indices used by chunk specs, resolved to colours by the view */
   PALETTE: [
     '#6b6f76', '#3a3d42', '#b9a98f', '#c76b4a', '#d9b24a', '#4f7fb0',
-    '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a'
+    '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a',
+    '#2b2d31', '#7d8087', '#f2c230', '#17181b', '#f08a24', '#c2306f', '#18a0a8', '#8cc63f', '#2a55b8', '#d0312d', '#efe3c8', '#7a3fa0',
+    '#7b5a3c', '#f2f2ee', '#9b4a2a', '#e8708a',
+    '#e9a23b', '#d4577c', '#5bb5b0', '#9cc84e', '#4f7fd0', '#e8d9a8', '#c8762f', '#b86ad0'
   ],
   GROUND: { road: 1, sidewalk: 8, dirt: 2 }
 };

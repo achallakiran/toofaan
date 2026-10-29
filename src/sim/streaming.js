@@ -67,7 +67,15 @@ function createStreaming(seed, bus, genFn) {
     return 0;
   }
 
+  /* the bad road: 'pot' (pothole), 'brk' (speed breaker) or null under a point, world metres */
+  function hazardAt(x, z) {
+    var sp = specAt(x, z); if (!sp || !sp.hazards) return null; var lx = x - sp.ox, lz = z - sp.oz;
+    for (var i = 0; i < sp.hazards.length; i++) { var h = sp.hazards[i]; if (lx >= h.x0 && lx <= h.x1 && lz >= h.z0 && lz <= h.z1) return h.k; }
+    return null;
+  }
+
   return {
+    hazardAt: hazardAt,
     update: update, specAt: specAt, solidsNear: solidsNear, groundAt: groundAt,
     loadedKeys: function () { return Object.keys(loaded).sort(); },
     snapshotSpecs: function () { return Object.keys(loaded).sort().map(function (k) { return loaded[k]; }); },

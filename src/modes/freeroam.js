@@ -65,6 +65,7 @@ function createFreeroam() {
         S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
       })();
       function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
+      scope.add(ctx.bus.on('ride:bump', function (e) { S.sfx.land(2 + e.power * 6); S.cine.shake(0.03 + 0.07 * e.power, 0.18); }));
       scope.add(ctx.bus.on('ride:mount', function () { S.mp.cancel(); S.sfx.start(); }));
       scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
       scope.add(ctx.bus.on('ride:jump', function () { S.cine.shake(0.05, 0.2); }));
@@ -172,9 +173,9 @@ function createFreeroam() {
       var bk = ctx.world.bike, bp = S.bPrev || bk, mounted = ctx.world.mounted;
       var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
       S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
-      var B3 = S.bike; B3.root.position.set(bx, by, bz); B3.root.rotation.y = bh;
+      var B3 = S.bike; B3.root.position.set(bx, by + bk.jolt * Math.sin(S.t * 34) * 0.045, bz); B3.root.rotation.y = bh;
       B3.lean.rotation.z = bk.lean + bk.slip * 0.5;
-      B3.pitch.rotation.x = -bk.pitch - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
+      B3.pitch.rotation.x = -bk.pitch + bk.jolt * Math.sin(S.t * 29) * 0.07 - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
       B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
       var rideP = null;
       if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }

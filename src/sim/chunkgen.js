@@ -5,6 +5,8 @@
 var rngMod = require('../core/rng');
 var CONFIG = require('../data/config');
 
+/* the original pastel wall colours, mapped to a livelier set: saffron, rose, turquoise, lime, blue, cream, ochre, orchid */
+var WALLS = { 2: 28, 3: 29, 4: 30, 5: 31, 6: 32, 7: 33, 8: 34, 9: 35, 10: 28, 11: 30 };
 function chunkKey(cx, cz) { return cx + ',' + cz; }
 
 function generateChunk(seed, cx, cz, opts) {
@@ -31,7 +33,7 @@ function generateChunk(seed, cx, cz, opts) {
       var hgt = rng.range(5, 22);
       var shopH = 2.7;
       var c = rng.int(2, 11);
-      box(x, 0, rows[r].z0, x + w, hgt, rows[r].z1, c);
+      box(x, 0, rows[r].z0, x + w, hgt, rows[r].z1, WALLS[c] === undefined ? c : WALLS[c]);
       solids.push({ x0: x, z0: rows[r].z0, x1: x + w, z1: rows[r].z1, y1: hgt });
       if (onRoad) {                                                   /* shopfront band raised to a hero-sized doorway */
         var zf = rows[r].z0 < 0 ? rows[r].z1 : rows[r].z0, dz = rows[r].z0 < 0 ? 0.12 : -0.12;

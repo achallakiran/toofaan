@@ -5,6 +5,7 @@
 
 var CONFIG = require('../data/config');
 var gen = require('./chunkgen');
+var detail = require('./citydetail');
 var rngMod = require('../core/rng');
 
 var PERIOD = 3;
@@ -42,10 +43,12 @@ function generate(seed, cx, cz) {
     var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
     p.forEach(function (q) {
       var x0 = q[0] === -H ? q[0] + 0.4 : q[0], x1 = q[2] === H ? q[2] - 0.4 : q[2], z0 = q[1] === -H ? q[1] + 0.4 : q[1], z1 = q[3] === H ? q[3] - 0.4 : q[3], hgt = rng.range(7, 20);
-      box(x0, 0, z0, x1, hgt, z1, rng.int(2, 11)); solids.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: hgt });
+      box(x0, 0, z0, x1, hgt, z1, [28, 29, 30, 31, 32, 33, 34, 35][rng.int(2, 11) % 8]); solids.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: hgt });
     });
     spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
   }
+  spec.hazards = spec.hazards || [];
+  if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
   spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;
   return spec;
 }

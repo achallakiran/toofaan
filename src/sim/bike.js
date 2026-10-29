@@ -7,7 +7,7 @@ var TAU = Math.PI * 2;
 
 function createBike(x, z, h) {
   return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, 
-           steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0 };
+           steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0, jolt: 0, hzF: null, hzR: null };
 }
 
 function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -74,6 +74,22 @@ function step(b, ctrl, env, dt, bus) {
       if (bus && into > 3) bus.emit('ride:crash', { x: b.x, z: b.z, speed: into, hard: hard, with: 'wall' });
     }
   }
+
+  /* bad road: each wheel that drops into a pothole or climbs a speed breaker jars the bike; the faster, the harder */
+  if (env.hazardAt && !b.air) {
+    var wf = env.hazardAt(b.x + fx * B.HALF_LEN, b.z + fz * B.HALF_LEN), wr = env.hazardAt(b.x - fx * B.HALF_LEN, b.z - fz * B.HALF_LEN), sp = Math.abs(b.speed);
+    [[wf, 'hzF', 1], [wr, 'hzR', 0.6]].forEach(function (q) {
+      if (q[0] && q[0] !== b[q[1]] && sp > 4) {
+        var hardness = q[0] === 'brk' ? clamp((sp - 5) / 16, 0.1, 1) : clamp(sp / 22, 0.15, 0.85);
+        b.jolt = Math.min(1, b.jolt + hardness * q[2]);
+        b.speed *= 1 - (q[0] === 'brk' ? 0.22 : 0.1) * hardness * q[2];
+        b.h += Math.sin(b.x * 7.3 + b.z * 3.1) * 0.03 * hardness;             /* the bars kick */
+        if (bus) bus.emit('ride:bump', { x: b.x, z: b.z, kind: q[0], power: hardness * q[2] });
+      }
+      b[q[1]] = q[0];
+    });
+  } else if (b.air) { b.hzF = null; b.hzR = null; }
+  b.jolt = Math.max(0, b.jolt - 4.5 * dt);
 
   /* ground, jumping, landing */
   var gy = env.groundAt(b.x, b.z);

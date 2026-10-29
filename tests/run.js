@@ -482,5 +482,14 @@ test('bike moves: every saddle move exists with a strike, left and right; counte
   }
   assert.strictEqual(counterKind(1, false), 'bkElbow'); assert.strictEqual(counterKind(0.4, false), 'bkSweep'); assert.strictEqual(counterKind(1, true), 'bkDouble');
 });
+test('city detail: road chunks carry potholes and speed breakers inside the chunk; the bike is jarred and slowed by them', function () {
+  var cx, found = null, pot = 0, brk = 0;
+  for (cx = -6; cx <= 6; cx++) { var c = citygen.generate(11, cx, 0); if (c.kind !== 'roadH') continue; c.hazards.forEach(function (h) { if (h.k === 'pot') pot++; if (h.k === 'brk') brk++; assert(h.x0 >= -16 && h.x1 <= 16 && h.z0 >= -16 && h.z1 <= 16); }); if (!found && c.hazards.length) found = c; }
+  assert(pot > 8 && brk >= 1, 'pot ' + pot + ' brk ' + brk);
+  var env = { groundAt: function () { return 0; }, solidsNear: function () { return []; }, hazardAt: function (x) { return x > 40 && x < 41 ? 'brk' : (x > 70 && x < 71 ? 'pot' : null); } };
+  var b = bikeMod.createBike(0, 0, Math.PI / 2), bumps = 0, bus = busMod.createBus(), vmax = 0, vAfter = 0; bus.on('ride:bump', function () { bumps++; });
+  for (var i = 0; i < 1500; i++) { bikeMod.step(b, GO, env, 1 / 60, bus); if (b.x < 40) vmax = b.speed; if (b.x > 42 && !vAfter) vAfter = b.speed; }
+  assert(bumps >= 2 && vAfter < vmax, 'bumps ' + bumps + ' before ' + vmax + ' after ' + vAfter);
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
