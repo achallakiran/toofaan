@@ -87,6 +87,20 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
     return { m: m, mark: mark, bar: bar };
   }
   function pulse(mark, t, on, u) { mark.visible = on; if (on) { var p = (1 + Math.sin(t * (14 + u * 22)) * 0.12) * (u < 0.2 ? 1.6 - u * 3 : 1); mark.scale.setScalar(p * (mark.userData.base || 1)); mark.userData.mat.opacity = Math.min(1, u * 6); } }
+  /* impact bursts: a star of rays and a flash ball that grow and fade where a blow lands */
+  var bursts = [], rayGeo = new THREE.BoxGeometry(0.05, 0.05, 1), ballGeo = new THREE.SphereGeometry(0.35, 10, 8);
+  function burst(x, y, z, color, size) {
+    var g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, depthTest: false, blending: THREE.AdditiveBlending }), i;
+    for (i = 0; i < 14; i++) { var m = new THREE.Mesh(rayGeo, mat); var a = i * 2.4, b2 = Math.sin(i * 1.7) * 1.2; m.rotation.set(b2, a, 0); m.position.set(0, 0, 0); m.renderOrder = 20; var piv = new THREE.Group(); piv.add(m); m.position.z = 0.5; piv.rotation.set(b2, a, 0); m.rotation.set(0, 0, 0); g.add(piv); }
+    var ball = new THREE.Mesh(ballGeo, mat); ball.renderOrder = 20; g.add(ball);
+    g.position.set(x, y, z); root.add(g); bursts.push({ g: g, mat: mat, t: 0, size: size || 1 });
+  }
+  function stepBursts(dt) {
+    bursts = bursts.filter(function (b) {
+      b.t += dt; var u = b.t / 0.42; if (u >= 1) { root.remove(b.g); b.mat.dispose(); return false; }
+      b.g.scale.setScalar(b.size * (0.3 + u * 1.6)); b.mat.opacity = 1 - u; return true;
+    });
+  }
   function clearAll() {
     Object.keys(foes).forEach(function (k) { root.remove(foes[k].root); }); foes = {};
     Object.keys(crew).forEach(function (k) { root.remove(crew[k].rig.root); }); crew = {};
@@ -103,17 +117,21 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
       if (e.phase === 'police' && e.cuffed) { var su = 0, n = 0; e.cuffed.forEach(function (g) { if (!g.gone) { su += g.u; n++; } }); return { u: n ? su / n : e.police.u, lat: e.cuffed[0].lat - 1.5, police: true }; }
       if (e.car && (e.hero.roof || e.hero.leap > 0)) return { u: e.car.u, lat: e.car.lat - e.car.sw, roof: true };
       var a = null; (e.foes || []).forEach(function (o) { if (!a && o.st !== 'down' && o.st !== 'approach') a = o; });
+      if (a && a.lat !== undefined) return { u: 0.3, lat: 0, bikes: true };            /* goons on both sides: frame Toofan in the middle */
       if (a) return { u: a.u * 0.5, lat: R.ENC.LAT * 0.5 };
       if (e.car) return { u: e.car.u * 0.5, lat: R.ENC.LAT * 0.5 };
+      if (e.kind === 'bikes') return { u: 0.3, lat: 0, bikes: true };
       return { u: 0, lat: R.ENC.LAT * 0.4 };
     },
     /* where an enemy is in the world (for close-ups) */
     worldOf: function (r, id, bx, bz) {
       var e = r.enc; if (!e) return null; var o = (e.foes || []).concat(e.crew || []).filter(function (q) { return q.id === id; })[0]; if (!o) return null;
-      var u = o.crew ? e.car.u + o.side * 1.05 : o.u, lat = o.crew ? e.car.lat : R.ENC.LAT;
+      var u = o.crew ? e.car.u + o.side * 1.05 : o.u, lat = o.crew ? e.car.lat : (o.lat !== undefined ? o.lat : R.ENC.LAT);
       return { x: bx + e.f.x * u + e.l.x * lat, z: bz + e.f.z * u + e.l.z * lat };
     },
+    burst: burst,
     sync: function (r, alpha, dt, t, bx, bz) {
+      stepBursts(dt);
       var e = r.enc;
       if (!e) { if (this.active) { clearAll(); this.active = false; if (heroRig.root.parent !== heroBike.pitch) seated(heroRig, heroBike); heroRig.applyPose(ridePose, { plant: false }); heroRig.body.rotation.set(0, 0, 0); heroRig.root.rotation.set(0, 0, 0); } return false; }
       this.active = true; walkT += dt;
@@ -123,11 +141,12 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
       var seen = {};
       (e.foes || []).forEach(function (o) {
         seen[o.id] = 1; var F = foes[o.id] || (foes[o.id] = makeFoe(o)), T = template();
-        place(F.root, bx, bz, e, o.u, E.LAT); F.root.rotation.y = hd;
+        place(F.root, bx, bz, e, o.u, o.lat !== undefined ? o.lat : E.LAT); F.root.rotation.y = hd;
         F.wheel += (r.bike.speed + (o.st === 'down' ? -7 : 0)) * dt / (T.wheelR * S); F.rear.rotation.x = F.wheel; F.front.rotation.x = F.wheel;
         var pose = ridePose, down = o.st === 'down';
-        if (o.st === 'windup') pose = posemath.layer(ridePose, clip('bkHookR', Math.min(1, o.t / E.WIND) * 0.19), 0, 1, 1, 1);
-        else if (o.st === 'recover') pose = posemath.layer(ridePose, clip('bkHookR', 0.19 + Math.min(1, o.t / 26) * 0.35), 0, 1 - o.t / 26, 1 - o.t / 26, 1 - o.t / 26);
+        var hk = o.lat < 0 ? 'bkHookL' : 'bkHookR';                       /* he swings at Toofan, who is on his right if he rides on the left */
+        if (o.st === 'windup') pose = posemath.layer(ridePose, clip(hk, Math.min(1, o.t / E.WIND) * 0.19), 0, 1, 1, 1);
+        else if (o.st === 'recover') pose = posemath.layer(ridePose, clip(hk, 0.19 + Math.min(1, o.t / 26) * 0.35), 0, 1 - o.t / 26, 1 - o.t / 26, 1 - o.t / 26);
         else if (o.st === 'hurt') pose = posemath.layer(ridePose, posemath.named('hurt'), 0, 0.6 * Math.max(0, 1 - o.t / 20), 0.6, 0.6);
         F.rig.applyPose(pose, { plant: false });
         F.rig.body.rotation.z = o.st === 'hurt' ? 0.3 * Math.exp(-o.t / 10) : 0;
@@ -189,7 +208,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
         rig.root.rotation.set(0, 0, 0);
         var pose = ridePose;
         if (H.act) { var kick = /Kick|Sweep|Double/.test(H.act.move); pose = posemath.layer(ridePose, clip(H.act.move, H.act.t / 60), kick ? 1 : 0, 1, 1, 1); }
-        else if (H.guard) pose = posemath.layer(ridePose, posemath.named('block'), 0, 0, 1, 0);
+        else if (H.guard) pose = posemath.layer(ridePose, posemath.named('block'), 0, 0, (H.side || 1) > 0 ? 1 : 0, (H.side || 1) > 0 ? 0 : 1);     /* elbow guard on the side of the threat */
         if (H.hurt > 0) pose = posemath.layer(pose, posemath.named('hurt'), 0, 0.5, 0.5, 0.5);
         rig.applyPose(pose, { plant: false });
         rig.body.rotation.set(0, 0, H.hurt > 0 ? -0.25 * (H.hurt / 22) : 0);
@@ -209,7 +228,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
       }
       return true;
     },
-    dispose: function () { clearAll(); [clubGeo, bandGeo, lightGeo].forEach(function (g) { g.dispose(); }); [clubMat, bandMat, goonMat, lightR, lightB].forEach(function (m) { m.dispose(); }); }
+    dispose: function () { clearAll(); bursts.forEach(function (b) { root.remove(b.g); b.mat.dispose(); }); bursts = []; [clubGeo, bandGeo, lightGeo, rayGeo, ballGeo].forEach(function (g) { g.dispose(); }); [clubMat, bandMat, goonMat, lightR, lightB].forEach(function (m) { m.dispose(); }); }
   };
 }
 

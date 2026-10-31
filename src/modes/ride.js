@@ -1,7 +1,7 @@
 /* modes: Ride, the heart of the game (Phase 4). Toofan rides Bijli across the city to the next trouble spot. On the way the bike goons
    attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into the fight area (the brawler, Street mode).
    When the area is clear it comes back here: the police take the goons away and Toofan rides on to the next signal.
-   Big moments in the road fights (counters, knockouts, the leap) slow time, cut to a close shot and flash. */
+   Big moments in the road fights (counters, knockouts, the leap) slow time and pull the camera back wide, with speed lines, bursts and a flash. */
 'use strict';
 
 var rideSim = require('../sim/ride');
@@ -46,15 +46,20 @@ function createRide() {
         '<div id="rSpeed" style="position:absolute;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);font:900 24px system-ui,sans-serif"></div>' +
         '<canvas id="rMap" width="150" height="150" style="position:absolute;right:16px;top:max(96px,calc(env(safe-area-inset-top) + 40px));width:120px;height:120px;border-radius:8px;background:rgba(10,14,18,.55);border:1px solid rgba(255,255,255,.25)"></canvas>';
       document.body.appendChild(el); scope.add(function () { el.remove(); });
+      var lines = document.createElement('div');
+      lines.style.cssText = 'position:fixed;left:50%;top:50%;width:160vmax;height:160vmax;transform:translate(-50%,-50%);z-index:5;pointer-events:none;opacity:0;transition:opacity .08s;' +
+        'background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.55) 0 1.2deg,transparent 1.2deg 7deg);-webkit-mask-image:radial-gradient(circle,transparent 0 24%,#000 46%);mask-image:radial-gradient(circle,transparent 0 24%,#000 46%)';
+      document.body.appendChild(lines); scope.add(function () { lines.remove(); });
       var flashEl = document.createElement('div'); flashEl.style.cssText = 'position:fixed;inset:0;z-index:8;pointer-events:none;background:#fff;opacity:0';
       var red = document.createElement('div'); red.style.cssText = 'position:fixed;inset:0;z-index:5;pointer-events:none;background:radial-gradient(ellipse at center,rgba(255,0,0,0) 40%,rgba(255,0,0,.55));opacity:0;transition:opacity .1s';
       document.body.appendChild(flashEl); document.body.appendChild(red); scope.add(function () { flashEl.remove(); red.remove(); });
       S.ui = { point: el.querySelector('#rPoint'), hearts: el.querySelector('#rHearts'), arrow: el.querySelector('#rArrow'), target: el.querySelector('#rTarget'), msg: el.querySelector('#rMsg'),
-               word: el.querySelector('#rWord'), speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), flash: flashEl, red: red };
+               word: el.querySelector('#rWord'), lines: lines, speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), flash: flashEl, red: red };
       S.flashT = 0; S.whiteT = 0; S.wordT = 0;
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
-      function big(kind, id, dur, slow) { S.fx = { kind: kind, id: id, t: 0, dur: dur }; S.slow = slow; S.whiteT = 0.12; S.shake = 0.35; }
+      function boom(id, color, size) { var b = S.r.bike, p = id ? S.v.ev.worldOf(S.r, id, b.x, b.z) : null; if (p) S.v.ev.burst(p.x, 1.7, p.z, color, size); else S.v.ev.burst(b.x, 1.8, b.z, color, size); }
+      function big(kind, id, dur, slow) { S.fx = { kind: kind, id: id, t: 0, dur: dur }; S.slow = slow; S.whiteT = 0.12; S.shake = 0.35; boom(id, kind === 'ko' ? 0xffd21f : 0xff8a2a, kind === 'ko' ? 1.6 : 1.2); }
       S.say = say;
       scope.add(ctx.bus.on('ride:crash', function () { S.sfx.crash(true); say('CRASH!', 1.2); S.shake = 0.4; }));
       scope.add(ctx.bus.on('ride:getup', function () { say('Back to Bijli!', 1.4); }));
@@ -66,10 +71,10 @@ function createRide() {
       /* road fights */
       scope.add(ctx.bus.on('enc:start', function (e) { if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
       scope.add(ctx.bus.on('enc:swing', function () { S.sfx.whoosh(0.5); }));
-      scope.add(ctx.bus.on('enc:hit', function (e) { S.sfx.hit(/kick|Kick/.test(e.move) ? 'kick' : 'jab', 0.8); word(WORD[e.move] || 'DISHUM!'); S.shake = 0.15; }));
+      scope.add(ctx.bus.on('enc:hit', function (e) { S.sfx.hit(/kick|Kick/.test(e.move) ? 'kick' : 'jab', 0.8); word(WORD[e.move.replace(/R$/, 'L')] || 'DISHUM!'); S.shake = 0.15; boom(e.id, 0xffffff, 0.8); }));
       scope.add(ctx.bus.on('enc:ko', function (e) { S.sfx.hit('uppercut', 1); S.sfx.fall(); word('DHADAAM!'); big('ko', e.id, 1.3, 1.0); }));
       scope.add(ctx.bus.on('enc:counter', function (e) { S.sfx.hit('counterCross', 1); word('PATAAK!'); big('counter', e.id, 0.9, 0.7); }));
-      scope.add(ctx.bus.on('enc:block', function () { S.sfx.block(false); word('THAK!'); S.whiteT = 0.08; S.shake = 0.2; S.slow = 0.25; S.fx = { kind: 'block', t: 0, dur: 0.45 }; }));
+      scope.add(ctx.bus.on('enc:block', function (e) { S.sfx.block(false); word('THAK!'); S.whiteT = 0.08; S.shake = 0.2; S.slow = 0.25; S.fx = { kind: 'block', t: 0, dur: 0.5 }; boom(e.id, 0x9fd8ff, 0.9); }));
       scope.add(ctx.bus.on('enc:hurt', function () { S.sfx.hit('hook', 0.7); S.flashT = 0.35; S.shake = 0.3; }));
       scope.add(ctx.bus.on('enc:warn', function (e) { if (e.car) say('BLOCK when it swerves!', 1.2); }));
       scope.add(ctx.bus.on('enc:leap', function () { S.sfx.whoosh(1); word('JUMP!'); big('leap', 0, 1.2, 0.9); }));
@@ -115,21 +120,21 @@ function createRide() {
           var a = 0.85 * Math.sin(S.t * 0.22), dx = rx * Math.cos(a) + e.f.x * Math.sin(a), dz = rz * Math.cos(a) + e.f.z * Math.sin(a);
           side = { x: fx + dx * 8.0, y: 3.0, z: fz + dz * 8.0, lx: fx, ly: 1.2, lz: fz, fov: 46 };
         } else if (F.roof) side = { x: fx + rx * 4.8 + e.f.x * 3.2, y: 4.3, z: fz + rz * 4.8 + e.f.z * 3.2, lx: fx, ly: 2.0, lz: fz, fov: 48 };
+        else if (F.bikes) side = { x: fx + e.f.x * 6.6 * near + rx * 1.0, y: 4.6 * near + 0.6, z: fz + e.f.z * 6.6 * near + rz * 1.0, lx: fx - e.f.x * 0.6, ly: 0.95, lz: fz - e.f.z * 0.6, fov: 54 };   /* goons both sides: high in front, looking back at all three */
         else side = { x: fx + rx * 5.6 * near + e.f.x * 4.2, y: 3.9, z: fz + rz * 5.6 * near + e.f.z * 4.2, lx: fx - e.f.x * 0.3, ly: 1.15, lz: fz - e.f.z * 0.3, fov: 50 };
         mix(side, ease(S.sideW));
       }
       S.bars.set(!!(S.cut || (r.enc && (r.enc.phase === 'police' || r.enc.phase === 'leap' || r.enc.phase === 'spin')) || (S.fx && S.fx.kind !== 'block')));
 
-      /* ---- big moments: a close shot from low in front, in slow motion ---- */
+      /* ---- big moments: the camera pulls back wide and high in slow motion, with speed lines and an impact burst, so nothing is hidden ---- */
       if (S.fx) {
         S.fx.t += dt; var f = S.fx, u = f.t / f.dur;
-        if (u >= 1) S.fx = null;
-        else if (e && f.kind !== 'block') {
-          var w2 = u < 0.15 ? ease(u / 0.15) : u > 0.75 ? ease((1 - u) / 0.25) : 1;
-          var foe = f.id ? S.v.ev.worldOf(r, f.id, x, z) : null, mxp = foe ? (x + foe.x) / 2 : x + e.l.x * 1.4, mzp = foe ? (z + foe.z) / 2 : z + e.l.z * 1.4;
-          if (f.kind === 'leap' || f.kind === 'spin') { var F2 = S.v.ev.focus(r) || { u: 0, lat: 1.6 }; mxp = x + e.f.x * F2.u + e.l.x * F2.lat; mzp = z + e.f.z * F2.u + e.l.z * F2.lat; }
-          var ang = 0.5 + u * 0.5, ox = -e.l.x * Math.cos(ang) + e.f.x * Math.sin(ang), oz = -e.l.z * Math.cos(ang) + e.f.z * Math.sin(ang);
-          mix({ x: mxp + ox * 3.4, y: f.kind === 'leap' ? 3.0 : 1.3, z: mzp + oz * 3.4, lx: mxp, ly: f.kind === 'leap' ? 2.2 : 1.5, lz: mzp, fov: 36 }, w2);
+        if (u >= 1) { S.fx = null; S.ui.lines.style.opacity = 0; }
+        else {
+          var w2 = u < 0.12 ? ease(u / 0.12) : u > 0.7 ? ease((1 - u) / 0.3) : 1, pull = f.kind === 'block' ? 0.35 : 1;
+          var dx3 = shot.x - shot.lx, dy3 = shot.y - shot.ly, dz3 = shot.z - shot.lz;
+          mix({ x: shot.lx + dx3 * 1.55, y: shot.ly + dy3 * 1.7 + 1.0, z: shot.lz + dz3 * 1.55, lx: shot.lx, ly: shot.ly, lz: shot.lz, fov: shot.fov + 8 }, w2 * pull);
+          S.ui.lines.style.opacity = (f.kind === 'block' ? 0.5 : 0.9) * w2;
         }
       }
       if (S.slow > 0) S.slow -= dt;

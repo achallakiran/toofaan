@@ -610,7 +610,7 @@ console.log('ride mode (Phase 4)');
     });
     test('road fights come on their own in order on every run: the bike goons first, then the car gang, then none until the next signal', function () {
       var kinds = [], r = rideMod.createRide(5, { emit: function (n, e) { if (n === 'enc:start') kinds.push(e.kind); } }), inp = inputMod.createInput(), i;
-      r.bike.x = -150; r.bike.h = Math.PI / 2;
+      r.bike.x = -150; r.bike.h = Math.PI / 2; r.target = null;      /* (no arrival in this test) */
       for (i = 0; i < 20000 && kinds.length < 3; i++) {
         var e = r.enc, atk = false, blk = false;
         if (e) { var o = (e.foes || []).concat(e.crew || []).filter(function (q) { return q.st === 'windup'; })[0];

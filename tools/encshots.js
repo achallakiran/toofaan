@@ -17,7 +17,10 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   await page.keyboard.down('KeyJ'); await page.waitForTimeout(90); await page.keyboard.up('KeyJ');
   await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.hero.act && e.hero.act.t > 8; }, 4000); await shot('enc_3_punch');
   /* let the bot finish them: attack often */
-  for (var i = 0; i < 60; i++) { var st = await page.evaluate(function () { return window.__game.ctx.ride.state; }); if (st !== 'enc') break; await page.keyboard.down('KeyJ'); await page.waitForTimeout(80); await page.keyboard.up('KeyJ'); await page.waitForTimeout(250); }
+  var gotKo = false;
+  for (var i = 0; i < 160; i++) {
+    if (!gotKo && await page.evaluate(function () { var e = window.__game.ctx.ride.enc; return !!(e && e.foes.some(function (o) { return o.st === 'down' && o.t < 25; })); })) { gotKo = true; await shot('enc_3b_ko_zoomout'); } var st = await page.evaluate(function () { return window.__game.ctx.ride.state; }); if (st !== 'enc') break; await page.keyboard.down('KeyJ'); await page.waitForTimeout(80); await page.keyboard.up('KeyJ'); await page.waitForTimeout(250); }
+  await wait(function () { return window.__game.ctx.ride.state === 'ride'; }, 60000);
   var r1 = await page.evaluate(function () { var r = window.__game.ctx.ride; return { state: r.state, hearts: r.hearts }; });
   await page.evaluate(function () { window.__game.ctx.debug.rideStart('car'); });
   await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.car && e.car.st === 'windup' && e.car.t > 20; }); await shot('enc_4_car_warn');

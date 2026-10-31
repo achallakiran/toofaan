@@ -36,7 +36,8 @@ function start(r, kind) {
   var fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
   /* Toofan moves to the inner lane; the goons take the outer lane on his left */
   var line = Math.abs(fx) > 0.5 ? mapMod.nearestLine(b.z) : mapMod.nearestLine(b.x);
-  var bx = Math.abs(fx) > 0.5 ? b.x : line + lx * R.LANES[0], bz = Math.abs(fx) > 0.5 ? line + lz * R.LANES[0] : b.z;
+  var lane = kind === 'bikes' ? E.MID : R.LANES[0];                /* bike goons: Toofan in the middle so they can come at him from both sides */
+  var bx = Math.abs(fx) > 0.5 ? b.x : line + lx * lane, bz = Math.abs(fx) > 0.5 ? line + lz * lane : b.z;
   b.h = b.ph = h; b.x = b.px = bx; b.z = b.pz = bz; b.speed = E.SPEED; b.turn = 0;
   var e = {
     kind: kind, phase: 'intro', t: 0, f: { x: fx, z: fz }, l: { x: lx, z: lz }, speed: E.SPEED,
@@ -48,7 +49,9 @@ function start(r, kind) {
     b.speed = 0; e.speed = 0; e.phase = 'police'; arrest(e, 6, E.LAT + 3.0, 5); r.bus.emit('enc:police', {});
   } else if (kind === 'bikes') {
     var n = 2 + (r.encCount % 2), i;
-    for (i = 0; i < n; i++) e.foes.push({ id: i + 1, kind: i === n - 1 ? 'rod' : 'bike', hp: i === n - 1 ? 4 : 3, u: (i % 2 ? 1 : -1) * (14 + i * 4), st: 'approach', t: 0, cd: 30 + Math.floor(r.rng.next() * 40), look: i, from: (i % 2 ? 1 : -1) });
+    for (i = 0; i < n; i++) e.foes.push({ id: i + 1, kind: i === n - 1 ? 'rod' : 'bike', hp: i === n - 1 ? 4 : 3, u: (i % 2 ? 1 : -1) * (14 + i * 4), st: 'approach', t: 0, cd: 30 + Math.floor(r.rng.next() * 40), look: i,
+      from: (i % 2 ? 1 : -1), lat: (i % 2 ? -1 : 1) * E.SIDE });        /* alternately on his left and his right, coming from behind or ahead */
+    e.token = 40;
   } else {
     e.car = { u: -18, lat: E.LAT, st: 'approach', t: 0, cd: 60, sw: 0, yaw: 0, look: 1 };
     for (i = 0; i < E.CREW; i++) e.crew.push({ id: i + 1, crew: true, hp: 2, st: 'hidden', t: 0, cd: 40, side: i % 2 ? -1 : 1, rise: 0 });
@@ -65,15 +68,21 @@ function heroStrike(r, e, input, list, reach) {
   if (H.hurt > 0) { H.hurt--; H.act = null; return; }
   if (H.inv > 0) H.inv--;
   if (!H.act && (s.pressed.attack || input.consume('attack', 6)) && !s.held.block) {
-    var pool = H.roof ? ROOF_MOVES : BIKE_MOVES, mv = pool[Math.floor(r.rng.next() * pool.length)], M = MOVES[mv];
-    H.act = { move: mv, t: 0, hitAt: ticks(M.hit), len: ticks(M.len), counter: false };
+    /* strike toward the man who is about to hit, else the nearest one: left or right of the bike */
+    var tgt = null, td = 1e9;
+    list.forEach(function (o) { if (o.lat === undefined || o.st === 'down' || o.st === 'approach') return; var d = Math.abs(o.u) - (o.st === 'windup' ? 9 : 0); if (d < td) { td = d; tgt = o; } });
+    if (tgt) H.side = tgt.lat > 0 ? 1 : -1;
+    var pool = H.roof ? ROOF_MOVES : BIKE_MOVES, mv = pool[Math.floor(r.rng.next() * pool.length)];
+    if (!H.roof && H.side < 0) mv = mv.replace(/L$/, 'R');
+    var M = MOVES[mv];
+    H.act = { move: mv, t: 0, hitAt: ticks(M.hit), len: ticks(M.len), counter: false, side: H.side || 1 };
     r.bus.emit('enc:swing', { move: mv });
   }
   if (!H.act) return;
   H.act.t++;
   if (H.act.t === H.act.hitAt && !H.act.counter) {
     var best = null, bd = 1e9;
-    list.forEach(function (o) { if (o.st === 'down' || o.st === 'out' || o.st === 'hidden' || o.st === 'approach' && Math.abs(o.u) > reach) return; var d = Math.abs(o.u - (o.at || 0)); if (d < reach && d < bd) { bd = d; best = o; } });
+    list.forEach(function (o) { if (o.st === 'down' || o.st === 'out' || o.st === 'hidden' || o.st === 'approach' && Math.abs(o.u) > reach) return; if (o.lat !== undefined && (o.lat > 0 ? 1 : -1) !== H.act.side) return; var d = Math.abs(o.u - (o.at || 0)); if (d < reach && d < bd) { bd = d; best = o; } });
     if (best) damage(r, best, 1, H.act.move);
     else r.bus.emit('enc:miss', {});
   }
@@ -90,9 +99,11 @@ function damage(r, o, n, move) {
 function landBlow(r, e, o, wind) {
   var H = e.hero, sinceBlock = r.tick - H.blockTick;
   if (sinceBlock >= 0 && sinceBlock <= E.COUNTER) {
-    H.act = { move: H.roof ? 'counterCross' : 'bkCElbowL', t: 0, hitAt: 99, len: ticks(MOVES[H.roof ? 'counterCross' : 'bkCElbowL'].len), counter: true };
+    var side = o.lat !== undefined && o.lat < 0 ? -1 : 1, cm = H.roof ? 'counterCross' : (side > 0 ? 'bkCElbowL' : 'bkCElbowR'); H.side = side;
+    H.act = { move: cm, t: 0, hitAt: 99, len: ticks(MOVES[cm].len), counter: true, side: side };
     damage(r, o, 2, H.act.move); r.bus.emit('enc:counter', { id: o.id }); return;
   }
+  if (o.lat !== undefined) H.side = o.lat > 0 ? 1 : -1;
   if (H.guard) { o.st = 'recover'; o.t = 0; r.bus.emit('enc:block', { id: o.id }); return; }
   o.st = 'recover'; o.t = 0;
   if (H.inv > 0) return;
@@ -100,17 +111,20 @@ function landBlow(r, e, o, wind) {
 }
 
 function stepFoes(r, e) {
-  var active = null;
-  e.foes.forEach(function (o) { if (!active && o.st !== 'down') active = o; });
+  /* one man engaged on each side, riding level with Toofan (a little ahead on the right, a little behind on the left, never hidden behind him);
+     the rest wait further off on their own side. Only one blow is wound up at a time, so every attack can be read. */
+  var act = {}, busy = false;
+  e.foes.forEach(function (o) { var k = o.lat > 0 ? 'L' : 'R'; if (!act[k] && o.st !== 'down') act[k] = o; if (o.st === 'windup') busy = true; });
+  if (e.token > 0) e.token--;
   e.foes.forEach(function (o) {
     o.t++;
     if (o.st === 'down') { o.u -= 7 * DT; return; }
-    var want = o === active ? o.from * 1.3 : (o.u < 0 ? -6 : 6);          /* alongside, a little ahead or behind (the side he came from) */
-    if (o.st === 'approach') { o.u += Math.max(-5 * DT, Math.min(5 * DT, want - o.u)); if (o === active && Math.abs(o.u - want) < 0.1) { o.st = 'ready'; o.t = 0; } return; }
+    var engaged = act[o.lat > 0 ? 'L' : 'R'] === o, want = engaged ? (o.lat > 0 ? 0.35 : 0.55) : (o.from < 0 ? -7 : 7);
+    if (o.st === 'approach') { o.u += Math.max(-5 * DT, Math.min(5 * DT, want - o.u)); if (engaged && Math.abs(o.u - want) < 0.1) { o.st = 'ready'; o.t = 0; } return; }
     o.u += Math.max(-3 * DT, Math.min(3 * DT, want - o.u));
-    if (o !== active) return;
-    if (o.st === 'ready' && o.t > o.cd) { o.st = 'windup'; o.t = 0; r.bus.emit('enc:warn', { id: o.id }); }
-    else if (o.st === 'windup' && o.t >= E.WIND) landBlow(r, e, o, E.WIND);
+    if (!engaged) return;
+    if (o.st === 'ready' && o.t > o.cd && !busy && e.token <= 0) { o.st = 'windup'; o.t = 0; busy = true; r.bus.emit('enc:warn', { id: o.id, side: o.lat > 0 ? 1 : -1 }); }
+    else if (o.st === 'windup' && o.t >= E.WIND) { landBlow(r, e, o, E.WIND); e.token = 28; }
     else if (o.st === 'recover' && o.t > 26) { o.st = 'ready'; o.t = 0; o.cd = 30 + Math.floor(r.rng.next() * 50); }
     else if (o.st === 'hurt' && o.t > 20) { o.st = 'ready'; o.t = 0; o.cd = 20 + Math.floor(r.rng.next() * 30); }
   });

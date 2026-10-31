@@ -151,7 +151,7 @@ function step(r, input) {
         r.bus.emit('ride:crash', { x: b.x, z: b.z, kind: v.kind });
         break;
       }
-      b.speed = Math.min(b.speed, 2); v.wait = Math.max(v.wait, 20); r.bus.emit('ride:bump', { kind: v.kind });
+      b.speed = Math.min(b.speed, 2); r.bus.emit('ride:bump', { kind: v.kind });
     }
     /* arrival */
     var T = r.target;
