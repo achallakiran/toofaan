@@ -22,7 +22,7 @@ function createRide() {
         if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k]; }); rideSim.pickTarget(ctx.ride); }
       }
       S.r = ctx.ride; S.t = 0; S.cam = null; S.msgT = 0; S.honkT = 0;
-      S.v = rideview.createRideView(view.scene); S.v.build(S.r.map);
+      S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       scope.add(function () { S.v.dispose(); });
       S.sfx = sfxmod.createSfx(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
 
@@ -57,15 +57,18 @@ function createRide() {
       var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
       var r = S.r, b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha;
       S.v.sync(r, alpha, dt, S.t);
-      /* camera: high and north-up, leaning ahead of the bike and rising with speed */
-      var fx = Math.sin(b.h) * b.speed * 0.55, fz = Math.cos(b.h) * b.speed * 0.55, H = 19 + 11 * Math.min(1, (ctx.view.canvas.clientHeight || 700) / 700) + b.speed * 0.35;      /* closer on a phone, so Bijli stays readable */
-      if (r.state === 'fly' || r.state === 'run') { fx = 0; fz = 0; x = r.hero.x; z = r.hero.z; }
-      var c = S.cam || (S.cam = { x: x + fx, z: z + fz, h: H }), k = 1 - Math.exp(-3 * dt);
-      c.x += (x + fx - c.x) * k; c.z += (z + fz - c.z) * k; c.h += (H - c.h) * k;
-      ctx.view.followCamera(0, 0, { x: c.x, y: c.h, z: c.z + c.h * 0.22, lx: c.x, ly: 0, lz: c.z - 1, fov: 44 });
+      /* camera: a high chase camera behind Bijli, turning with her (as in the prototype, close enough to see Toofan) */
+      var CAM = R.CAM, cx = x, cz = z, yaw = b.h;
+      if (r.state === 'fly' || r.state === 'run') { cx = r.hero.x; cz = r.hero.z; }
+      var c = S.cam || (S.cam = { x: cx, z: cz, yaw: yaw }), k = 1 - Math.exp(-5 * dt), ky = 1 - Math.exp(-2.2 * dt);
+      c.x += (cx - c.x) * k; c.z += (cz - c.z) * k;
+      if (r.state === 'ride') c.yaw += Math.atan2(Math.sin(yaw - c.yaw), Math.cos(yaw - c.yaw)) * ky;
+      var near = (ctx.view.canvas.clientHeight || 700) < 520 ? 0.78 : 1;      /* a phone held sideways: come in closer so Toofan stays big */
+      var sy = Math.sin(c.yaw), cy = Math.cos(c.yaw), back = (CAM.back + Math.max(0, b.speed) * 0.12) * near, ah = CAM.ahead + Math.max(0, b.speed) * 0.2;
+      ctx.view.followCamera(0, 0, { x: c.x - sy * back, y: (CAM.height + Math.max(0, b.speed) * 0.1) * near, z: c.z - cy * back, lx: c.x + sy * ah, ly: 0.6, lz: c.z + cy * ah, fov: CAM.fov });
       ctx.view.render();
       /* sound */
-      if (r.state === 'ride') S.sfx.engine(dt, { rpm: 0.2 + 0.8 * b.speed / R.TOP, thr: b.speed < R.CRUISE - 0.5 ? 1 : 0.35, speed: b.speed, drifting: false, braking: ctx.input.state.held.block, air: false });
+      if (r.state === 'ride') S.sfx.engine(dt, { rpm: 0.2 + 0.8 * Math.abs(b.speed) / R.TOP, thr: Math.max(0.15, ctx.input.state.my), speed: b.speed, drifting: false, braking: ctx.input.state.held.block, air: false });
       S.honkT -= dt;
       if (S.honkT <= 0 && r.state === 'ride') {
         for (var i = 0; i < r.traffic.length; i++) { var v = r.traffic[i]; if (Math.hypot(v.x - b.x, v.z - b.z) < 4 && v.kind !== 'scooter') { S.sfx.honk(); S.honkT = 2.5 + (v.id % 3); break; } }
@@ -75,10 +78,10 @@ function createRide() {
       var T = r.target;
       if (T && r.state !== 'arrived') {
         var dx = T.x - x, dz = T.z - z; S.ui.target.textContent = T.name.toUpperCase() + '  ' + Math.round(Math.hypot(dx, dz)) + ' m';
-        S.ui.arrow.style.transform = 'rotate(' + (Math.atan2(dx, -dz) * 57.3) + 'deg)'; S.ui.arrow.style.visibility = 'visible';
+        S.ui.arrow.style.transform = 'rotate(' + (-Math.atan2(Math.sin(Math.atan2(dx, dz) - S.cam.yaw), Math.cos(Math.atan2(dx, dz) - S.cam.yaw)) * 57.3) + 'deg)'; S.ui.arrow.style.visibility = 'visible';
       } else { S.ui.target.textContent = T ? T.name.toUpperCase() : 'ALL CLEAR'; S.ui.arrow.style.visibility = 'hidden'; }
-      S.ui.speed.textContent = r.state === 'ride' ? Math.round(b.speed * 3.6) + ' km/h' : '';
-      drawMap(S.ui.map, r, S.t);
+      S.ui.speed.textContent = r.state === 'ride' ? Math.round(Math.abs(b.speed) * 3.6) + ' km/h' : '';
+      drawMap(S.ui.map, r, S.t, S.cam.yaw);
       S.hudT = (S.hudT || 0) - dt;
       if (S.hudT <= 0) {
         S.hudT = 0.25; var vs = ctx.view.stats();
@@ -90,19 +93,18 @@ function createRide() {
   };
 }
 
-/* the mini-map: roads, trouble spots (yellow open, green visited), the signal pulsing red, the bike as a white arrow */
-function drawMap(cv, r, t) {
-  var g = cv.getContext('2d'), W = cv.width, E = r.map.ext, sc = (W - 12) / (2 * E);
-  function px(v) { return 6 + (v + E) * sc; }
-  g.clearRect(0, 0, W, W); g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 3;
-  r.map.lines.forEach(function (l) { g.beginPath(); g.moveTo(px(-E), px(l)); g.lineTo(px(E), px(l)); g.stroke(); g.beginPath(); g.moveTo(px(l), px(-E)); g.lineTo(px(l), px(E)); g.stroke(); });
+/* the mini-map turns with the camera (heading up) and centres on the bike: roads, trouble spots (yellow open, green visited), the signal pulsing red */
+function drawMap(cv, r, t, yaw) {
+  var g = cv.getContext('2d'), W = cv.width, sc = (W / 2) / 170, b = r.bike, E = r.map.ext;
+  g.clearRect(0, 0, W, W); g.save(); g.translate(W / 2, W / 2); g.rotate(yaw - Math.PI); g.translate(-b.x * sc, -b.z * sc);
+  g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 4;
+  r.map.lines.forEach(function (l) { g.beginPath(); g.moveTo(-E * sc, l * sc); g.lineTo(E * sc, l * sc); g.stroke(); g.beginPath(); g.moveTo(l * sc, -E * sc); g.lineTo(l * sc, E * sc); g.stroke(); });
   r.map.targets.forEach(function (T) {
     var cur = r.target === T, st = r.missions[T.key];
     g.fillStyle = cur ? (Math.sin(t * 8) > 0 ? '#ff3b30' : '#ffc21a') : (st === 'open' ? '#ffc21a' : '#4fc08d');
-    g.beginPath(); g.arc(px(T.x), px(T.z), cur ? 5 : 3, 0, 7); g.fill();
+    g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
   });
-  var b = r.bike; g.save(); g.translate(px(b.x), px(b.z)); g.rotate(Math.PI - b.h); g.fillStyle = '#fff';
-  g.beginPath(); g.moveTo(0, -6); g.lineTo(4, 5); g.lineTo(-4, 5); g.closePath(); g.fill(); g.restore();
+  g.restore(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(W / 2, W / 2 - 7); g.lineTo(W / 2 + 5, W / 2 + 6); g.lineTo(W / 2 - 5, W / 2 + 6); g.closePath(); g.fill();
 }
 
 module.exports = { createRide: createRide };

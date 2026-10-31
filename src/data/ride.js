@@ -9,13 +9,14 @@ var RIDE = {
   LANES: [1.9, 5.1],       /* inner and outer lane centres */
   PAVE: 3,                 /* pavement beyond the kerb; the bike may ride onto it */
 
-  CRUISE: 15,              /* the bike runs on its own at this speed */
-  TOP: 21,                 /* stick pushed hard */
-  ACCEL: 6, BRAKE: 16, TURN: 3.0,
+  TOP: 17,                 /* stick (or W) held forward: full throttle */
+  ACCEL: 5.5, BRAKE: 14, COAST: 1.6, REVERSE: 2.5, TURN: 2.4,
   BIKE_R: 0.55,
   CRASH_SPEED: 5,          /* slower bumps just stop the bike */
   FLY_TICKS: 42, RUN_SPEED: 5.2, GRACE_TICKS: 90,
   ARRIVE_R: 9,
+
+  CAM: { back: 8.5, height: 11, ahead: 5, fov: 46 },     /* chase camera, high behind the bike */
 
   TRAFFIC: 170,            /* vehicles on the whole map */
   VIEW_R: 85,              /* vehicles are drawn within this distance */

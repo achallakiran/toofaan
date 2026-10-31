@@ -62,6 +62,37 @@ function buildBlock(rng, x0, z0, x1, z1) {
   return out;
 }
 
+/* poles and trees on the pavements: solid for the bike. Bucketed on an 8 m grid for quick lookups. */
+function buildProps(rng, lines) {
+  var list = [], E = extent(), ends = [-E].concat(lines).concat([E]), axis, i, k, sd, s;
+  ['x', 'z'].forEach(function (ax) {
+    axis = ax;
+    for (i = 0; i < lines.length; i++) for (k = 0; k < ends.length - 1; k++) {
+      var a0 = ends[k] + (k === 0 ? 0 : R.HALF + R.PAVE), a1 = ends[k + 1] - (k === ends.length - 2 ? 0 : R.HALF + R.PAVE);
+      if (a1 - a0 < 6) continue;
+      for (sd = -1; sd <= 1; sd += 2) {
+        var o = lines[i] + sd * (R.HALF + 0.45), ot = lines[i] + sd * (R.HALF + R.PAVE - 0.9);
+        for (s = a0 + 4; s < a1 - 2; s += 16) {
+          list.push(axis === 'x' ? { kind: 'pole', x: s, z: o, r: 0.2, sd: sd, ax: axis } : { kind: 'pole', x: o, z: s, r: 0.2, sd: sd, ax: axis });
+          if (s + 8 < a1 - 2 && rng.next() < 0.45) list.push(axis === 'x' ? { kind: 'tree', x: s + 8, z: ot, r: 0.45, v: Math.floor(rng.next() * 3) } : { kind: 'tree', x: ot, z: s + 8, r: 0.45, v: Math.floor(rng.next() * 3) });
+        }
+      }
+    }
+  });
+  var grid = {};
+  list.forEach(function (p) { var key = Math.floor(p.x / 8) + ',' + Math.floor(p.z / 8); (grid[key] || (grid[key] = [])).push(p); });
+  return { list: list, grid: grid };
+}
+/* is a circle of radius r at (x, z) clear of every pole and tree? */
+function clearOfProps(map, x, z, r) {
+  var cx = Math.floor(x / 8), cz = Math.floor(z / 8), i, j, k;
+  for (i = -1; i <= 1; i++) for (j = -1; j <= 1; j++) {
+    var cell = map.props.grid[(cx + i) + ',' + (cz + j)]; if (!cell) continue;
+    for (k = 0; k < cell.length; k++) { var p = cell[k]; if (Math.hypot(p.x - x, p.z - z) < p.r + r) return false; }
+  }
+  return true;
+}
+
 function generate(seed) {
   var rng = rngMod.createRng((seed >>> 0) ^ 0x51ce), lines = [], i, j, blocks = [], targets = [];
   for (i = 0; i < R.GRID; i++) lines.push(lineAt(i));
@@ -83,7 +114,8 @@ function generate(seed) {
     var name = LOC.LOCATIONS[LOC.ORDER[n]].name;
     targets.push(axis === 'x' ? { key: LOC.ORDER[n], name: name, x: along, z: off } : { key: LOC.ORDER[n], name: name, x: off, z: along });
   }
-  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets };
+  var props = buildProps(rngMod.createRng((seed >>> 0) ^ 0x9e3), lines);
+  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props };
 }
 
-module.exports = { generate: generate, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };
+module.exports = { generate: generate, clearOfProps: clearOfProps, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };

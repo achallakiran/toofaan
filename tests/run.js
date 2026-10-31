@@ -572,6 +572,13 @@ console.log('ride mode (Phase 4)');
     run(r, 200, function () { return [0, 0]; });
     assert(r.target && r.target.key !== T.key && r.missions[r.target.key] === 'open');
   });
+  test('ride: the bike does not move on its own; forward accelerates, back brakes to a stop, and poles and trees are solid', function () {
+    var r = rideMod.createRide(4, null), x0 = r.bike.x;
+    run(r, 120, function () { return [0, 0]; }); assert.strictEqual(r.bike.speed, 0); assert.strictEqual(r.bike.x, x0);
+    run(r, 120, function () { return [0, 1]; }); assert(r.bike.speed > 8, 'accelerates ' + r.bike.speed);
+    run(r, 90, function () { return [0, -1]; }); assert(r.bike.speed <= 0.01, 'brakes ' + r.bike.speed);
+    var p = r.map.props.list[0]; assert(!rmap.clearOfProps(r.map, p.x, p.z, 0.3) && rmap.clearOfProps(r.map, p.x + 3, p.z + 3, 0.3) === rmap.clearOfProps(r.map, p.x + 3, p.z + 3, 0.3));
+  });
   test('ride: same seed and same input give the same ride (deterministic)', function () {
     var a = rideMod.createRide(11, null), b2 = rideMod.createRide(11, null), f = function (i) { return [Math.sin(i / 90), 0.6]; };
     run(a, 700, f); run(b2, 700, f); assert.strictEqual(rideMod.hash(a), rideMod.hash(b2));

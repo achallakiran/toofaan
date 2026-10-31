@@ -1,5 +1,5 @@
 /* sim: ride mode. Toofan on Bijli seen from above, crossing the city map to a trouble spot through two-way traffic.
-   The bike runs on its own; the stick points where to go and pushing it hard goes faster; Block brakes.
+   Stick left/right steers, forward accelerates, back (or Block) brakes; with nothing pressed the bike rolls to a stop.
    Hitting traffic fast throws him off: he tumbles, gets up and runs back to the bike (Excitebike style). No hearts are lost to traffic.
    Separate from the brawler world: nothing here touches sim/world.js or combat. */
 'use strict';
@@ -113,22 +113,23 @@ function step(r, input) {
   stepTraffic(r);
 
   if (r.state === 'ride') {
-    var mx = s.mx, mz = -s.my, mag = Math.hypot(mx, mz), want = R.CRUISE;           /* stick up = up the screen = -z */
-    if (mag > 0.3) {
-      var dh = angDiff(Math.atan2(mx, mz), b.h), rate = R.TURN * DT * Math.min(1, 0.35 + b.speed / 10);
-      b.turn = Math.max(-rate, Math.min(rate, dh)); b.h += b.turn;
-      if (mag > 0.85 && Math.abs(dh) < 0.6) want = R.TOP;
-    } else b.turn *= 0.8;
-    if (s.held.block) want = 0;
-    var acc = want > b.speed ? R.ACCEL : (s.held.block ? R.BRAKE : R.ACCEL);
-    b.speed += Math.max(-acc * DT, Math.min(acc * DT, want - b.speed));
+    /* stick left/right steers; stick forward (or W) is the throttle; stick back (or S) and Block brake. Nothing pressed: she rolls to a stop. */
+    var mx = s.mx, my = s.my, thr = Math.max(0, my), brk = Math.max(0, -my);
+    if (s.held.block) brk = 1;
+    var rate = R.TURN * DT * Math.min(1, 0.25 + Math.abs(b.speed) / 8);
+    b.turn = Math.abs(mx) > 0.15 ? -mx * rate : b.turn * 0.7;                 /* right lowers the heading */
+    b.h += b.turn * (b.speed < 0 ? -1 : 1);
+    if (thr > 0.15) { var tgt = R.TOP * thr; b.speed = b.speed < tgt ? Math.min(tgt, b.speed + R.ACCEL * thr * DT) : Math.max(tgt, b.speed - R.COAST * DT); }
+    else if (brk > 0.15) b.speed = b.speed > 0 ? Math.max(0, b.speed - R.BRAKE * brk * DT) : Math.max(-R.REVERSE, b.speed - 2 * brk * DT);
+    else b.speed = b.speed > 0 ? Math.max(0, b.speed - R.COAST * DT) : Math.min(0, b.speed + R.COAST * DT);
     if (b.grace > 0) b.grace--;
-    /* move, sliding along buildings instead of going through them */
+    /* move, sliding along buildings, poles and trees instead of going through them */
     var nx = b.x + Math.sin(b.h) * b.speed * DT, nz = b.z + Math.cos(b.h) * b.speed * DT;
-    if (mapMod.onRoad(nx, nz, R.BIKE_R)) { b.x = nx; b.z = nz; }
-    else if (mapMod.onRoad(nx, b.z, R.BIKE_R)) { b.x = nx; b.speed *= 0.97; }
-    else if (mapMod.onRoad(b.x, nz, R.BIKE_R)) { b.z = nz; b.speed *= 0.97; }
-    else { if (b.speed > 4) r.bus.emit('ride:wall', { speed: b.speed }); b.speed *= 0.3; }
+    function free(px, pz) { return mapMod.onRoad(px, pz, R.BIKE_R) && mapMod.clearOfProps(r.map, px, pz, R.BIKE_R); }
+    if (free(nx, nz)) { b.x = nx; b.z = nz; }
+    else if (free(nx, b.z)) { b.x = nx; b.speed *= 0.97; }
+    else if (free(b.x, nz)) { b.z = nz; b.speed *= 0.97; }
+    else { if (Math.abs(b.speed) > 4) r.bus.emit('ride:wall', { speed: b.speed }); b.speed *= 0.3; }
     /* traffic */
     for (i = 0; i < r.traffic.length; i++) {
       var v = r.traffic[i], push = hitVehicle(r, v, b.x, b.z); if (!push) continue;

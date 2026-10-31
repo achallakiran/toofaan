@@ -8,7 +8,9 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
   await page.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '#ride'); await page.waitForSelector('html[data-ready="1"]');
   await page.waitForTimeout(2500); await page.screenshot({ path: path.join(out, 'ride_1_start.png') });
-  await page.keyboard.down('KeyD'); await page.keyboard.down('KeyS'); await page.waitForTimeout(2500); await page.keyboard.up('KeyS'); await page.keyboard.up('KeyD');
+  await page.keyboard.down('KeyW'); await page.waitForFunction(function () { return window.__game.ctx.ride.bike.speed > 12; }, null, { timeout: 20000 }).catch(function () { });
+  await page.screenshot({ path: path.join(out, 'ride_1b_speed.png') });
+  await page.keyboard.down('KeyD'); await page.waitForTimeout(1200); await page.keyboard.up('KeyD'); await page.keyboard.up('KeyW');
   await page.screenshot({ path: path.join(out, 'ride_2_turn.png') });
   /* force a crash: a bus right ahead */
   await page.evaluate(function () { var r = window.__game.ctx.ride, b = r.bike, v = r.traffic[0]; b.speed = 15; v.kind = 'bus'; v.axis = 'x'; v.line = 0; v.wait = 999; v.x = b.x + Math.sin(b.h) * 3; v.z = b.z + Math.cos(b.h) * 3; v.h = b.h + 1.57; v.s = v.x; });
