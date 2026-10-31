@@ -2,7 +2,7 @@
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 48',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 49',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 

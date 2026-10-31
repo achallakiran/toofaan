@@ -7,6 +7,7 @@ var CONFIG = require('../data/config');
 var LOC = require('../data/locations');
 var locsMod = require('../sim/citylocs');
 var cinecard = require('../view/cinecard');
+var combatMod = require('../sim/combat');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -35,6 +36,14 @@ function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
   scope.add(function () { timers.forEach(clearTimeout); });
+  /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
+  timers.push(setTimeout(function () {
+    var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;
+    var sp = w.streaming.specAt(L.next ? L.next.x : w.player.x, L.next ? L.next.z : w.player.z), D = LOC.LOCATIONS[m.type] || LOC.LOCATIONS.market, p = w.player, pts, i;
+    if (sp && sp.loc) { pts = sp.loc.spawns; L.active = { key: m.brawlKey, name: sp.loc.name, x: sp.loc.x, z: sp.loc.z }; }
+    else { pts = []; for (i = 0; i < 6; i++) pts.push({ x: p.x + Math.cos(i) * 8, z: p.z + Math.sin(i) * 8 }); L.active = { key: m.brawlKey, name: D.name, x: p.x, z: p.z }; }
+    combatMod.startLocation(w, L.active.name, pts, D.n, D.stick); ctx.bus.emit('location:start', { key: m.brawlKey, name: L.active.name });
+  }, 1500));
   scope.add(ctx.bus.on('location:clear', function (e) {
     if (e.key !== m.brawlKey) return;
     timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));

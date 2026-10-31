@@ -10,7 +10,7 @@ var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
 var ambient = require('./ambientvox');
 
-var ROOF_Y = 1.32, HALF_W = 0.95;                    /* the street car's roof height and half width, before scaling */
+var ROOF_Y = 1.4, HALF_W = 0.95;                    /* the street car's roof height and half width, before scaling */
 var GVS = 0.075;
 var h = vg.hex;
 
@@ -56,9 +56,20 @@ var SALUTE = { 'armB.sx': 150, 'armB.sz': 30, 'armB.e': 120, 'armB.pr': 30 };
 function createEncView(root, heroRig, heroBike, blobUnder) {
   var S = R.SCALE, foes = {}, crew = {}, car = null, police = null, cops = [], cuffed = {}, ridePose = posemath.named('ride'), guard = posemath.named('guard');
   var clubGeo = new THREE.BoxGeometry(0.07, 0.8, 0.07), clubMat = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
-  var bandGeo = new THREE.BoxGeometry(0.34, 0.07, 0.34), bandMat = new THREE.MeshLambertMaterial({ color: 0xc8202a });
+  var bandGeo = new THREE.BoxGeometry(0.27, 0.06, 0.27), bandMat = new THREE.MeshLambertMaterial({ color: 0xc8202a });
   var goonMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   var seatV = new THREE.Vector3(), walkT = 0;
+  /* aiming a limb: point an arm or leg (which hangs along -y from its joint) straight at a world point, blended over the posed rotation */
+  var aimV = new THREE.Vector3(), aimS = new THREE.Vector3(), aimQ = new THREE.Quaternion(), aimP = new THREE.Quaternion(), DOWN = new THREE.Vector3(0, -1, 0), I = new THREE.Quaternion();
+  function aim(rig, joint, mid, target, w, bend) {
+    if (w <= 0.001) return; if (w > 1) w = 1;
+    rig.root.updateMatrixWorld(true); joint.getWorldPosition(aimS);
+    aimV.copy(target).sub(aimS).normalize(); joint.parent.getWorldQuaternion(aimP); aimV.applyQuaternion(aimP.invert());
+    aimQ.setFromUnitVectors(DOWN, aimV); joint.quaternion.slerp(aimQ, w);
+    if (mid) { if (bend) mid.quaternion.slerp(aimQ.setFromAxisAngle(aimV.set(1, 0, 0), -bend), w); else mid.quaternion.slerp(I, w); }
+  }
+  function headOf(rig, out) { rig.root.updateMatrixWorld(true); return rig.head.getWorldPosition(out).add(aimV.set(0, 0.08, 0)); }
+  var tgtV = new THREE.Vector3(), heroHead = new THREE.Vector3();
   var lightR = new THREE.MeshBasicMaterial({ color: 0xff2a2a }), lightB = new THREE.MeshBasicMaterial({ color: 0x2a6bff }), lightGeo = new THREE.BoxGeometry(0.35, 0.14, 0.2);
 
   function seated(rig, bike) { bike.pitch.add(rig.root); rig.root.position.set(bike.seat.x, bike.seat.y + 0.08 - 0.85, bike.seat.z); rig.root.rotation.set(0, 0, 0); rig.root.scale.setScalar(1); }
@@ -72,9 +83,9 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
     var rear = new THREE.Group(), front = new THREE.Group(); rear.position.set(0, T.axleY, T.rearZ); front.position.set(0, T.axleY, T.frontZ);
     rear.add(new THREE.Mesh(T.wheel, goonMat)); front.add(new THREE.Mesh(T.wheel, goonMat)); lean.add(rear); lean.add(front);
     lean.add(rig.root); rig.root.position.set(0, T.seat.y + 0.08 - 0.85, T.seat.z);
-    var band = new THREE.Mesh(bandGeo, bandMat); band.position.set(0, 0.24, -0.01); rig.head.add(band);       /* a red bandana */
+    var band = new THREE.Mesh(bandGeo, bandMat); band.position.set(0, 0.17, 0); rig.head.add(band);       /* a red bandana */
     rig.head.add(mark); mark.position.y = 0.55;
-    if (o.kind === 'rod') { var club = new THREE.Mesh(clubGeo, clubMat); club.position.set(0, -0.12, 0.1); rig.parts.R.wrist.add(club); }
+    if (o.kind === 'rod') { var club = new THREE.Mesh(clubGeo, clubMat); club.position.set(0, -0.12, 0.1); (o.lat < 0 ? rig.parts.L : rig.parts.R).wrist.add(club); }   /* in the hand toward Toofan */
     blobUnder(rootG, 0.9, 2.3); root.add(rootG);
     return { root: rootG, lean: lean, rear: rear, front: front, rig: rig, mark: mark, wheel: 0 };
   }
@@ -150,6 +161,10 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
         else if (o.st === 'hurt') pose = posemath.layer(ridePose, posemath.named('hurt'), 0, 0.6 * Math.max(0, 1 - o.t / 20), 0.6, 0.6);
         F.rig.applyPose(pose, { plant: false });
         F.rig.body.rotation.z = o.st === 'hurt' ? 0.3 * Math.exp(-o.t / 10) : 0;
+        if (o.st === 'recover' && o.t < 14) {                               /* the blow lands: his fist (or rod) goes to Toofan's face */
+          var arm = o.lat > 0 ? F.rig.parts.R : F.rig.parts.L, wb = o.t < 4 ? 1 : 1 - (o.t - 4) / 10;
+          F.rig.body.rotation.z = (o.lat > 0 ? -1 : 1) * 0.18 * wb; aim(F.rig, arm.shoulder, arm.elbow, heroHead, wb, 0);
+        }
         F.lean.rotation.z = down ? Math.min(1.35, o.t * 0.06) : (o.st === 'hurt' ? 0.15 : 0);
         pulse(F.mark, t, o.st === 'windup', o.t / E.WIND);
       });
@@ -164,7 +179,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
           var C2 = crew[o.id] || (crew[o.id] = makeMan('thug'));
           var rise = o.st === 'hidden' ? 0 : (o.st === 'pop' ? o.rise : 1), gone = o.st === 'out' && o.t > 60;
           /* half out of the window on the camera side, facing up at the roof */
-          place(C2.rig.root, bx, bz, e, c.u + o.side * 0.85, c.lat - c.sw - HALF_W * S + 0.5 - rise * 0.15, 0.55 * S * rise - 0.9 * (1 - rise));      /* legs inside the car, chest out of the window */
+          place(C2.rig.root, bx, bz, e, c.u + o.side * 0.85, c.lat - c.sw - HALF_W * S + 0.45 - rise * 0.2, 0.25 * S * rise - 1.2 * (1 - rise));      /* legs inside the car, chest out of the window */
           C2.rig.root.rotation.y = hd + c.yaw + Math.PI / 2;
           C2.rig.root.visible = o.st !== 'hidden' && !gone;
           var pose = posemath.layer(guard, LEAN_OUT, 1, 1, 1, 1);
@@ -207,16 +222,29 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
         if (rig.root.parent !== heroBike.pitch) seated(rig, heroBike);
         rig.root.rotation.set(0, 0, 0);
         var pose = ridePose;
-        if (H.act) { var kick = /Kick|Sweep|Double/.test(H.act.move); pose = posemath.layer(ridePose, clip(H.act.move, H.act.t / 60), kick ? 1 : 0, 1, 1, 1); }
+        if (H.act) pose = posemath.layer(ridePose, { 'head.ry': (H.act.side || 1) * 40, 'neck.ry': (H.act.side || 1) * 15 }, 0, 1, 1, 1);     /* look at him */
         else if (H.guard) pose = posemath.layer(ridePose, posemath.named('block'), 0, 0, (H.side || 1) > 0 ? 1 : 0, (H.side || 1) > 0 ? 0 : 1);     /* elbow guard on the side of the threat */
         if (H.hurt > 0) pose = posemath.layer(pose, posemath.named('hurt'), 0, 0.5, 0.5, 0.5);
         rig.applyPose(pose, { plant: false });
         rig.body.rotation.set(0, 0, H.hurt > 0 ? -0.25 * (H.hurt / 22) : 0);
+        if (H.act) {
+          /* strikes go out to the side, straight at the goon: fists and elbows at his face, boots at his chest */
+          var sd = H.act.side || 1, A = H.act, hitT = A.counter ? 6 : A.hitAt, w3 = A.t < hitT ? Math.pow(A.t / hitT, 1.6) : Math.max(0, 1 - (A.t - hitT - 3) / Math.max(4, A.len - hitT - 3));
+          var tgt = null, best = 1e9;
+          (e.foes || []).forEach(function (o) { if (o.st === 'down' || (o.lat > 0 ? 1 : -1) !== sd || !foes[o.id]) return; if (Math.abs(o.u) < best) { best = Math.abs(o.u); tgt = foes[o.id]; } });
+          var limb = sd > 0 ? rig.parts.L : rig.parts.R, kickM = /Kick/.test(A.move), elbowM = /Elbow/.test(A.move);
+          if (tgt) { tgt.rig.root.updateMatrixWorld(true); if (kickM) tgt.rig.spine.getWorldPosition(tgtV); else headOf(tgt.rig, tgtV); }
+          else { rig.root.updateMatrixWorld(true); rig.head.getWorldPosition(tgtV); tgtV.x += e.l.x * sd * 1.4; tgtV.z += e.l.z * sd * 1.4; }
+          rig.body.rotation.z = sd * (kickM ? -0.22 : 0.2) * w3;           /* lean into a punch, away for a kick */
+          if (kickM) aim(rig, limb.hip, limb.knee, tgtV, w3, 0);
+          else aim(rig, limb.shoulder, limb.elbow, tgtV, w3, elbowM ? 2.3 : (/Hook/.test(A.move) ? 0.55 : 0));
+        }
+        headOf(rig, heroHead);
       } else {
         /* the leap from Bijli onto the car, then flat on the roof gripping its edges, rising to strike at the men in the windows */
         if (rig.root.parent !== root) { root.add(rig.root); rig.root.scale.setScalar(S); }
         heroBike.root.updateMatrixWorld(true); seatV.set(heroBike.seat.x, heroBike.seat.y + 0.08 - 0.85, heroBike.seat.z); heroBike.pitch.localToWorld(seatV);
-        var c2 = e.car, rl = c2.lat - c2.sw, ru = c2.u - 0.95, rx = bx + e.f.x * ru + e.l.x * rl, ry = ROOF_Y * S + 0.12, rz = bz + e.f.z * ru + e.l.z * rl;
+        var c2 = e.car, rl = c2.lat - c2.sw, ru = c2.u - 0.95, rx = bx + e.f.x * ru + e.l.x * rl, ry = ROOF_Y * S + 0.42, rz = bz + e.f.z * ru + e.l.z * rl;
         var k2 = H.roof && e.phase === 'roof' ? 1 : H.leap, s2 = k2 * k2 * (3 - 2 * k2);
         rig.root.position.set(seatV.x + (rx - seatV.x) * s2, seatV.y + (ry - seatV.y) * s2 + Math.sin(Math.PI * k2) * 1.5 * (k2 < 1 ? 1 : 0), seatV.z + (rz - seatV.z) * s2);
         var flat = 1.42 * s2, rising = 0;

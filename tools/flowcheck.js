@@ -23,5 +23,9 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   res.ridingOn = await wait(function () { var r = window.__game.ctx.ride; return r.state === 'ride' && r.target && r.target.key !== '__'; }, 90000);
   res.cleared = await page.evaluate(function (k) { var r = window.__game.ctx.ride; return r.missions[k] + ' next=' + (r.target && r.target.key) + ' nextEnc=' + r.nextEnc; }, key);
   await page.waitForTimeout(800); await page.screenshot({ path: path.join(out, 'flow_4_rideon.png') });
+  /* a second trouble spot straight after: the fight must start again */
+  await page.evaluate(function () { var r = window.__game.ctx.ride; if (r.enc) { r.enc = null; r.state = 'ride'; } var T = r.target; r.bike.x = T.x; r.bike.z = T.z; });
+  res.second = await wait(function () { var w = window.__game.ctx.world; return window.__game.modes.currentName() === 'freeroam' && !!w.locs.active && w.combat.enemies.length > 0; }, 90000);
+  res.secondType = await page.evaluate(function () { var w = window.__game.ctx.world; return w.locs.active && w.locs.active.name; });
   console.log(JSON.stringify(res), 'errors', JSON.stringify(errs)); await b.close();
 })();

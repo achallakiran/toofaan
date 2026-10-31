@@ -35,8 +35,8 @@ var RIDE = {
     SPEED: 8,            /* everyone rolls along at this speed while the fight is on */
     LAT: 3.2,            /* the gang car rides one lane to Toofan's left */
     MID: 3.5,            /* in a bike fight Toofan rides the middle of his carriageway (between its two lanes) */
-    SIDE: 2.4,           /* ...and the goons ride up on both sides of him, this far left or right */
-    REACH: 1.8,          /* how far along the road a punch or kick reaches */
+    SIDE: 1.2,           /* ...and the goons ride up close on both sides of him, near enough for fists and boots to land */
+    REACH: 1.6,          /* how far along the road a punch or kick reaches */
     WIND: 34,            /* ticks of warning before a goon's blow lands */
     COUNTER: 14,         /* Block pressed this many ticks before the blow (or less) is a counter */
     CAR_WIND: 46,        /* the car's warning before it swerves into him */

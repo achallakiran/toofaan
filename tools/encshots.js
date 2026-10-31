@@ -19,11 +19,11 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   /* let the bot finish them: attack often */
   var gotKo = false;
   for (var i = 0; i < 160; i++) {
+    if (await page.evaluate(function () { var e = window.__game.ctx.ride.enc; return !e || e.kind !== 'bikes'; })) break;
     if (!gotKo && await page.evaluate(function () { var e = window.__game.ctx.ride.enc; return !!(e && e.foes.some(function (o) { return o.st === 'down' && o.t < 25; })); })) { gotKo = true; await shot('enc_3b_ko_zoomout'); } var st = await page.evaluate(function () { return window.__game.ctx.ride.state; }); if (st !== 'enc') break; await page.keyboard.down('KeyJ'); await page.waitForTimeout(80); await page.keyboard.up('KeyJ'); await page.waitForTimeout(250); }
-  await wait(function () { return window.__game.ctx.ride.state === 'ride'; }, 60000);
+  await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.kind === 'car'; }, 90000);      /* the car gang follows the bikes straight on */
   var r1 = await page.evaluate(function () { var r = window.__game.ctx.ride; return { state: r.state, hearts: r.hearts }; });
-  await page.evaluate(function () { window.__game.ctx.debug.rideStart('car'); });
-  await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.car && e.car.st === 'windup' && e.car.t > 20; }); await shot('enc_4_car_warn');
+    await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.car && e.car.st === 'windup' && e.car.t > 20; }); await shot('enc_4_car_warn');
   await page.evaluate(function () { var e = window.__game.ctx.ride.enc; e.phase = 'leap'; e.t = 0; e.hero.leap = 0; });
   await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.phase === 'leap' && e.hero.leap > 0.5; }, 8000); await shot('enc_5_leap');
   await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.phase === 'roof' && e.crew.some(function (o) { return o.st === 'windup' && o.t > 10; }); }); await shot('enc_6_roof');

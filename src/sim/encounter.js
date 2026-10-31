@@ -119,7 +119,7 @@ function stepFoes(r, e) {
   e.foes.forEach(function (o) {
     o.t++;
     if (o.st === 'down') { o.u -= 7 * DT; return; }
-    var engaged = act[o.lat > 0 ? 'L' : 'R'] === o, want = engaged ? (o.lat > 0 ? 0.35 : 0.55) : (o.from < 0 ? -7 : 7);
+    var engaged = act[o.lat > 0 ? 'L' : 'R'] === o, want = engaged ? (o.lat > 0 ? 0.15 : 0.3) : (o.from < 0 ? -7 : 7);
     if (o.st === 'approach') { o.u += Math.max(-5 * DT, Math.min(5 * DT, want - o.u)); if (engaged && Math.abs(o.u - want) < 0.1) { o.st = 'ready'; o.t = 0; } return; }
     o.u += Math.max(-3 * DT, Math.min(3 * DT, want - o.u));
     if (!engaged) return;
@@ -214,7 +214,7 @@ function step(r, input) {
   if (e.kind === 'bikes') {
     if (e.phase === 'fight') heroStrike(r, e, input, e.foes, E.REACH);
     stepFoes(r, e);
-    if (e.phase === 'clear' && e.t > 90) finish(r);
+    if (e.phase === 'clear' && e.t > 60) { var keep = r.hearts; start(r, 'car'); r.hearts = keep; }     /* the car gang follows straight on: the mini boss of this chase */
   } else {
     if (e.phase === 'fight') { heroStrike(r, e, input, [], 0); stepCar(r, e); }
     else if (e.phase === 'leap') { H.leap = Math.min(1, e.t / 36); if (H.leap >= 1) { e.phase = 'roof'; e.t = 0; H.roof = true; } }
