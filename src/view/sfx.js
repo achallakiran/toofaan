@@ -73,6 +73,15 @@ function make() {
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
     get on() { return on; },
+    /* the audio graph for the music player: the same context and master as the effects */
+    audio: function () { var c = on ? ctx() : null; return c ? { ac: c, out: master } : null; },
+    /* electric crackle for the logo: a buzz and sharp noise snaps */
+    zap: function (power) {
+      if (!on || !ctx()) return; var p = power || 1, k;
+      for (k = 0; k < 3; k++) burst(0.03 + Math.random() * 0.05, 0.25 * p, 'highpass', 3000 + Math.random() * 3000, 1500, k * 0.04 + Math.random() * 0.03, 3);
+      var t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(110 + Math.random() * 60, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07 * p, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.2);
+    },
     wake: function () {
       if (!on) return; var c = ctx(); if (!c) return;
       if (c.state !== 'running') { try { c.resume(); } catch (e) { } }

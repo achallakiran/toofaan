@@ -26,11 +26,17 @@ function createRide() {
         ctx.ride = rideSim.createRide(ctx.world.seed, ctx.bus);
         var saved = ctx.save.get('ride.missions', null);
         if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k] === 'active' ? 'open' : saved[k]; }); rideSim.pickTarget(ctx.ride); }
+        var pos = ctx.save.get('ride.pos', null), B = ctx.ride.bike;     /* Continue: back where Bijli was parked */
+        if (pos && isFinite(pos.x) && isFinite(pos.z)) { B.x = B.px = pos.x; B.z = B.pz = pos.z; B.h = B.ph = pos.h || 0; }
       }
       S.r = ctx.ride; S.t = 0; S.cam = null; S.msgT = 0; S.honkT = 0; S.cut = null; S.fx = null; S.slow = 0; S.slowAcc = 0; S.shake = 0; S.sideW = 0; S.last = 0;
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
-      scope.add(function () { S.v.dispose(); });
+      scope.add(function () { S.v.dispose(); ctx.touchRoot.style.visibility = ''; });
+      var park = function () { var B = S.r.bike; if (S.r.state === 'ride' && !S.r.enc) ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); };   /* leaving the page parks Bijli where she is */
+      var hid = function () { if (document.hidden) park(); };
+      window.addEventListener('pagehide', park); document.addEventListener('visibilitychange', hid);
+      scope.add(function () { window.removeEventListener('pagehide', park); document.removeEventListener('visibilitychange', hid); });
       S.sfx = sfxmod.createSfx(); S.sfx.engineOff(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
       S.bars = cinecard.bars(); scope.add(function () { S.bars.remove(); });
 
@@ -125,7 +131,11 @@ function createRide() {
         else side = { x: fx + rx * 5.6 * near + e.f.x * 4.2, y: 3.9, z: fz + rz * 5.6 * near + e.f.z * 4.2, lx: fx - e.f.x * 0.3, ly: 1.15, lz: fz - e.f.z * 0.3, fov: 50 };
         mix(side, ease(S.sideW));
       }
-      S.bars.set(!!(S.cut || (r.enc && (r.enc.phase === 'police' || r.enc.phase === 'leap' || r.enc.phase === 'spin')) || (S.fx && S.fx.kind !== 'block')));
+      var cine = !!(S.cut || (r.enc && (r.enc.phase === 'police' || r.enc.phase === 'leap' || r.enc.phase === 'spin' || r.enc.kind === 'arrest')) || (S.fx && S.fx.kind !== 'block'));
+      S.bars.set(cine);
+      ctx.touchRoot.style.visibility = cine ? 'hidden' : '';          /* the buttons step aside for the cinematic shots, so they never sit under the bars */
+      S.posT = (S.posT || 0) - dt;
+      if (S.posT <= 0 && r.state === 'ride' && !r.enc && !S.cut) { S.posT = 3; ctx.save.set('ride.pos', { x: +b.x.toFixed(2), z: +b.z.toFixed(2), h: +b.h.toFixed(3) }); }
 
       /* ---- big moments: the camera pulls back wide and high in slow motion, with speed lines and an impact burst, so nothing is hidden ---- */
       if (S.fx) {

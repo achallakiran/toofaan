@@ -6,7 +6,7 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   var b = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   var page = await (await b.newContext({ viewport: { width: 1000, height: 600 } })).newPage(), errs = [], res = {};
   page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
-  await page.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html')); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1200);
+  await page.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '#ride'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1200);
   function wait(fn, ms) { return page.waitForFunction(fn, null, { timeout: ms || 60000 }).then(function () { return true; }).catch(function () { return false; }); }
   res.startsOnRide = await page.evaluate(function () { return window.__game.modes.currentName() === 'ride' && getComputedStyle(document.getElementById('tabs')).display === 'none'; });
   var key = await page.evaluate(function () { var r = window.__game.ctx.ride, T = r.target; r.bike.x = T.x; r.bike.z = T.z; return T.key; });

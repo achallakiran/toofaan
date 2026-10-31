@@ -15,6 +15,7 @@ var sfxMod = require('./view/sfx');
 var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
+var title = require('./modes/title');
 
 function boot() {
   var storage = null;
@@ -53,11 +54,12 @@ function boot() {
   modes.register(freeroam.createFreeroam());
   modes.register(studio.createStudio());
   modes.register(ride.createRide());
+  modes.register(title.createTitle());
   var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name, args) {
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
   tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
@@ -65,7 +67,8 @@ function boot() {
   /* one game: it opens on the ride; the studio and the bare street are developer views (?dev=1 shows their tabs, or #studio / #street) */
   ctx.go = go;
   if (!params.get('dev')) document.getElementById('tabs').style.display = 'none';
-  go(window.location.hash === '#street' ? 'freeroam' : window.location.hash === '#studio' ? 'studio' : 'ride');
+  var H = window.location.hash;
+  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#menu' ? 'title' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
