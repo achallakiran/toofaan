@@ -51,6 +51,7 @@ function createRide() {
     },
     step: function (ctx, tick) {
       ctx.input.tick(tick);
+      if (ctx.input.state.pressed.attack && S.r.state === 'ride') S.honk = true;      /* until the road fights arrive (M2), Attack sounds the horn */
       rideSim.step(S.r, ctx.input);
     },
     render: function (ctx, alpha) {
@@ -69,6 +70,7 @@ function createRide() {
       ctx.view.render();
       /* sound */
       if (r.state === 'ride') S.sfx.engine(dt, { rpm: 0.2 + 0.8 * Math.abs(b.speed) / R.TOP, thr: Math.max(0.15, ctx.input.state.my), speed: b.speed, drifting: false, braking: ctx.input.state.held.block, air: false });
+      if (S.honk) { S.honk = false; S.sfx.honk(); }
       S.honkT -= dt;
       if (S.honkT <= 0 && r.state === 'ride') {
         for (var i = 0; i < r.traffic.length; i++) { var v = r.traffic[i]; if (Math.hypot(v.x - b.x, v.z - b.z) < 4 && v.kind !== 'scooter') { S.sfx.honk(); S.honkT = 2.5 + (v.id % 3); break; } }

@@ -11,7 +11,8 @@ var RIDE = {
 
   TOP: 17,                 /* stick (or W) held forward: full throttle */
   ACCEL: 5.5, BRAKE: 14, COAST: 1.6, REVERSE: 2.5, TURN: 2.4,
-  BIKE_R: 0.55,
+  BIKE_R: 0.7,
+  SCALE: 1.4,              /* Toofan and Bijli are drawn this much bigger in ride mode, so they read well on a phone */
   CRASH_SPEED: 5,          /* slower bumps just stop the bike */
   FLY_TICKS: 42, RUN_SPEED: 5.2, GRACE_TICKS: 90,
   ARRIVE_R: 9,
@@ -27,7 +28,7 @@ var RIDE = {
     bus:     { len: 8.0, r: 1.3,  speed: [6.5, 8.5] },
     truck:   { len: 6.0, r: 1.2,  speed: [6, 8] }
   },
-  WEIGHTS: [['scooter', 4], ['auto', 4], ['car', 4], ['bus', 1], ['truck', 2]]
+  WEIGHTS: [['auto', 5], ['car', 6], ['bus', 1], ['truck', 2]]      /* vehicles only: no riders or walkers on the ride roads */
 };
 
 module.exports = RIDE;

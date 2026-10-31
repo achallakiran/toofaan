@@ -579,6 +579,11 @@ console.log('ride mode (Phase 4)');
     run(r, 90, function () { return [0, -1]; }); assert(r.bike.speed <= 0.01, 'brakes ' + r.bike.speed);
     var p = r.map.props.list[0]; assert(!rmap.clearOfProps(r.map, p.x, p.z, 0.3) && rmap.clearOfProps(r.map, p.x + 3, p.z + 3, 0.3) === rmap.clearOfProps(r.map, p.x + 3, p.z + 3, 0.3));
   });
+  test('ride: letting go of the steering lines the bike up with the road (lane assist)', function () {
+    var r = rideMod.createRide(4, null); run(r, 60, function () { return [0, 1]; });
+    run(r, 14, function () { return [0.6, 0.8]; }); var bent = Math.abs(r.bike.h - Math.PI / 2);
+    run(r, 90, function () { return [0, 1]; }); assert(bent > 0.05 && Math.abs(r.bike.h - Math.PI / 2) < 0.02, bent + ' -> ' + (r.bike.h - Math.PI / 2));
+  });
   test('ride: same seed and same input give the same ride (deterministic)', function () {
     var a = rideMod.createRide(11, null), b2 = rideMod.createRide(11, null), f = function (i) { return [Math.sin(i / 90), 0.6]; };
     run(a, 700, f); run(b2, 700, f); assert.strictEqual(rideMod.hash(a), rideMod.hash(b2));

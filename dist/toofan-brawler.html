@@ -365,7 +365,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 44',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 45',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -894,7 +894,8 @@ var RIDE = {
 
   TOP: 17,                 /* stick (or W) held forward: full throttle */
   ACCEL: 5.5, BRAKE: 14, COAST: 1.6, REVERSE: 2.5, TURN: 2.4,
-  BIKE_R: 0.55,
+  BIKE_R: 0.7,
+  SCALE: 1.4,              /* Toofan and Bijli are drawn this much bigger in ride mode, so they read well on a phone */
   CRASH_SPEED: 5,          /* slower bumps just stop the bike */
   FLY_TICKS: 42, RUN_SPEED: 5.2, GRACE_TICKS: 90,
   ARRIVE_R: 9,
@@ -910,7 +911,7 @@ var RIDE = {
     bus:     { len: 8.0, r: 1.3,  speed: [6.5, 8.5] },
     truck:   { len: 6.0, r: 1.2,  speed: [6, 8] }
   },
-  WEIGHTS: [['scooter', 4], ['auto', 4], ['car', 4], ['bus', 1], ['truck', 2]]
+  WEIGHTS: [['auto', 5], ['car', 6], ['bus', 1], ['truck', 2]]      /* vehicles only: no riders or walkers on the ride roads */
 };
 
 module.exports = RIDE;
@@ -1387,6 +1388,7 @@ function createRide() {
     },
     step: function (ctx, tick) {
       ctx.input.tick(tick);
+      if (ctx.input.state.pressed.attack && S.r.state === 'ride') S.honk = true;      /* until the road fights arrive (M2), Attack sounds the horn */
       rideSim.step(S.r, ctx.input);
     },
     render: function (ctx, alpha) {
@@ -1405,6 +1407,7 @@ function createRide() {
       ctx.view.render();
       /* sound */
       if (r.state === 'ride') S.sfx.engine(dt, { rpm: 0.2 + 0.8 * Math.abs(b.speed) / R.TOP, thr: Math.max(0.15, ctx.input.state.my), speed: b.speed, drifting: false, braking: ctx.input.state.held.block, air: false });
+      if (S.honk) { S.honk = false; S.sfx.honk(); }
       S.honkT -= dt;
       if (S.honkT <= 0 && r.state === 'ride') {
         for (var i = 0; i < r.traffic.length; i++) { var v = r.traffic[i]; if (Math.hypot(v.x - b.x, v.z - b.z) < 4 && v.kind !== 'scooter') { S.sfx.honk(); S.honkT = 2.5 + (v.id % 3); break; } }
@@ -2569,11 +2572,18 @@ function step(r, input) {
 
   if (r.state === 'ride') {
     /* stick left/right steers; stick forward (or W) is the throttle; stick back (or S) and Block brake. Nothing pressed: she rolls to a stop. */
-    var mx = s.mx, my = s.my, thr = Math.max(0, my), brk = Math.max(0, -my);
-    if (s.held.block) brk = 1;
-    var rate = R.TURN * DT * Math.min(1, 0.25 + Math.abs(b.speed) / 8);
-    b.turn = Math.abs(mx) > 0.15 ? -mx * rate : b.turn * 0.7;                 /* right lowers the heading */
+    /* one-thumb driving: push the stick any way except back and she goes (harder = faster); its left/right part steers;
+       pull it back to brake (and, once stopped, reverse). Block also brakes. Letting go of steering lines her up with the road. */
+    var mx = s.mx, my = s.my, mag = Math.min(1, Math.hypot(mx, my)), back = my < -0.35;
+    var thr = back ? 0 : mag, brk = back ? -my : 0;
+    if (s.held.block) { brk = 1; thr = 0; }
+    var steer = Math.abs(mx) > 0.15 ? mx : 0, rate = R.TURN * DT * Math.min(1, 0.25 + Math.abs(b.speed) / 8);
+    b.turn = steer ? -steer * rate : b.turn * 0.7;                         /* right lowers the heading */
     b.h += b.turn * (b.speed < 0 ? -1 : 1);
+    if (!steer && Math.abs(b.speed) > 2) {                                  /* lane assist: settle onto the nearest road direction */
+      var axisH = Math.round(b.h / (Math.PI / 2)) * (Math.PI / 2), off = angDiff(axisH, b.h);
+      if (Math.abs(off) < 0.5) b.h += off * Math.min(1, 3.5 * DT);
+    }
     if (thr > 0.15) { var tgt = R.TOP * thr; b.speed = b.speed < tgt ? Math.min(tgt, b.speed + R.ACCEL * thr * DT) : Math.max(tgt, b.speed - R.COAST * DT); }
     else if (brk > 0.15) b.speed = b.speed > 0 ? Math.max(0, b.speed - R.BRAKE * brk * DT) : Math.max(-R.REVERSE, b.speed - 2 * brk * DT);
     else b.speed = b.speed > 0 ? Math.max(0, b.speed - R.COAST * DT) : Math.min(0, b.speed + R.COAST * DT);
@@ -5267,10 +5277,10 @@ function createRideView(scene) {
   function blobUnder(obj, lx, lz) { var m = new THREE.Mesh(blob, shadowMat); m.scale.set(lx, 1, lz); m.position.set(SUN.x * 0.5, 0.17, SUN.z * 0.5); m.renderOrder = 2; obj.add(m); return m; }
 
   var bike = bikevox.createBike(), rig = herorig.createHeroRig(), seat = bike.seat;
-  root.add(bike.root); var bikeBlob = new THREE.Group(); root.add(bikeBlob); blobUnder(bikeBlob, 0.9, 2.1);
-  var heroBlob = new THREE.Group(); root.add(heroBlob); blobUnder(heroBlob, 0.9, 0.9);
+  root.add(bike.root); bike.root.scale.setScalar(R.SCALE); var bikeBlob = new THREE.Group(); root.add(bikeBlob); blobUnder(bikeBlob, 0.9 * R.SCALE, 2.1 * R.SCALE);
+  var heroBlob = new THREE.Group(); root.add(heroBlob); blobUnder(heroBlob, 0.9 * R.SCALE, 0.9 * R.SCALE);
   var ridePose = posemath.named('ride'), down = posemath.named('down');
-  function seatRider() { bike.pitch.add(rig.root); rig.root.position.set(seat.x, seat.y + 0.08 - 0.85, seat.z); rig.root.rotation.set(0, 0, 0); rig.applyPose(ridePose, { plant: false }); }
+  function seatRider() { bike.pitch.add(rig.root); rig.root.position.set(seat.x, seat.y + 0.08 - 0.85, seat.z); rig.root.rotation.set(0, 0, 0); rig.root.scale.setScalar(1); rig.applyPose(ridePose, { plant: false }); }
   seatRider();
   /* the signal: a pulsing ring and a soft column of light */
   var mark = new THREE.Group();
@@ -5325,12 +5335,12 @@ function createRideView(scene) {
       var onBike = r.state === 'ride' || r.state === 'arrived';
       layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
       bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14 * Math.min(1, Math.abs(b.speed) / 6))) : 0);
-      wheel += (onBike ? b.speed : (b.slide || 0)) * dt / bike.wheelR; bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
+      wheel += (onBike ? b.speed : (b.slide || 0)) * dt / (bike.wheelR * R.SCALE); bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
       if (onBike) {
         if (rig.root.parent !== bike.pitch) seatRider();
         rig.body.rotation.x = 0; rig.flutter(t, Math.min(1, Math.abs(b.speed) / 12)); heroBlob.visible = false;
       } else {
-        if (rig.root.parent !== root) { root.add(rig.root); rig.root.rotation.set(0, 0, 0); }
+        if (rig.root.parent !== root) { root.add(rig.root); rig.root.rotation.set(0, 0, 0); rig.root.scale.setScalar(R.SCALE); }
         var hx = r.hero.px + (r.hero.x - r.hero.px) * alpha, hz = r.hero.pz + (r.hero.z - r.hero.pz) * alpha;
         rig.root.position.set(hx, 0, hz); rig.root.rotation.y = r.hero.face; heroBlob.visible = true; heroBlob.position.set(hx, 0, hz);
         if (r.state === 'fly') { var u = Math.min(1, r.t / R.FLY_TICKS); rig.applyPose(down, { plant: true }); rig.root.position.y = Math.sin(Math.PI * Math.min(1, u * 2.2)) * 0.6 * (1 - u); rig.body.rotation.x = r.hero.spin; }

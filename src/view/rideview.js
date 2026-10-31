@@ -224,10 +224,10 @@ function createRideView(scene) {
   function blobUnder(obj, lx, lz) { var m = new THREE.Mesh(blob, shadowMat); m.scale.set(lx, 1, lz); m.position.set(SUN.x * 0.5, 0.17, SUN.z * 0.5); m.renderOrder = 2; obj.add(m); return m; }
 
   var bike = bikevox.createBike(), rig = herorig.createHeroRig(), seat = bike.seat;
-  root.add(bike.root); var bikeBlob = new THREE.Group(); root.add(bikeBlob); blobUnder(bikeBlob, 0.9, 2.1);
-  var heroBlob = new THREE.Group(); root.add(heroBlob); blobUnder(heroBlob, 0.9, 0.9);
+  root.add(bike.root); bike.root.scale.setScalar(R.SCALE); var bikeBlob = new THREE.Group(); root.add(bikeBlob); blobUnder(bikeBlob, 0.9 * R.SCALE, 2.1 * R.SCALE);
+  var heroBlob = new THREE.Group(); root.add(heroBlob); blobUnder(heroBlob, 0.9 * R.SCALE, 0.9 * R.SCALE);
   var ridePose = posemath.named('ride'), down = posemath.named('down');
-  function seatRider() { bike.pitch.add(rig.root); rig.root.position.set(seat.x, seat.y + 0.08 - 0.85, seat.z); rig.root.rotation.set(0, 0, 0); rig.applyPose(ridePose, { plant: false }); }
+  function seatRider() { bike.pitch.add(rig.root); rig.root.position.set(seat.x, seat.y + 0.08 - 0.85, seat.z); rig.root.rotation.set(0, 0, 0); rig.root.scale.setScalar(1); rig.applyPose(ridePose, { plant: false }); }
   seatRider();
   /* the signal: a pulsing ring and a soft column of light */
   var mark = new THREE.Group();
@@ -282,12 +282,12 @@ function createRideView(scene) {
       var onBike = r.state === 'ride' || r.state === 'arrived';
       layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
       bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14 * Math.min(1, Math.abs(b.speed) / 6))) : 0);
-      wheel += (onBike ? b.speed : (b.slide || 0)) * dt / bike.wheelR; bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
+      wheel += (onBike ? b.speed : (b.slide || 0)) * dt / (bike.wheelR * R.SCALE); bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
       if (onBike) {
         if (rig.root.parent !== bike.pitch) seatRider();
         rig.body.rotation.x = 0; rig.flutter(t, Math.min(1, Math.abs(b.speed) / 12)); heroBlob.visible = false;
       } else {
-        if (rig.root.parent !== root) { root.add(rig.root); rig.root.rotation.set(0, 0, 0); }
+        if (rig.root.parent !== root) { root.add(rig.root); rig.root.rotation.set(0, 0, 0); rig.root.scale.setScalar(R.SCALE); }
         var hx = r.hero.px + (r.hero.x - r.hero.px) * alpha, hz = r.hero.pz + (r.hero.z - r.hero.pz) * alpha;
         rig.root.position.set(hx, 0, hz); rig.root.rotation.y = r.hero.face; heroBlob.visible = true; heroBlob.position.set(hx, 0, hz);
         if (r.state === 'fly') { var u = Math.min(1, r.t / R.FLY_TICKS); rig.applyPose(down, { plant: true }); rig.root.position.y = Math.sin(Math.PI * Math.min(1, u * 2.2)) * 0.6 * (1 - u); rig.body.rotation.x = r.hero.spin; }

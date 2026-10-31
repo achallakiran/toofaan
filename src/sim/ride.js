@@ -114,11 +114,18 @@ function step(r, input) {
 
   if (r.state === 'ride') {
     /* stick left/right steers; stick forward (or W) is the throttle; stick back (or S) and Block brake. Nothing pressed: she rolls to a stop. */
-    var mx = s.mx, my = s.my, thr = Math.max(0, my), brk = Math.max(0, -my);
-    if (s.held.block) brk = 1;
-    var rate = R.TURN * DT * Math.min(1, 0.25 + Math.abs(b.speed) / 8);
-    b.turn = Math.abs(mx) > 0.15 ? -mx * rate : b.turn * 0.7;                 /* right lowers the heading */
+    /* one-thumb driving: push the stick any way except back and she goes (harder = faster); its left/right part steers;
+       pull it back to brake (and, once stopped, reverse). Block also brakes. Letting go of steering lines her up with the road. */
+    var mx = s.mx, my = s.my, mag = Math.min(1, Math.hypot(mx, my)), back = my < -0.35;
+    var thr = back ? 0 : mag, brk = back ? -my : 0;
+    if (s.held.block) { brk = 1; thr = 0; }
+    var steer = Math.abs(mx) > 0.15 ? mx : 0, rate = R.TURN * DT * Math.min(1, 0.25 + Math.abs(b.speed) / 8);
+    b.turn = steer ? -steer * rate : b.turn * 0.7;                         /* right lowers the heading */
     b.h += b.turn * (b.speed < 0 ? -1 : 1);
+    if (!steer && Math.abs(b.speed) > 2) {                                  /* lane assist: settle onto the nearest road direction */
+      var axisH = Math.round(b.h / (Math.PI / 2)) * (Math.PI / 2), off = angDiff(axisH, b.h);
+      if (Math.abs(off) < 0.5) b.h += off * Math.min(1, 3.5 * DT);
+    }
     if (thr > 0.15) { var tgt = R.TOP * thr; b.speed = b.speed < tgt ? Math.min(tgt, b.speed + R.ACCEL * thr * DT) : Math.max(tgt, b.speed - R.COAST * DT); }
     else if (brk > 0.15) b.speed = b.speed > 0 ? Math.max(0, b.speed - R.BRAKE * brk * DT) : Math.max(-R.REVERSE, b.speed - 2 * brk * DT);
     else b.speed = b.speed > 0 ? Math.max(0, b.speed - R.COAST * DT) : Math.min(0, b.speed + R.COAST * DT);
