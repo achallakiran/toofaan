@@ -366,7 +366,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 51',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 52',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -6171,14 +6171,16 @@ function createSfx() {
   if (shared) return shared;
   shared = make();
   if (typeof document !== 'undefined') {
-    document.addEventListener('pointerdown', function () { shared.wake(); }, true);
+    /* phones only let a page start sound inside a tap: every kind of tap (and key) wakes it, iPhones included (they want touchend or click) */
+    ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown'].forEach(function (k) { document.addEventListener(k, function () { shared.wake(); }, { capture: true, passive: true }); });
     document.addEventListener('visibilitychange', function () { shared.sleep(document.hidden); });
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }      /* iPhone: play even with the ring/silent switch on silent */
   }
   return shared;
 }
 
 function make() {
-  var ac = null, master = null, nbuf = null, on = true;
+  var ac = null, master = null, nbuf = null, on = true, unlocked = false;
   try { on = localStorage.getItem('toofan.sound') !== '0'; } catch (e) { }
   function ctx() {
     if (!ac) {
@@ -6233,7 +6235,13 @@ function make() {
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
     get on() { return on; },
-    wake: function () { if (on) ctx(); },
+    wake: function () {
+      if (!on) return; var c = ctx(); if (!c) return;
+      if (c.state !== 'running') { try { c.resume(); } catch (e) { } }
+      if (!unlocked) {                                                  /* a silent blip inside the tap unlocks audio on older iPhones */
+        try { var b = c.createBuffer(1, 1, 22050), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); unlocked = c.state === 'running'; } catch (e) { }
+      }
+    },
     sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
     toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
     whoosh: function (power) { if (!on || !ctx()) return; burst(0.2, 0.14 + (power || 0.5) * 0.12, 'bandpass', 380, 1700, 0, 1.2); },
