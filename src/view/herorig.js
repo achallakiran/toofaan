@@ -45,7 +45,7 @@ function createHeroRig(variant) {
   }
   function M(parent, name) {
     if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
-      if (!(variant === 'thug' && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      if (!((variant === 'thug' || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
       return null;
     }
     var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
@@ -59,7 +59,7 @@ function createHeroRig(variant) {
   for (var i = 0; i < 3; i++) { var sg = G(sp, i === 0 ? SK.hair : SK.hairStep, 'hair' + i); M(sg, 'hair' + i); hair.push(sg); sp = sg; }
   var beard = G(head, SK.beard, 'beard'); M(beard, 'beard');
   var guitar = new THREE.Group(); body.add(guitar); var guitarMesh = M(guitar, 'guitar');
-  if (variant === 'thug') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
+  if (variant === 'thug' || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
 
   /* a hurt thug's face: eyelids that squeeze shut, an open mouth, a smear of blood. Thin boxes just proud of the face, hidden until needed. */
   var faceFx = null;

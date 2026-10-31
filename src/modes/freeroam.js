@@ -19,6 +19,7 @@ var sfxmod = require('../view/sfx');
 var bikevox = require('../view/bikevox');
 var ridecam = require('../view/ridecam');
 var BIKE = require('../data/bike');
+var mission = require('./mission');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
 function groupCentre(world, hx, hz) {
@@ -31,8 +32,9 @@ function createFreeroam() {
   var S = {};
   return {
     name: 'freeroam',
-    enter: function (ctx, scope) {
+    enter: function (ctx, scope, args) {
       var view = ctx.view;
+      if (args && args.mission) mission.place(ctx, args.mission);           /* sent here from the ride: stand at that trouble spot */
       view.setSky('#9fb6c9', true);
       ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false;
       scope.add(ctx.bus.on('chunk:load', function (e) { view.addChunk(e.spec); }));
@@ -97,6 +99,7 @@ function createFreeroam() {
       S.ev = enemyview.createEnemyView(view.scene); S.ui = fightui.createFightUi(); S.hurtW = 0; S.downW = 0; S.counterIdx = 0;
       scope.add(function () { S.ev.dispose(); S.ui.dispose(); ctx.world.combat.enabled = false; ctx.world.combat.enemies.length = 0; });
       worldMod.startFight(ctx.world);
+      if (args && args.mission) mission.watch(ctx, scope, args.mission);
       S.mp.onHit(function (move, idx, last) { ctx.world.pendingStrikes.push({ move: move, last: last }); });       /* the sim decides who was hit, on the next tick */
       function heroPoint(y) { var p = ctx.world.player; return { x: p.x + Math.sin(S.face) * 0.8, y: y, z: p.z + Math.cos(S.face) * 0.8 }; }
       scope.add(ctx.bus.on('hit', function (e) {

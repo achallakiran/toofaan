@@ -44,7 +44,9 @@ function start(r, kind) {
     foes: [], car: null, crew: [], police: null, beaten: 0
   };
   r.enc = e; r.state = 'enc'; r.hearts = 3; r.encCount = (r.encCount || 0) + 1;
-  if (kind === 'bikes') {
+  if (kind === 'arrest') {                                        /* after a fight in a trouble spot: the police take the goons away; Toofan waits on Bijli */
+    b.speed = 0; e.speed = 0; e.phase = 'police'; arrest(e, 6, E.LAT + 3.0, 5); r.bus.emit('enc:police', {});
+  } else if (kind === 'bikes') {
     var n = 2 + (r.encCount % 2), i;
     for (i = 0; i < n; i++) e.foes.push({ id: i + 1, kind: i === n - 1 ? 'rod' : 'bike', hp: i === n - 1 ? 4 : 3, u: (i % 2 ? 1 : -1) * (14 + i * 4), st: 'approach', t: 0, cd: 30 + Math.floor(r.rng.next() * 40), look: i, from: (i % 2 ? 1 : -1) });
   } else {
@@ -131,7 +133,7 @@ function stepCar(r, e) {
       if (c.t === 12) { if (H.guard) r.bus.emit('enc:block', { car: true }); else if (H.inv <= 0) { r.hearts--; H.hurt = 26; H.inv = 50; r.bus.emit('enc:hurt', { hearts: r.hearts, car: true }); } }
       if (c.t >= 24) { c.st = 'ready'; c.t = 0; c.sw = 0; c.cd = 60 + Math.floor(r.rng.next() * 50); }
     }
-  } else if (e.phase === 'spin' || e.phase === 'police') {
+  } else if (e.phase === 'spin') {
     c.u -= Math.min(E.SPEED, 2 + e.t * 0.12) * DT; c.yaw = Math.min(1.9, c.yaw + 0.045 * Math.max(0, 1 - e.t / 70));
   }
 }
@@ -155,9 +157,31 @@ function stepCrew(r, e) {
   if (e.crew.every(function (o) { return o.st === 'out'; }) && e.phase === 'roof') { e.phase = 'spin'; e.t = 0; e.hero.leap = 1; e.hero.leapDir = -1; e.hero.act = null; r.bus.emit('enc:spin', {}); }
 }
 
+/* the police scene: a police car rolls in behind, two constables stand by, the goons are walked to it one by one */
+function arrest(e, u, lat, n) {
+  var i; e.police = { u: u - 34, stop: u - 5, lat: R.ENC.LAT }; e.cops = [{ u: u - 2.2, lat: lat }, { u: u + n * 0.6 + 1.2, lat: lat }]; e.cuffed = [];
+  for (i = 0; i < n; i++) e.cuffed.push({ id: i + 1, u: u + (i - (n - 1) / 2) * 1.15, lat: lat, walk: 0, gone: false });
+  e.arrestEnd = 150 + n * 40 + 100;
+}
+function stepArrest(r, e, roll) {
+  var P = e.police, i;
+  [P].concat(e.cops, e.cuffed).forEach(function (o) { o.u -= roll * DT; if (o.stop !== undefined) o.stop -= roll * DT; });
+  P.u += Math.min(11 * DT, Math.max(0, P.stop - P.u));
+  if (e.t === 120) r.bus.emit('enc:arrest', {});
+  for (i = 0; i < e.cuffed.length; i++) {
+    var g = e.cuffed[i]; if (g.gone || e.t < 150 + i * 40) continue;
+    g.walk++; var tu = P.u + 1.2, tl = P.lat + 1.3, du = tu - g.u, dl = tl - g.lat, d = Math.hypot(du, dl);
+    if (d < 0.3) g.gone = true; else { g.u += du / d * 1.8 * DT; g.lat += dl / d * 1.8 * DT; }
+  }
+}
+
 function finish(r) {
   var e = r.enc, b = r.bike;
-  r.state = 'ride'; r.enc = null; b.speed = E.SPEED; b.grace = R.GRACE_TICKS; r.encCool = E.COOL; r.nextEnc = e.kind === 'bikes' ? 'car' : 'bikes';
+  r.state = 'ride'; r.enc = null; b.speed = e.kind === 'arrest' ? 0 : E.SPEED; b.grace = R.GRACE_TICKS;
+  /* on the way to every trouble spot: first the bike goons, then the car gang; after the arrest at a cleared spot the next run starts */
+  if (e.kind === 'bikes') { r.nextEnc = 'car'; r.encCool = E.GAP; }
+  else if (e.kind === 'car') { r.nextEnc = null; }
+  else { r.nextEnc = 'bikes'; r.encCool = E.FIRST; r.needPick = true; }
   r.bus.emit('enc:end', { kind: e.kind });
 }
 
@@ -166,9 +190,10 @@ function step(r, input) {
   b.px = b.x; b.pz = b.z; b.ph = b.h; e.t++;
   /* the road keeps rolling; at the map's edge everyone comes to a stop and the fight goes on */
   var roll = runAhead(r.map, b.x, b.z, b.h) > 8 ? e.speed : 0;
-  if (e.phase === 'police') roll = Math.max(0, e.speed * (1 - e.t / 60));
+  if (e.phase === 'police') roll = e.kind === 'arrest' ? 0 : Math.max(0, E.SPEED * (1 - e.t / 60));
   b.speed = roll; b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT;
 
+  if (e.kind === 'arrest') { stepArrest(r, e, roll); if (e.t > e.arrestEnd) finish(r); return; }
   if (e.phase === 'intro') { if (e.t > 70) { e.phase = 'fight'; e.t = 0; } if (e.kind === 'car') stepCar(r, e); else stepFoes(r, e); return; }
   if (e.phase === 'fail') { if (e.t > 120) { var k = e.kind; r.state = 'ride'; r.enc = null; start(r, k); r.bus.emit('enc:retry', {}); } return; }
 
@@ -180,11 +205,10 @@ function step(r, input) {
     if (e.phase === 'fight') { heroStrike(r, e, input, [], 0); stepCar(r, e); }
     else if (e.phase === 'leap') { H.leap = Math.min(1, e.t / 36); if (H.leap >= 1) { e.phase = 'roof'; e.t = 0; H.roof = true; } }
     else if (e.phase === 'roof') { heroStrike(r, e, input, e.crew, 1.6); stepCrew(r, e); }
-    else if (e.phase === 'spin') { H.roof = e.t < 36; H.leap = Math.max(0, 1 - e.t / 36); stepCar(r, e); stepCrew(r, e); if (e.t > 80) { e.phase = 'police'; e.t = 0; e.police = { u: e.car.u - 30, t: 0 }; r.bus.emit('enc:police', {}); } }
+    else if (e.phase === 'spin') { H.roof = e.t < 36; H.leap = Math.max(0, 1 - e.t / 36); stepCar(r, e); stepCrew(r, e); if (e.t > 80) { e.phase = 'police'; e.t = 0; arrest(e, e.car.u, e.car.lat + 3.0, e.crew.length); e.police.stop = e.car.u - 6.5; r.bus.emit('enc:police', {}); } }
     else if (e.phase === 'police') {
-      stepCar(r, e); var P = e.police; P.t++; P.u += Math.min(11 * DT, (e.car.u - 6) - P.u);
-      if (e.t === 120) r.bus.emit('enc:arrest', {});
-      if (e.t > 200) finish(r);
+      e.car.u -= roll * DT; stepArrest(r, e, roll);
+      if (e.t > e.arrestEnd) finish(r);
     }
   }
   if (r.hearts <= 0 && e.phase !== 'fail') { e.phase = 'fail'; e.t = 0; H.act = null; r.bus.emit('enc:fail', {}); }

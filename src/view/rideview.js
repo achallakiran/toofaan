@@ -269,6 +269,7 @@ function createRideView(scene) {
   }
 
   return {
+    ev: ev,
     build: function (m) {
       if (map) return; map = m;
       roads = toMesh(roadBoxes(map), mat); root.add(roads);
@@ -298,7 +299,7 @@ function createRideView(scene) {
         else { runPhase += dt * 9; rig.body.rotation.x = 0; rig.applyPose(posemath.walkPose(runPhase, 1.4), { plant: true }); }
         rig.flutter(t, 0.6);
       }
-      if (r.target && r.state !== 'arrived') { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
+      if (r.target && r.state !== 'arrived' && !r.enc) { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
       else mark.visible = false;
       /* traffic near the bike, each with a soft shadow */
       var seen = {};

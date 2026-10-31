@@ -41,8 +41,9 @@ var RIDE = {
     LEAP: 16,            /* Block this close before the swerve and Toofan leaps onto the roof */
     CREW: 3,             /* goons who climb out on the roof one after another */
     FIRST: 540,          /* ticks of riding before the first road fight */
-    COOL: 1500,          /* ticks of riding between road fights */
-    MIN_RUN: 140         /* metres of straight road needed ahead to start one */
+    COOL: 1500,          /* (unused now: fights come in a fixed order on each run) */
+    GAP: 420,            /* ticks of riding between the bike goons and the car gang */
+    MIN_RUN: 60          /* metres of straight road needed ahead to start one */
   }
 };
 

@@ -565,12 +565,14 @@ console.log('ride mode (Phase 4)');
     assert(log.indexOf('ride:crash') >= 0 && log.indexOf('ride:getup') >= 0 && log.indexOf('ride:remount') >= 0, log.join(','));
     assert.strictEqual(r.state === 'ride' || r.state === 'arrived', true); assert.strictEqual(r.crashes, 1);
   });
-  test('ride: reaching the signal stops the bike and marks the place active; the next signal is another open place', function () {
+  test('ride: reaching the signal stops the bike and marks the place active; after the fight the police scene plays and the next signal is another open place', function () {
     var log = [], r = rideMod.createRide(4, { emit: function (n, e) { log.push(n + ':' + (e && e.key)); } }), T = r.target;
     r.bike.x = T.x; r.bike.z = T.z; run(r, 2, function () { return [0, 0]; });
     assert.strictEqual(r.state, 'arrived'); assert.strictEqual(r.missions[T.key], 'active'); assert.strictEqual(r.bike.speed, 0);
-    run(r, 200, function () { return [0, 0]; });
-    assert(r.target && r.target.key !== T.key && r.missions[r.target.key] === 'open');
+    run(r, 200, function () { return [0, 0]; }); assert.strictEqual(r.state, 'arrived', 'waits for the fight area');
+    rideMod.afterFight(r, T.key); assert.strictEqual(r.missions[T.key], 'cleared'); assert.strictEqual(r.state, 'enc');
+    run(r, 900, function () { return [0, 0]; });
+    assert.strictEqual(r.state, 'ride'); assert(r.target && r.target.key !== T.key && r.missions[r.target.key] === 'open', 'next signal');
   });
   test('ride: the bike does not move on its own; forward accelerates, back brakes to a stop, and poles and trees are solid', function () {
     var r = rideMod.createRide(4, null), x0 = r.bike.x;
@@ -605,6 +607,19 @@ console.log('ride mode (Phase 4)');
       var f = fight('car', true), L = f.log;
       ['enc:leap', 'enc:pop', 'enc:ko', 'enc:spin', 'enc:police', 'enc:arrest', 'enc:end'].forEach(function (k) { assert(L.indexOf(k) >= 0, k + ' missing: ' + L.join(',')); });
       assert.strictEqual(f.r.state, 'ride');
+    });
+    test('road fights come on their own in order on every run: the bike goons first, then the car gang, then none until the next signal', function () {
+      var kinds = [], r = rideMod.createRide(5, { emit: function (n, e) { if (n === 'enc:start') kinds.push(e.kind); } }), inp = inputMod.createInput(), i;
+      r.bike.x = -150; r.bike.h = Math.PI / 2;
+      for (i = 0; i < 20000 && kinds.length < 3; i++) {
+        var e = r.enc, atk = false, blk = false;
+        if (e) { var o = (e.foes || []).concat(e.crew || []).filter(function (q) { return q.st === 'windup'; })[0];
+          if (o && o.t === RD2.ENC.WIND - 6) blk = true; else if (e.car && e.car.st === 'windup' && e.car.t === RD2.ENC.CAR_WIND - 6) blk = true; else atk = i % 20 === 0;
+          inp.setAxis(0, 0); }
+        else { if (Math.abs(r.bike.x) > r.map.ext - 30) { r.bike.h = r.bike.x > 0 ? -Math.PI / 2 : Math.PI / 2; } inp.setAxis(0, 0.8); }
+        inp.setButton('attack', atk); inp.setButton('block', blk); inp.tick(r.tick); rideMod.step(r, inp);
+      }
+      assert.deepStrictEqual(kinds.slice(0, 2), ['bikes', 'car']); assert.strictEqual(kinds.length, 2, 'nothing more until the next signal: ' + kinds.join(','));
     });
     test('road fight: Block pressed just before a blow lands counters it for double damage', function () {
       var r = rideMod.createRide(5, null), inp = inputMod.createInput(), e = rideMod.startEncounter(r, 'bikes'), o = e.foes[0], i;

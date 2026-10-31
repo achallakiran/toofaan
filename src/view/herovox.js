@@ -330,9 +330,14 @@ var THUG = { skin: h('#b27a50'), skinD: h('#946238'), skinL: h('#c78b5c'), skinD
   yel: h('#6d6a5a'), yelD: h('#55523f'), blu: h('#8c2f2b'), bluD: h('#6a201e'), bluL: h('#a8413a'),
   pants: h('#4b4a3e'), pantsD: h('#37362d'), pantsL: h('#5d5c4e'), belt: h('#15110d'), shoe: h('#3a2a1c'), shoeL: h('#4f3a27') };
 
+/* a constable for the arrest scenes: the thug's build in khaki, with a dark belt (added for ride mode; the thug and hero are unchanged) */
+var COP = { skin: h('#a8754e'), skinD: h('#8c5e3c'), skinL: h('#bd8659'), skinDD: h('#6a4226'), hair: h('#16120e'),
+  yel: h('#c9b27a'), yelD: h('#a99560'), blu: h('#c2a86c'), bluD: h('#a68e55'), bluL: h('#d6be84'),
+  pants: h('#b59d64'), pantsD: h('#97824f'), pantsL: h('#c8b077'), belt: h('#3a2414'), shoe: h('#15110d'), shoeL: h('#2a221a') };
+
 function buildParts(variant) {
-  if (variant === 'thug') {
-    var save = {}, k; for (k in THUG) { save[k] = C[k]; C[k] = THUG[k]; }
+  if (variant === 'thug' || variant === 'cop') {
+    var PAL = variant === 'cop' ? COP : THUG, save = {}, k; for (k in PAL) { save[k] = C[k]; C[k] = PAL[k]; }
     TH = true;
     try { return buildPartsRaw(); } finally { TH = false; for (k in save) C[k] = save[k]; }
   }

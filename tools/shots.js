@@ -9,7 +9,7 @@ var plan = process.argv.slice(3);
   var b = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   var page = await (await b.newContext({ viewport: { width: 1100, height: 720 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
-  await page.goto('file://' + file); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1200);
+  await page.goto('file://' + file + '#studio'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1200);
   for (var i = 0; i < plan.length; i++) {
     var parts = plan[i].split(':'), name = parts[0], steps = parts.slice(1);
     for (var j = 0; j < steps.length; j++) {

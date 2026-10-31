@@ -111,7 +111,7 @@ function hitVehicle(r, v, x, z) {
 function step(r, input) {
   var s = input.state, b = r.bike, hero = r.hero, i;
   b.px = b.x; b.pz = b.z; b.ph = b.h; hero.px = hero.x; hero.pz = hero.z;
-  if (r.state === 'enc') { enc.step(r, input); r.tick++; return; }
+  if (r.state === 'enc') { enc.step(r, input); if (r.needPick && r.state === 'ride') { r.needPick = false; pickTarget(r); } r.tick++; return; }
   r.t++;
   stepTraffic(r);
 
@@ -160,7 +160,7 @@ function step(r, input) {
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
     /* road fights: after a while of riding, on a long straight */
-    if (r.state === 'ride') { if (b.speed > 6) r.encCool--; if (r.encCool <= 0 && enc.canStart(r)) enc.start(r, r.nextEnc); }
+    if (r.state === 'ride') { if (b.speed > 6) r.encCool--; if (r.nextEnc && r.encCool <= 0 && enc.canStart(r)) enc.start(r, r.nextEnc); }
   } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
     hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
     if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
@@ -172,9 +172,20 @@ function step(r, input) {
     else { var st = Math.min(d, R.RUN_SPEED * DT); hero.x += dx / d * st; hero.z += dz / d * st; hero.face = Math.atan2(dx, dz); }
   } else if (r.state === 'arrived') {
     /* until the fight link exists (M4) the ride carries on to the next signal after a pause */
-    if (r.t > 180) { r.state = 'ride'; r.t = 0; pickTarget(r); }
+    /* Toofan waits here: the game steps into the fight area (the brawler) and comes back with the area cleared */
   }
   r.tick++;
+}
+
+/* back from a cleared trouble spot: Toofan is on Bijli on the road beside it while the police take the goons away */
+function afterFight(r, key) {
+  var T = r.map.targets.filter(function (t) { return t.key === key; })[0] || r.target; if (!T) return;
+  r.missions[key] = 'cleared';
+  var lz = mapMod.nearestLine(T.z), lx = mapMod.nearestLine(T.x), xRoad = Math.abs(T.z - lz) < Math.abs(T.x - lx), b = r.bike;
+  if (xRoad) { b.h = T.z < lz ? Math.PI / 2 : -Math.PI / 2; b.x = T.x - Math.sin(b.h) * 6; b.z = lz; }
+  else { b.h = T.x > lx ? 0 : Math.PI; b.x = lx; b.z = T.z - Math.cos(b.h) * 6; }
+  b.px = b.x; b.pz = b.z; b.ph = b.h; b.speed = 0; r.state = 'ride'; r.target = T;
+  enc.start(r, 'arrest');
 }
 
 function hash(r) {
@@ -185,4 +196,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
