@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Toofan Brawler</title>
 <style>
 :root{--bg:#0d1218;--panel:rgba(13,18,24,.72);--ink:#eef2f6;--muted:#9aa8b5;--yel:#ffc21a;--blu:#2a6bf0;--edge:rgba(255,255,255,.14)}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#0d1218}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+*{-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;-webkit-text-size-adjust:100%;background:var(--bg);color:var(--ink);overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
 canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block}
 #hud{position:fixed;top:max(12px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));pointer-events:none}
 .panel{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:10px 12px;min-width:200px;backdrop-filter:blur(6px)}
@@ -24,7 +25,7 @@ canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block}
 #stickBase.on{opacity:1}
 #stickKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid rgba(255,255,255,.5)}
 #btnWrap{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:auto auto;gap:12px;align-items:end;pointer-events:auto}
-.btn{font:700 12px/1 system-ui,sans-serif;letter-spacing:.1em;color:var(--ink);border:2px solid var(--edge);background:rgba(255,255,255,.1);border-radius:50%;width:84px;height:84px;touch-action:none}
+.btn{display:grid;place-items:center;padding:0;font:700 12px/1 system-ui,sans-serif;letter-spacing:.1em;color:var(--ink);border:2px solid var(--edge);background:rgba(255,255,255,.1);border-radius:50%;width:84px;height:84px;touch-action:none}
 .btn.atk{width:104px;height:104px;background:rgba(255,194,26,.28);border-color:rgba(255,194,26,.7);grid-column:2;grid-row:2}
 .btn.blk{background:rgba(42,107,240,.3);border-color:rgba(42,107,240,.8);grid-column:1;grid-row:2;margin-bottom:6px}
 .btn.fin{grid-column:1 / span 2;grid-row:1;justify-self:center;width:92px;height:92px;background:rgba(255,106,61,.4);border-color:#ff6a3d}
@@ -365,7 +366,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 50',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 51',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -997,6 +998,7 @@ var worldMod = require('./sim/world');
 var viewMod = require('./view/app');
 var hudMod = require('./view/hud');
 var controls = require('./view/controls');
+var sfxMod = require('./view/sfx');
 var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
@@ -1019,6 +1021,18 @@ function boot() {
   var hud = hudMod.createHud(document.getElementById('hud'));
   controls.attachKeyboard(input, window);
   var touch = controls.attachTouch(input, document.getElementById('touch'));
+  /* the player sees no debug text: the readout panel shows only in the developer view (?dev=1); a speaker icon switches sound */
+  if (!params.get('dev')) document.getElementById('hud').style.display = 'none';
+  (function () {
+    var sfx = sfxMod.createSfx(), b = document.createElement('button');
+    var ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>';
+    var OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
+    b.setAttribute('aria-label', 'Sound'); b.setAttribute('data-ok', '1');
+    b.style.cssText = 'position:fixed;z-index:20;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);display:grid;place-items:center;padding:0;cursor:pointer;touch-action:manipulation';
+    b.innerHTML = sfx.on ? ON : OFF;
+    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = on ? ON : OFF; });
+    document.body.appendChild(b);
+  })();
 
   var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };
@@ -1119,7 +1133,7 @@ function createFreeroam() {
         function btn(fn) { var b = document.createElement('button'); b.style.cssText = bs; b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(); upd(); }); b.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); }); bar.appendChild(b); return b; }
         var bt = btn(function () { S.txt.cycleMode(); }), bst = btn(function () { S.txt.nextStyle(); }), bl = btn(function () { S.txt.toggleScript(); }), bsn = btn(function () { S.sfx.toggle(); });
         function upd() { bst.textContent = 'Style: ' + S.txt.styleName; bt.textContent = 'Text: ' + ({ bubble: 'bubble', plain: 'plain', off: 'off' })[S.txt.mode]; bl.textContent = S.txt.script === 'hi' ? 'हिंदी' : 'ABC'; bsn.textContent = 'Sound: ' + (S.sfx.on ? 'on' : 'off'); }
-        bst.textContent = 'Style: ' + S.txt.styleName; upd(); document.body.appendChild(bar); scope.add(function () { bar.remove(); });
+        bst.textContent = 'Style: ' + S.txt.styleName; upd(); if (!/[?&]dev=1/.test(location.search)) bar.style.display = 'none'; document.body.appendChild(bar);       /* (text and style switches: developer view only) */ scope.add(function () { bar.remove(); });
       })();
 
       /* riding HUD: speed, boost, stunt score and the one hint that matters right now */
@@ -1369,6 +1383,7 @@ var LOC = require('../data/locations');
 var locsMod = require('../sim/citylocs');
 var cinecard = require('../view/cinecard');
 var combatMod = require('../sim/combat');
+var sfxmod = require('../view/sfx');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -1396,7 +1411,7 @@ function place(ctx, m) {
 function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
-  scope.add(function () { timers.forEach(clearTimeout); });
+  scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
   /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
   timers.push(setTimeout(function () {
     var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;
@@ -1449,7 +1464,7 @@ function createRide() {
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       scope.add(function () { S.v.dispose(); });
-      S.sfx = sfxmod.createSfx(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
+      S.sfx = sfxmod.createSfx(); S.sfx.engineOff(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
       S.bars = cinecard.bars(); scope.add(function () { S.bars.remove(); });
 
       /* overlay: hearts, the signal pointer, speed, messages, the comic word, flashes and the mini-map */
@@ -3713,7 +3728,11 @@ function createView(canvas, tierName) {
     var w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   }
-  window.addEventListener('resize', resize); resize();
+  /* turning the phone: the size can settle a moment after the event, so measure again shortly after */
+  function resizeSoon() { resize(); setTimeout(resize, 120); setTimeout(resize, 450); }
+  window.addEventListener('resize', resizeSoon); window.addEventListener('orientationchange', resizeSoon);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resizeSoon);
+  resize();
 
   return {
     tier: tier, tierId: tierId,
@@ -3765,7 +3784,7 @@ function createView(canvas, tierName) {
     dispose: function () {
       if (disposed) return; disposed = true;
       for (var k in chunks) this.removeChunk(k);
-      window.removeEventListener('resize', resize); renderer.dispose();
+      window.removeEventListener('resize', resizeSoon); window.removeEventListener('orientationchange', resizeSoon); renderer.dispose();
     }
   };
 }
@@ -4067,33 +4086,43 @@ function attachKeyboard(input, win) {
   return function detach() { win.removeEventListener('keydown', kd); win.removeEventListener('keyup', ku); win.removeEventListener('blur', blur); };
 }
 
+/* button pictures instead of words */
+var ICON = {
+  fist: '<svg viewBox="0 0 24 24" width="46" height="46" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M6 11.5a2 2 0 0 1 2-2h9.5a2 2 0 0 1 2 2V15a5.5 5.5 0 0 1-5.5 5.5h-2.5A5.5 5.5 0 0 1 6 15z"/><path d="M8 9.5V7.2a1.6 1.6 0 0 1 3.2 0v2.3M11.2 9.5V6.6a1.6 1.6 0 0 1 3.2 0v2.9M14.4 9.5V7.2a1.6 1.6 0 0 1 3.2 0v2.3M6 13h3.5a1.8 1.8 0 0 1 0 3.6H8"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" width="38" height="38" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5l7.5 3v5.7c0 4.8-3.2 8.8-7.5 10.3-4.3-1.5-7.5-5.5-7.5-10.3V5.5z"/><path d="M12 6v12" opacity=".6"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" fill="currentColor"><path d="M13.5 2L4.5 13.5h6.2L9.8 22l9.2-12h-6.3z"/></svg>'
+};
+
 function attachTouch(input, root) {
   root.innerHTML =
     '<div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>' +
     '<div id="btnWrap">' +
-    '<button id="btnFinisher" class="btn fin" hidden>FINISH</button>' +
-    '<button id="btnBlock" class="btn blk">BLOCK</button>' +
-    '<button id="btnAttack" class="btn atk">ATTACK</button>' +
+    '<button id="btnFinisher" class="btn fin" hidden aria-label="Finisher">' + ICON.bolt + '</button>' +
+    '<button id="btnBlock" class="btn blk" aria-label="Block">' + ICON.shield + '</button>' +
+    '<button id="btnAttack" class="btn atk" aria-label="Attack">' + ICON.fist + '</button>' +
     '</div>';
   var zone = root.querySelector('#stickZone'), base = root.querySelector('#stickBase'), knob = root.querySelector('#stickKnob');
   var stickId = null, ox = 0, oy = 0, R = 56;
-  function place(x, y) { base.style.left = x + 'px'; base.style.top = y + 'px'; }
-  zone.addEventListener('pointerdown', function (e) {
-    if (stickId !== null) return;
-    stickId = e.pointerId; zone.setPointerCapture(e.pointerId);
-    var r = zone.getBoundingClientRect(); ox = e.clientX; oy = e.clientY;
-    place(ox - r.left, oy - r.top); base.classList.add('on'); knob.style.transform = 'translate(0,0)'; e.preventDefault();
-  });
-  zone.addEventListener('pointermove', function (e) {
-    if (e.pointerId !== stickId) return;
+  /* the stick stays where it is drawn: a touch anywhere in the left area steers from its centre */
+  function steer(e) {
     var dx = e.clientX - ox, dy = e.clientY - oy, m = Math.sqrt(dx * dx + dy * dy);
     if (m > R) { dx = dx / m * R; dy = dy / m * R; }
     knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
     input.setAxis(dx / R, -dy / R);
+  }
+  zone.addEventListener('pointerdown', function (e) {
+    if (stickId !== null) return;
+    stickId = e.pointerId; zone.setPointerCapture(e.pointerId);
+    var r = base.getBoundingClientRect(); ox = r.left + r.width / 2; oy = r.top + r.height / 2;
+    base.classList.add('on'); steer(e); e.preventDefault();
+  });
+  zone.addEventListener('pointermove', function (e) {
+    if (e.pointerId !== stickId) return;
+    steer(e);
   });
   function endStick(e) {
     if (e.pointerId !== stickId) return;
-    stickId = null; base.classList.remove('on'); input.setAxis(0, 0);
+    stickId = null; base.classList.remove('on'); input.setAxis(0, 0); knob.style.transform = 'translate(0,0)';
   }
   zone.addEventListener('pointerup', endStick); zone.addEventListener('pointercancel', endStick);
 
@@ -4105,6 +4134,13 @@ function attachTouch(input, root) {
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   }
   wire('btnAttack', 'attack'); wire('btnBlock', 'block'); wire('btnFinisher', 'finisher');
+  /* fast repeated taps must never zoom the page: stop the browser's double-tap and pinch zoom on the controls and everywhere else */
+  function noZoom(e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }
+  root.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener('touchmove', noZoom, { passive: false });
+  var lastEnd = 0;
+  document.addEventListener('touchend', function (e) { var n = Date.now(); if (n - lastEnd < 350 && !(e.target && e.target.closest && e.target.closest('#studio,button[data-ok]'))) e.preventDefault(); lastEnd = n; }, { passive: false });
+  ['gesturestart', 'gesturechange', 'dblclick'].forEach(function (k) { document.addEventListener(k, function (e) { e.preventDefault(); }, { passive: false }); });
   var fin = root.querySelector('#btnFinisher');
   return { setFinisherVisible: function (v) { fin.hidden = !v; } };
 }
@@ -6128,7 +6164,20 @@ defs["view/sfx"]=function(module,exports,require){
    filtered-noise slap; kicks are deeper with a leather snap; blocks are duller; every sound gets a little random pitch. */
 'use strict';
 
+/* one sound engine for the whole game: every mode gets the same one, so a mode left behind can never keep playing,
+   and the browser's audio is unlocked by the first touch and paused while the page is hidden */
+var shared = null;
 function createSfx() {
+  if (shared) return shared;
+  shared = make();
+  if (typeof document !== 'undefined') {
+    document.addEventListener('pointerdown', function () { shared.wake(); }, true);
+    document.addEventListener('visibilitychange', function () { shared.sleep(document.hidden); });
+  }
+  return shared;
+}
+
+function make() {
   var ac = null, master = null, nbuf = null, on = true;
   try { on = localStorage.getItem('toofan.sound') !== '0'; } catch (e) { }
   function ctx() {
@@ -6184,7 +6233,9 @@ function createSfx() {
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
     get on() { return on; },
-    toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); return on; },
+    wake: function () { if (on) ctx(); },
+    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
+    toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
     whoosh: function (power) { if (!on || !ctx()) return; burst(0.2, 0.14 + (power || 0.5) * 0.12, 'bandpass', 380, 1700, 0, 1.2); },
     hit: function (move, power) {
       if (!on || !ctx()) return; var p = 0.55 + (power || 0.5) * 0.6, k = KICKS[move];

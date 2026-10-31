@@ -2,7 +2,20 @@
    filtered-noise slap; kicks are deeper with a leather snap; blocks are duller; every sound gets a little random pitch. */
 'use strict';
 
+/* one sound engine for the whole game: every mode gets the same one, so a mode left behind can never keep playing,
+   and the browser's audio is unlocked by the first touch and paused while the page is hidden */
+var shared = null;
 function createSfx() {
+  if (shared) return shared;
+  shared = make();
+  if (typeof document !== 'undefined') {
+    document.addEventListener('pointerdown', function () { shared.wake(); }, true);
+    document.addEventListener('visibilitychange', function () { shared.sleep(document.hidden); });
+  }
+  return shared;
+}
+
+function make() {
   var ac = null, master = null, nbuf = null, on = true;
   try { on = localStorage.getItem('toofan.sound') !== '0'; } catch (e) { }
   function ctx() {
@@ -58,7 +71,9 @@ function createSfx() {
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
     get on() { return on; },
-    toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); return on; },
+    wake: function () { if (on) ctx(); },
+    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
+    toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
     whoosh: function (power) { if (!on || !ctx()) return; burst(0.2, 0.14 + (power || 0.5) * 0.12, 'bandpass', 380, 1700, 0, 1.2); },
     hit: function (move, power) {
       if (!on || !ctx()) return; var p = 0.55 + (power || 0.5) * 0.6, k = KICKS[move];

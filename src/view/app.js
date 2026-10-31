@@ -23,7 +23,11 @@ function createView(canvas, tierName) {
     var w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   }
-  window.addEventListener('resize', resize); resize();
+  /* turning the phone: the size can settle a moment after the event, so measure again shortly after */
+  function resizeSoon() { resize(); setTimeout(resize, 120); setTimeout(resize, 450); }
+  window.addEventListener('resize', resizeSoon); window.addEventListener('orientationchange', resizeSoon);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resizeSoon);
+  resize();
 
   return {
     tier: tier, tierId: tierId,
@@ -75,7 +79,7 @@ function createView(canvas, tierName) {
     dispose: function () {
       if (disposed) return; disposed = true;
       for (var k in chunks) this.removeChunk(k);
-      window.removeEventListener('resize', resize); renderer.dispose();
+      window.removeEventListener('resize', resizeSoon); window.removeEventListener('orientationchange', resizeSoon); renderer.dispose();
     }
   };
 }

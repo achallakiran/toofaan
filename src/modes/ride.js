@@ -31,7 +31,7 @@ function createRide() {
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       scope.add(function () { S.v.dispose(); });
-      S.sfx = sfxmod.createSfx(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
+      S.sfx = sfxmod.createSfx(); S.sfx.engineOff(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
       S.bars = cinecard.bars(); scope.add(function () { S.bars.remove(); });
 
       /* overlay: hearts, the signal pointer, speed, messages, the comic word, flashes and the mini-map */

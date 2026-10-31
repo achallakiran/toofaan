@@ -11,6 +11,7 @@ var worldMod = require('./sim/world');
 var viewMod = require('./view/app');
 var hudMod = require('./view/hud');
 var controls = require('./view/controls');
+var sfxMod = require('./view/sfx');
 var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
@@ -33,6 +34,18 @@ function boot() {
   var hud = hudMod.createHud(document.getElementById('hud'));
   controls.attachKeyboard(input, window);
   var touch = controls.attachTouch(input, document.getElementById('touch'));
+  /* the player sees no debug text: the readout panel shows only in the developer view (?dev=1); a speaker icon switches sound */
+  if (!params.get('dev')) document.getElementById('hud').style.display = 'none';
+  (function () {
+    var sfx = sfxMod.createSfx(), b = document.createElement('button');
+    var ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>';
+    var OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
+    b.setAttribute('aria-label', 'Sound'); b.setAttribute('data-ok', '1');
+    b.style.cssText = 'position:fixed;z-index:20;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);display:grid;place-items:center;padding:0;cursor:pointer;touch-action:manipulation';
+    b.innerHTML = sfx.on ? ON : OFF;
+    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = on ? ON : OFF; });
+    document.body.appendChild(b);
+  })();
 
   var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };

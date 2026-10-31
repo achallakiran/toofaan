@@ -8,6 +8,7 @@ var LOC = require('../data/locations');
 var locsMod = require('../sim/citylocs');
 var cinecard = require('../view/cinecard');
 var combatMod = require('../sim/combat');
+var sfxmod = require('../view/sfx');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -35,7 +36,7 @@ function place(ctx, m) {
 function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
-  scope.add(function () { timers.forEach(clearTimeout); });
+  scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
   /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
   timers.push(setTimeout(function () {
     var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;

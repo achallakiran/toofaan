@@ -58,7 +58,7 @@ function createFreeroam() {
         function btn(fn) { var b = document.createElement('button'); b.style.cssText = bs; b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(); upd(); }); b.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); }); bar.appendChild(b); return b; }
         var bt = btn(function () { S.txt.cycleMode(); }), bst = btn(function () { S.txt.nextStyle(); }), bl = btn(function () { S.txt.toggleScript(); }), bsn = btn(function () { S.sfx.toggle(); });
         function upd() { bst.textContent = 'Style: ' + S.txt.styleName; bt.textContent = 'Text: ' + ({ bubble: 'bubble', plain: 'plain', off: 'off' })[S.txt.mode]; bl.textContent = S.txt.script === 'hi' ? 'हिंदी' : 'ABC'; bsn.textContent = 'Sound: ' + (S.sfx.on ? 'on' : 'off'); }
-        bst.textContent = 'Style: ' + S.txt.styleName; upd(); document.body.appendChild(bar); scope.add(function () { bar.remove(); });
+        bst.textContent = 'Style: ' + S.txt.styleName; upd(); if (!/[?&]dev=1/.test(location.search)) bar.style.display = 'none'; document.body.appendChild(bar);       /* (text and style switches: developer view only) */ scope.add(function () { bar.remove(); });
       })();
 
       /* riding HUD: speed, boost, stunt score and the one hint that matters right now */
