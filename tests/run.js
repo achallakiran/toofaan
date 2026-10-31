@@ -639,5 +639,15 @@ console.log('ride mode (Phase 4)');
     assert.strictEqual(bad, 0, 'vehicles on the wrong side: ' + bad);
   });
 })();
+test('fight areas: for every kind of place, arriving from the ride starts its fight with the men close by (not hundreds of metres away)', function () {
+  var mission = req('modes/mission'), LOCD = req('data/locations');
+  LOCD.ORDER.forEach(function (type) {
+    var bus = busMod.createBus(), w = worldMod.createWorld(20261028, bus), inp = inputMod.createInput(), i;
+    mission.place({ world: w, bus: bus }, { type: type }); worldMod.startFight(w); w.combat.enemies.length = 0;
+    for (i = 0; i < 100; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
+    var p = w.player, far = w.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) > 25; }).length;
+    assert(w.combat.enemies.length >= 4 && far === 0, type + ': ' + w.combat.enemies.length + ' men, ' + far + ' far away');
+  });
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

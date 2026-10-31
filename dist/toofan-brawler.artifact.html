@@ -358,7 +358,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 49',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 50',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -2155,6 +2155,7 @@ function generate(seed, cx, cz) {
     spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
   }
   spec.hazards = spec.hazards || [];
+  spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;    /* before the location is placed: its spawn points are made from ox, oz */
   var loc = locs.place(spec, seed, cx, cz, kind);
   if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
   spec.loc = loc;

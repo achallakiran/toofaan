@@ -49,6 +49,7 @@ function generate(seed, cx, cz) {
     spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
   }
   spec.hazards = spec.hazards || [];
+  spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;    /* before the location is placed: its spawn points are made from ox, oz */
   var loc = locs.place(spec, seed, cx, cz, kind);
   if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
   spec.loc = loc;

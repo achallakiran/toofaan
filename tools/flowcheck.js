@@ -15,7 +15,7 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   res.inFightArea = await wait(function () { return window.__game.modes.currentName() === 'freeroam'; });
   res.fightStarted = await wait(function () { var w = window.__game.ctx.world; return !!w.locs.active && w.combat.enemies.length > 0; });
   res.fightType = await page.evaluate(function () { var w = window.__game.ctx.world; return w.locs.active && w.locs.active.name; });
-  await page.waitForTimeout(1500); await page.screenshot({ path: path.join(out, 'flow_2_fight.png') });
+  await page.waitForTimeout(2500); res.menNear = await page.evaluate(function () { var w = window.__game.ctx.world, p = w.player; return w.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) < 20; }).length; }); await page.screenshot({ path: path.join(out, 'flow_2_fight.png') });
   await page.evaluate(function () { window.__game.ctx.world.combat.enemies.forEach(function (e) { e.dead = true; e.st = 'dead'; }); });
   res.backOnRide = await wait(function () { return window.__game.modes.currentName() === 'ride'; });
   res.arrestScene = await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.kind === 'arrest' && e.t > 200; });
