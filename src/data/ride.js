@@ -28,7 +28,22 @@ var RIDE = {
     bus:     { len: 8.0, r: 1.3,  speed: [6.5, 8.5] },
     truck:   { len: 6.0, r: 1.2,  speed: [6, 8] }
   },
-  WEIGHTS: [['auto', 5], ['car', 6], ['bus', 1], ['truck', 2]]      /* vehicles only: no riders or walkers on the ride roads */
+  WEIGHTS: [['auto', 5], ['car', 6], ['bus', 1], ['truck', 2]]      /* vehicles only: no riders or walkers on the ride roads */,
+
+  /* road fights (encounters): the view turns to the side, goons ride up beside Toofan; a car can be leapt onto with a timed block */
+  ENC: {
+    SPEED: 8,            /* everyone rolls along at this speed while the fight is on */
+    LAT: 3.2,            /* the enemies ride one lane to Toofan's left (the far side from the camera) */
+    REACH: 1.8,          /* how far along the road a punch or kick reaches */
+    WIND: 34,            /* ticks of warning before a goon's blow lands */
+    COUNTER: 14,         /* Block pressed this many ticks before the blow (or less) is a counter */
+    CAR_WIND: 46,        /* the car's warning before it swerves into him */
+    LEAP: 16,            /* Block this close before the swerve and Toofan leaps onto the roof */
+    CREW: 3,             /* goons who climb out on the roof one after another */
+    FIRST: 540,          /* ticks of riding before the first road fight */
+    COOL: 1500,          /* ticks of riding between road fights */
+    MIN_RUN: 140         /* metres of straight road needed ahead to start one */
+  }
 };
 
 module.exports = RIDE;

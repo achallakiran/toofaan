@@ -584,6 +584,36 @@ console.log('ride mode (Phase 4)');
     run(r, 14, function () { return [0.6, 0.8]; }); var bent = Math.abs(r.bike.h - Math.PI / 2);
     run(r, 90, function () { return [0, 1]; }); assert(bent > 0.05 && Math.abs(r.bike.h - Math.PI / 2) < 0.02, bent + ' -> ' + (r.bike.h - Math.PI / 2));
   });
+  (function () {
+    var RD2 = req('data/ride'), MV = req('data/moves').MOVES;
+    function fight(kind, smart, seed) {
+      var log = [], r = rideMod.createRide(seed || 5, { emit: function (n) { log.push(n); } }), inp = inputMod.createInput(), i;
+      rideMod.startEncounter(r, kind);
+      for (i = 0; i < 6000 && r.state === 'enc'; i++) {
+        var e = r.enc, atk = false, blk = false;
+        if (smart) { var o = (e.foes || []).concat(e.crew || []).filter(function (q) { return q.st === 'windup'; })[0];
+          if (o && o.t === RD2.ENC.WIND - 6) blk = true; else if (e.car && e.car.st === 'windup' && e.car.t === RD2.ENC.CAR_WIND - 6) blk = true; else atk = i % 20 === 0; }
+        inp.setButton('attack', atk); inp.setButton('block', blk); inp.tick(r.tick); rideMod.step(r, inp);
+      }
+      return { r: r, log: log, ticks: i };
+    }
+    test('road fight, bike goons: punching and kicking beats them, then the ride goes on; their blows cost hearts', function () {
+      var f = fight('bikes', true); assert.strictEqual(f.r.state, 'ride'); assert(f.log.indexOf('enc:ko') >= 0 && f.log.indexOf('enc:end') >= 0, f.log.join(','));
+      var g = fight('bikes', false); assert(g.log.indexOf('enc:hurt') >= 0 && g.log.indexOf('enc:fail') >= 0 && g.log.indexOf('enc:retry') >= 0, 'idle hero loses hearts and the fight restarts');
+    });
+    test('road fight, car gang: a timed block leaps onto the roof, the crew are beaten, the car spins out and the police arrest them', function () {
+      var f = fight('car', true), L = f.log;
+      ['enc:leap', 'enc:pop', 'enc:ko', 'enc:spin', 'enc:police', 'enc:arrest', 'enc:end'].forEach(function (k) { assert(L.indexOf(k) >= 0, k + ' missing: ' + L.join(',')); });
+      assert.strictEqual(f.r.state, 'ride');
+    });
+    test('road fight: Block pressed just before a blow lands counters it for double damage', function () {
+      var r = rideMod.createRide(5, null), inp = inputMod.createInput(), e = rideMod.startEncounter(r, 'bikes'), o = e.foes[0], i;
+      e.phase = 'fight'; o.st = 'windup'; o.t = RD2.ENC.WIND - 5; o.u = o.from * 1.3; var hp = o.hp;
+      inp.setButton('block', true); inp.tick(r.tick); rideMod.step(r, inp); inp.setButton('block', false);
+      for (i = 0; i < 8; i++) { inp.tick(r.tick); rideMod.step(r, inp); }
+      assert.strictEqual(o.hp, hp - 2); assert.strictEqual(r.hearts, 3);
+    });
+  })();
   test('ride: same seed and same input give the same ride (deterministic)', function () {
     var a = rideMod.createRide(11, null), b2 = rideMod.createRide(11, null), f = function (i) { return [Math.sin(i / 90), 0.6]; };
     run(a, 700, f); run(b2, 700, f); assert.strictEqual(rideMod.hash(a), rideMod.hash(b2));

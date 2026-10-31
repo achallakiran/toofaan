@@ -7,6 +7,7 @@
 var R = require('../data/ride');
 var mapMod = require('./ridemap');
 var rngMod = require('../core/rng');
+var enc = require('./encounter');
 
 var DT = 1 / 60;
 function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
@@ -42,7 +43,8 @@ function createRide(seed, bus) {
     hero: { x: 0, z: 0, px: 0, pz: 0, vx: 0, vz: 0, face: 0, spin: 0 },
     state: 'ride', t: 0,                    /* ride | fly | run | arrived */
     traffic: [], nextId: 1,
-    missions: {}, target: null, arrivals: 0, crashes: 0
+    missions: {}, target: null, arrivals: 0, crashes: 0,
+    hearts: 3, enc: null, encCool: R.ENC.FIRST, nextEnc: 'bikes'
   };
   /* start on the middle east-west road, heading east in the outer left lane */
   var mid = r.map.lines[Math.floor(R.GRID / 2)];
@@ -109,6 +111,7 @@ function hitVehicle(r, v, x, z) {
 function step(r, input) {
   var s = input.state, b = r.bike, hero = r.hero, i;
   b.px = b.x; b.pz = b.z; b.ph = b.h; hero.px = hero.x; hero.pz = hero.z;
+  if (r.state === 'enc') { enc.step(r, input); r.tick++; return; }
   r.t++;
   stepTraffic(r);
 
@@ -156,6 +159,8 @@ function step(r, input) {
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
+    /* road fights: after a while of riding, on a long straight */
+    if (r.state === 'ride') { if (b.speed > 6) r.encCool--; if (r.encCool <= 0 && enc.canStart(r)) enc.start(r, r.nextEnc); }
   } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
     hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
     if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
@@ -175,9 +180,9 @@ function step(r, input) {
 function hash(r) {
   var h = 2166136261 >>> 0;
   function mix(n) { h ^= (Math.round(n * 1000) | 0); h = Math.imul(h, 16777619) >>> 0; }
-  mix(r.bike.x); mix(r.bike.z); mix(r.bike.h); mix(r.bike.speed); mix(r.hero.x); mix(r.tick); mix(r.crashes); mix(r.arrivals);
+  mix(r.bike.x); mix(r.bike.z); mix(r.bike.h); mix(r.bike.speed); mix(r.hero.x); mix(r.tick); mix(r.crashes); mix(r.arrivals); mix(r.hearts); mix(r.enc ? r.enc.t : -1);
   r.traffic.forEach(function (v) { mix(v.x); mix(v.z); mix(v.v); });
   return h >>> 0;
 }
 
-module.exports = { createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };

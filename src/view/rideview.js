@@ -11,6 +11,7 @@ var bikevox = require('./bikevox');
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var vg = require('./voxgrid');
+var encview = require('./encview');
 
 /* colours by name; boxes carry an index into this list */
 var PAL = [], PIX = {};
@@ -235,6 +236,7 @@ function createRideView(scene) {
   ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; mark.add(ring);
   var beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 30, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
   beam.position.y = 15; mark.add(beam); root.add(mark);
+  var ev = encview.createEncView(root, rig, bike, blobUnder);
   var cars = {}, wheel = 0, runPhase = 0, layOn = 0, map = null, blocks = {}, roads = null, wires = null, trees = [], treeGeos = null;
 
   /* the blocks of the map plus a ring of blocks round its edge, so the city does not end in bare ground */
@@ -279,11 +281,13 @@ function createRideView(scene) {
       var b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha, h = b.ph + Math.atan2(Math.sin(b.h - b.ph), Math.cos(b.h - b.ph)) * alpha;
       buildNear(x, z, 1);
       bike.root.position.set(x, 0, z); bike.root.rotation.y = h; bikeBlob.position.set(x, 0, z); bikeBlob.rotation.y = h;
-      var onBike = r.state === 'ride' || r.state === 'arrived';
+      var onBike = r.state === 'ride' || r.state === 'arrived' || r.state === 'enc';
       layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
       bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14 * Math.min(1, Math.abs(b.speed) / 6))) : 0);
       wheel += (onBike ? b.speed : (b.slide || 0)) * dt / (bike.wheelR * R.SCALE); bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
-      if (onBike) {
+      var inFight = ev.sync(r, alpha, dt, t, x, z);
+      if (inFight) { rig.flutter(t, 0.8); heroBlob.visible = false; }
+      else if (onBike) {
         if (rig.root.parent !== bike.pitch) seatRider();
         rig.body.rotation.x = 0; rig.flutter(t, Math.min(1, Math.abs(b.speed) / 12)); heroBlob.visible = false;
       } else {
@@ -299,7 +303,7 @@ function createRideView(scene) {
       /* traffic near the bike, each with a soft shadow */
       var seen = {};
       for (i = 0; i < r.traffic.length; i++) {
-        var v = r.traffic[i]; if (Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
+        var v = r.traffic[i]; if (r.enc || Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
         seen[v.id] = 1; var m = cars[v.id];
         if (!m) { m = cars[v.id] = ambient.createMesh({ kind: v.kind, look: v.look, id: v.id }); var K = R.KINDS[v.kind]; blobUnder(m, K.r * 2.4, K.len * 1.1); root.add(m); }
         m.position.set(v.px + (v.x - v.px) * alpha, 0, v.pz + (v.z - v.pz) * alpha); m.rotation.y = v.h;
@@ -307,7 +311,7 @@ function createRideView(scene) {
       for (var id in cars) if (!seen[id]) { root.remove(cars[id]); delete cars[id]; }
     },
     dispose: function () {
-      scene.remove(root); scene.background = prevBg; scene.fog.color.copy(prevFog.c); scene.fog.near = prevFog.n; scene.fog.far = prevFog.f;
+      ev.dispose(); scene.remove(root); scene.background = prevBg; scene.fog.color.copy(prevFog.c); scene.fog.near = prevFog.n; scene.fog.far = prevFog.f;
       Object.keys(blocks).forEach(function (k) { drop(blocks[k].far); if (blocks[k].near) drop(blocks[k].near); }); blocks = {};
       if (roads) roads.geometry.dispose(); if (wires) { wires.geometry.dispose(); wires.material.dispose(); }
       if (treeGeos) treeGeos.forEach(function (g) { g.dispose(); });
