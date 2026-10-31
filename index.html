@@ -66,7 +66,7 @@ canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block}
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="tabs" role="tablist"><button id="tabStudio" aria-pressed="true">Hero studio</button><button id="tabStreet" aria-pressed="false">Street test</button></div>
+<div id="tabs" role="tablist"><button id="tabStudio" aria-pressed="true">Hero studio</button><button id="tabStreet" aria-pressed="false">Street test</button><button id="tabRide" aria-pressed="false">Ride</button></div>
 <div id="hud"></div>
 <div id="studio" hidden></div>
 <div id="touch"></div>
@@ -365,7 +365,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 42',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 43',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -880,6 +880,41 @@ var SEQUENCES = {
 module.exports = { JOINTS: JOINTS, POSES: POSES, POSE_LABELS: POSE_LABELS, SEQUENCES: SEQUENCES, STAND: STAND };
 
 };
+defs["data/ride"]=function(module,exports,require){
+/* data layer: ride mode (the overhead drive across the city map). Metres, seconds, ticks at 60 Hz.
+   Traffic keeps left. Lane offsets are measured from the road's centre line. */
+'use strict';
+
+var RIDE = {
+  GRID: 6,                 /* roads per axis: a 6 x 6 grid of four-lane roads */
+  SPACING: 72,             /* metres between road centre lines */
+  HALF: 7,                 /* half the road width: two lanes each way and a median */
+  LANES: [1.9, 5.1],       /* inner and outer lane centres */
+  PAVE: 3,                 /* pavement beyond the kerb; the bike may ride onto it */
+
+  CRUISE: 15,              /* the bike runs on its own at this speed */
+  TOP: 21,                 /* stick pushed hard */
+  ACCEL: 6, BRAKE: 16, TURN: 3.0,
+  BIKE_R: 0.55,
+  CRASH_SPEED: 5,          /* slower bumps just stop the bike */
+  FLY_TICKS: 42, RUN_SPEED: 5.2, GRACE_TICKS: 90,
+  ARRIVE_R: 9,
+
+  TRAFFIC: 170,            /* vehicles on the whole map */
+  VIEW_R: 85,              /* vehicles are drawn within this distance */
+  KINDS: {
+    scooter: { len: 1.6, r: 0.45, speed: [8, 11] },
+    auto:    { len: 2.6, r: 0.75, speed: [7, 9.5] },
+    car:     { len: 3.8, r: 0.9,  speed: [9, 13] },
+    bus:     { len: 8.0, r: 1.3,  speed: [6.5, 8.5] },
+    truck:   { len: 6.0, r: 1.2,  speed: [6, 8] }
+  },
+  WEIGHTS: [['scooter', 4], ['auto', 4], ['car', 4], ['bus', 1], ['truck', 2]]
+};
+
+module.exports = RIDE;
+
+};
 defs["data/skeleton"]=function(module,exports,require){
 /* data layer: hero skeleton layout in voxel units (1 voxel = 2.5 cm). Offsets are relative to the parent joint.
    Facing is +z, up is +y, the hero's left is +x. Lead limbs are "A", rear limbs are "B". */
@@ -944,6 +979,7 @@ var hudMod = require('./view/hud');
 var controls = require('./view/controls');
 var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
+var ride = require('./modes/ride');
 
 function boot() {
   var storage = null;
@@ -969,15 +1005,17 @@ function boot() {
   var modes = modesMod.createModes(ctx);
   modes.register(freeroam.createFreeroam());
   modes.register(studio.createStudio());
-  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet') };
+  modes.register(ride.createRide());
+  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name) {
     modes.switchTo(name);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'freeroam' ? '#street' : '#studio'); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
   tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
-  go(window.location.hash === '#street' ? 'freeroam' : 'studio');
+  tabs.ride.addEventListener('click', function () { go('ride'); });
+  go(window.location.hash === '#street' ? 'freeroam' : window.location.hash === '#ride' ? 'ride' : 'studio');
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
@@ -1292,6 +1330,117 @@ function createFreeroam() {
 }
 
 module.exports = { createFreeroam: createFreeroam };
+
+};
+defs["modes/ride"]=function(module,exports,require){
+/* modes: Ride. The overhead drive across the city map to the next trouble spot (Phase 4, M0 and M1).
+   A separate mode with its own sim: the brawler (Street test) is not touched by anything here. */
+'use strict';
+
+var rideSim = require('../sim/ride');
+var R = require('../data/ride');
+var rideview = require('../view/rideview');
+var sfxmod = require('../view/sfx');
+
+function createRide() {
+  var S = {};
+  return {
+    name: 'ride',
+    enter: function (ctx, scope) {
+      var view = ctx.view;
+      view.setSky('#a9c7da', false);
+      ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
+      /* the ride carries on where you left it when you come back to this tab */
+      if (!ctx.ride) {
+        ctx.ride = rideSim.createRide(ctx.world.seed, ctx.bus);
+        var saved = ctx.save.get('ride.missions', null);
+        if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k]; }); rideSim.pickTarget(ctx.ride); }
+      }
+      S.r = ctx.ride; S.t = 0; S.cam = null; S.msgT = 0; S.honkT = 0;
+      S.v = rideview.createRideView(view.scene); S.v.build(S.r.map);
+      scope.add(function () { S.v.dispose(); });
+      S.sfx = sfxmod.createSfx(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
+
+      /* overlay: hearts, the signal pointer, speed, messages and a mini-map */
+      var el = document.createElement('div');
+      el.style.cssText = 'position:fixed;inset:0;z-index:6;pointer-events:none;font-family:system-ui,sans-serif;color:#fff;text-shadow:0 1px 3px #000';
+      el.innerHTML =
+        '<div style="position:absolute;left:50%;top:max(56px,env(safe-area-inset-top));transform:translateX(-50%);text-align:center;font:800 13px system-ui,sans-serif;letter-spacing:.08em">' +
+        '<span id="rArrow" style="display:inline-block;font-size:20px;color:#ffc21a;margin-right:8px">&#9650;</span><span id="rTarget"></span></div>' +
+        '<div id="rHearts" style="position:absolute;right:16px;top:max(56px,env(safe-area-inset-top));font-size:20px;letter-spacing:4px;color:#ff4a5a">&#10084;&#10084;&#10084;</div>' +
+        '<div id="rMsg" style="position:absolute;left:50%;top:38%;transform:translateX(-50%);font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;opacity:0;transition:opacity .25s;white-space:nowrap"></div>' +
+        '<div id="rSpeed" style="position:absolute;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);font:900 24px system-ui,sans-serif"></div>' +
+        '<canvas id="rMap" width="150" height="150" style="position:absolute;right:16px;top:max(92px,calc(env(safe-area-inset-top) + 36px));width:120px;height:120px;border-radius:8px;background:rgba(10,14,18,.55);border:1px solid rgba(255,255,255,.25)"></canvas>';
+      document.body.appendChild(el); scope.add(function () { el.remove(); });
+      S.ui = { arrow: el.querySelector('#rArrow'), target: el.querySelector('#rTarget'), msg: el.querySelector('#rMsg'), speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap') };
+      function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
+      S.say = say;
+      scope.add(ctx.bus.on('ride:crash', function () { S.sfx.crash(true); say('CRASH!', 1.2); }));
+      scope.add(ctx.bus.on('ride:getup', function () { say('Back to Bijli!', 1.4); }));
+      scope.add(ctx.bus.on('ride:remount', function () { S.sfx.start(); }));
+      scope.add(ctx.bus.on('ride:bump', function () { S.sfx.hit('jab', 0.3); }));
+      scope.add(ctx.bus.on('ride:wall', function () { S.sfx.land(4); }));
+      scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); say('Arrived: ' + e.name, 2.6); ctx.save.set('ride.missions', S.r.missions); }));
+      scope.add(ctx.bus.on('ride:signal', function (e) { say('Signal: ' + e.name, 2); }));
+      if (S.r.target) say('Signal: ' + S.r.target.name, 2.2);
+    },
+    step: function (ctx, tick) {
+      ctx.input.tick(tick);
+      rideSim.step(S.r, ctx.input);
+    },
+    render: function (ctx, alpha) {
+      var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
+      var r = S.r, b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha;
+      S.v.sync(r, alpha, dt, S.t);
+      /* camera: high and north-up, leaning ahead of the bike and rising with speed */
+      var fx = Math.sin(b.h) * b.speed * 0.55, fz = Math.cos(b.h) * b.speed * 0.55, H = 19 + 11 * Math.min(1, (ctx.view.canvas.clientHeight || 700) / 700) + b.speed * 0.35;      /* closer on a phone, so Bijli stays readable */
+      if (r.state === 'fly' || r.state === 'run') { fx = 0; fz = 0; x = r.hero.x; z = r.hero.z; }
+      var c = S.cam || (S.cam = { x: x + fx, z: z + fz, h: H }), k = 1 - Math.exp(-3 * dt);
+      c.x += (x + fx - c.x) * k; c.z += (z + fz - c.z) * k; c.h += (H - c.h) * k;
+      ctx.view.followCamera(0, 0, { x: c.x, y: c.h, z: c.z + c.h * 0.22, lx: c.x, ly: 0, lz: c.z - 1, fov: 44 });
+      ctx.view.render();
+      /* sound */
+      if (r.state === 'ride') S.sfx.engine(dt, { rpm: 0.2 + 0.8 * b.speed / R.TOP, thr: b.speed < R.CRUISE - 0.5 ? 1 : 0.35, speed: b.speed, drifting: false, braking: ctx.input.state.held.block, air: false });
+      S.honkT -= dt;
+      if (S.honkT <= 0 && r.state === 'ride') {
+        for (var i = 0; i < r.traffic.length; i++) { var v = r.traffic[i]; if (Math.hypot(v.x - b.x, v.z - b.z) < 4 && v.kind !== 'scooter') { S.sfx.honk(); S.honkT = 2.5 + (v.id % 3); break; } }
+      }
+      /* overlay */
+      if (S.msgT > 0) { S.msgT -= dt; if (S.msgT <= 0) S.ui.msg.style.opacity = 0; }
+      var T = r.target;
+      if (T && r.state !== 'arrived') {
+        var dx = T.x - x, dz = T.z - z; S.ui.target.textContent = T.name.toUpperCase() + '  ' + Math.round(Math.hypot(dx, dz)) + ' m';
+        S.ui.arrow.style.transform = 'rotate(' + (Math.atan2(dx, -dz) * 57.3) + 'deg)'; S.ui.arrow.style.visibility = 'visible';
+      } else { S.ui.target.textContent = T ? T.name.toUpperCase() : 'ALL CLEAR'; S.ui.arrow.style.visibility = 'hidden'; }
+      S.ui.speed.textContent = r.state === 'ride' ? Math.round(b.speed * 3.6) + ' km/h' : '';
+      drawMap(S.ui.map, r, S.t);
+      S.hudT = (S.hudT || 0) - dt;
+      if (S.hudT <= 0) {
+        S.hudT = 0.25; var vs = ctx.view.stats();
+        ctx.hud.update({ mode: 'ride', tick: r.tick, chunks: r.map.blocks.length, maxChunks: r.map.blocks.length, triangles: vs.triangles, calls: vs.calls, bytes: vs.bytes,
+          loads: r.crashes, unloads: r.arrivals, saveOk: ctx.save.persistent(), rage: 0, ms: vs.ms, tier: vs.tier });
+      }
+    },
+    exit: function () {}
+  };
+}
+
+/* the mini-map: roads, trouble spots (yellow open, green visited), the signal pulsing red, the bike as a white arrow */
+function drawMap(cv, r, t) {
+  var g = cv.getContext('2d'), W = cv.width, E = r.map.ext, sc = (W - 12) / (2 * E);
+  function px(v) { return 6 + (v + E) * sc; }
+  g.clearRect(0, 0, W, W); g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 3;
+  r.map.lines.forEach(function (l) { g.beginPath(); g.moveTo(px(-E), px(l)); g.lineTo(px(E), px(l)); g.stroke(); g.beginPath(); g.moveTo(px(l), px(-E)); g.lineTo(px(l), px(E)); g.stroke(); });
+  r.map.targets.forEach(function (T) {
+    var cur = r.target === T, st = r.missions[T.key];
+    g.fillStyle = cur ? (Math.sin(t * 8) > 0 ? '#ff3b30' : '#ffc21a') : (st === 'open' ? '#ffc21a' : '#4fc08d');
+    g.beginPath(); g.arc(px(T.x), px(T.z), cur ? 5 : 3, 0, 7); g.fill();
+  });
+  var b = r.bike; g.save(); g.translate(px(b.x), px(b.z)); g.rotate(Math.PI - b.h); g.fillStyle = '#fff';
+  g.beginPath(); g.moveTo(0, -6); g.lineTo(4, 5); g.lineTo(-4, 5); g.closePath(); g.fill(); g.restore();
+}
+
+module.exports = { createRide: createRide };
 
 };
 defs["modes/studio"]=function(module,exports,require){
@@ -2298,6 +2447,276 @@ function step(world, input) {
 }
 
 module.exports = { startLocation: startLocation, createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+
+};
+defs["sim/ride"]=function(module,exports,require){
+/* sim: ride mode. Toofan on Bijli seen from above, crossing the city map to a trouble spot through two-way traffic.
+   The bike runs on its own; the stick points where to go and pushing it hard goes faster; Block brakes.
+   Hitting traffic fast throws him off: he tumbles, gets up and runs back to the bike (Excitebike style). No hearts are lost to traffic.
+   Separate from the brawler world: nothing here touches sim/world.js or combat. */
+'use strict';
+
+var R = require('../data/ride');
+var mapMod = require('./ridemap');
+var rngMod = require('../core/rng');
+
+var DT = 1 / 60;
+function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+function headingOf(axis, dir) { return axis === 'x' ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI); }
+
+function placeVehicle(r, v) {
+  var off = R.LANES[v.lane], h = headingOf(v.axis, v.dir), Lx = Math.cos(h), Lz = -Math.sin(h);      /* the driver's left: traffic keeps left */
+  v.h = h;
+  if (v.axis === 'x') { v.x = v.s + Lx * off; v.z = v.line + Lz * off; } else { v.x = v.line + Lx * off; v.z = v.s + Lz * off; }
+}
+
+function spawnVehicle(r, awayFrom) {
+  var rng = r.rng, tries = 0, v;
+  do {
+    var tot = 0, i, pick = R.WEIGHTS[0][0], roll;
+    for (i = 0; i < R.WEIGHTS.length; i++) tot += R.WEIGHTS[i][1];
+    roll = rng.next() * tot; for (i = 0; i < R.WEIGHTS.length; i++) { roll -= R.WEIGHTS[i][1]; if (roll <= 0) { pick = R.WEIGHTS[i][0]; break; } }
+    var K = R.KINDS[pick];
+    v = { id: r.nextId, kind: pick, look: Math.floor(rng.next() * 4), axis: rng.next() < 0.5 ? 'x' : 'z', line: r.map.lines[Math.floor(rng.next() * R.GRID)],
+          dir: rng.next() < 0.5 ? 1 : -1, lane: rng.next() < (pick === 'bus' || pick === 'truck' ? 0.2 : 0.5) ? 0 : 1, s: (rng.next() * 2 - 1) * r.map.ext,
+          vmax: K.speed[0] + rng.next() * (K.speed[1] - K.speed[0]), v: 0, wait: 0, x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
+    placeVehicle(r, v); tries++;
+  } while (awayFrom && Math.hypot(v.x - awayFrom.x, v.z - awayFrom.z) < R.VIEW_R && tries < 30);
+  v.v = v.vmax * 0.8; v.px = v.x; v.pz = v.z; v.ph = v.h; r.nextId++;
+  return v;
+}
+
+function createRide(seed, bus) {
+  var r = {
+    seed: seed, tick: 0, bus: bus || { emit: function () {} }, rng: rngMod.createRng((seed >>> 0) ^ 0x7a11),
+    map: mapMod.generate(seed),
+    bike: { x: 0, z: 0, px: 0, pz: 0, h: Math.PI / 2, ph: Math.PI / 2, speed: 0, turn: 0, grace: 0 },
+    hero: { x: 0, z: 0, px: 0, pz: 0, vx: 0, vz: 0, face: 0, spin: 0 },
+    state: 'ride', t: 0,                    /* ride | fly | run | arrived */
+    traffic: [], nextId: 1,
+    missions: {}, target: null, arrivals: 0, crashes: 0
+  };
+  /* start on the middle east-west road, heading east in the outer left lane */
+  var mid = r.map.lines[Math.floor(R.GRID / 2)];
+  r.bike.x = r.bike.px = -40; r.bike.z = r.bike.pz = mid - R.LANES[1];
+  r.map.targets.forEach(function (t) { r.missions[t.key] = 'open'; });
+  for (var i = 0; i < R.TRAFFIC; i++) r.traffic.push(spawnVehicle(r, r.bike));
+  pickTarget(r);
+  return r;
+}
+
+/* the next signal: the nearest open trouble spot */
+function pickTarget(r) {
+  var best = null, bd = 1e9;
+  r.map.targets.forEach(function (t) {
+    if (r.missions[t.key] !== 'open') return;
+    var d = Math.hypot(t.x - r.bike.x, t.z - r.bike.z); if (d < bd) { bd = d; best = t; }
+  });
+  r.target = best;
+  if (best) r.bus.emit('ride:signal', { key: best.key, name: best.name });
+  return best;
+}
+
+function stepTraffic(r) {
+  var list = r.traffic, i, j, E = r.map.ext;
+  for (i = 0; i < list.length; i++) {
+    var v = list[i]; v.px = v.x; v.pz = v.z; v.ph = v.h;
+    if (v.wait > 0) { v.wait--; v.v = 0; continue; }
+    var want = v.vmax, ahead = 1e9;
+    for (j = 0; j < list.length; j++) {                                    /* keep a gap to the vehicle in front in the same lane */
+      if (j === i) continue; var o = list[j];
+      if (o.axis !== v.axis || o.line !== v.line || o.dir !== v.dir || o.lane !== v.lane) continue;
+      var d = (o.s - v.s) * v.dir; if (d > 0 && d < ahead) ahead = d;
+    }
+    var gap = ahead - (R.KINDS[v.kind].len + 3);
+    if (gap < 8) want = Math.min(want, Math.max(0, gap) * 1.2);
+    /* junctions: wait while crossing traffic is inside the box */
+    var jl = mapMod.nearestLine(v.s + v.dir * (R.HALF + 2.5)), dj = (jl - v.s) * v.dir;
+    if (dj > R.HALF && dj < R.HALF + 3.5) {
+      for (j = 0; j < list.length; j++) {
+        var c = list[j]; if (c.axis === v.axis) continue;
+        if (Math.abs((v.axis === 'x' ? c.x : c.z) - jl) < R.HALF + 1 && Math.abs((v.axis === 'x' ? c.z : c.x) - v.line) < R.HALF + 1) { want = 0; break; }
+      }
+    }
+    /* make way for the bike right in front */
+    var bdx = r.bike.x - v.x, bdz = r.bike.z - v.z, fwd = bdx * Math.sin(v.h) + bdz * Math.cos(v.h), lat = Math.abs(bdx * Math.cos(v.h) - bdz * Math.sin(v.h));
+    if (fwd > 0 && fwd < R.KINDS[v.kind].len / 2 + 4 && lat < 1.6) want = Math.min(want, 1);
+    v.v += Math.max(-8 * DT, Math.min(3 * DT, want - v.v));
+    v.s += v.dir * v.v * DT;
+    if (Math.abs(v.s) > E + 4) { list[i] = spawnVehicle(r, r.bike); continue; }          /* off the map: a new one appears out of sight */
+    placeVehicle(r, v);
+  }
+}
+
+/* bike circle against a vehicle's body line; returns the push-out vector or null */
+function hitVehicle(r, v, x, z) {
+  var K = R.KINDS[v.kind], fx = Math.sin(v.h), fz = Math.cos(v.h), half = Math.max(0, K.len / 2 - K.r);
+  var dx = x - v.x, dz = z - v.z, t = Math.max(-half, Math.min(half, dx * fx + dz * fz));
+  var cx = v.x + fx * t, cz = v.z + fz * t, ex = x - cx, ez = z - cz, d = Math.hypot(ex, ez), min = K.r + R.BIKE_R;
+  if (d >= min) return null;
+  if (d < 1e-4) { ex = Math.cos(v.h); ez = -Math.sin(v.h); d = 1; }
+  return { x: ex / d * (min - d), z: ez / d * (min - d) };
+}
+
+function step(r, input) {
+  var s = input.state, b = r.bike, hero = r.hero, i;
+  b.px = b.x; b.pz = b.z; b.ph = b.h; hero.px = hero.x; hero.pz = hero.z;
+  r.t++;
+  stepTraffic(r);
+
+  if (r.state === 'ride') {
+    var mx = s.mx, mz = -s.my, mag = Math.hypot(mx, mz), want = R.CRUISE;           /* stick up = up the screen = -z */
+    if (mag > 0.3) {
+      var dh = angDiff(Math.atan2(mx, mz), b.h), rate = R.TURN * DT * Math.min(1, 0.35 + b.speed / 10);
+      b.turn = Math.max(-rate, Math.min(rate, dh)); b.h += b.turn;
+      if (mag > 0.85 && Math.abs(dh) < 0.6) want = R.TOP;
+    } else b.turn *= 0.8;
+    if (s.held.block) want = 0;
+    var acc = want > b.speed ? R.ACCEL : (s.held.block ? R.BRAKE : R.ACCEL);
+    b.speed += Math.max(-acc * DT, Math.min(acc * DT, want - b.speed));
+    if (b.grace > 0) b.grace--;
+    /* move, sliding along buildings instead of going through them */
+    var nx = b.x + Math.sin(b.h) * b.speed * DT, nz = b.z + Math.cos(b.h) * b.speed * DT;
+    if (mapMod.onRoad(nx, nz, R.BIKE_R)) { b.x = nx; b.z = nz; }
+    else if (mapMod.onRoad(nx, b.z, R.BIKE_R)) { b.x = nx; b.speed *= 0.97; }
+    else if (mapMod.onRoad(b.x, nz, R.BIKE_R)) { b.z = nz; b.speed *= 0.97; }
+    else { if (b.speed > 4) r.bus.emit('ride:wall', { speed: b.speed }); b.speed *= 0.3; }
+    /* traffic */
+    for (i = 0; i < r.traffic.length; i++) {
+      var v = r.traffic[i], push = hitVehicle(r, v, b.x, b.z); if (!push) continue;
+      b.x += push.x; b.z += push.z;
+      if (b.speed > R.CRASH_SPEED && b.grace <= 0) {
+        r.state = 'fly'; r.t = 0; r.crashes++;
+        hero.x = b.x; hero.z = b.z; hero.px = hero.x; hero.pz = hero.z; hero.vx = Math.sin(b.h) * b.speed * 0.55 + push.x * 4; hero.vz = Math.cos(b.h) * b.speed * 0.55 + push.z * 4; hero.face = b.h; hero.spin = 0;
+        b.slide = b.speed * 0.5; b.speed = 0; v.wait = 50;
+        r.bus.emit('ride:crash', { x: b.x, z: b.z, kind: v.kind });
+        break;
+      }
+      b.speed = Math.min(b.speed, 2); v.wait = Math.max(v.wait, 20); r.bus.emit('ride:bump', { kind: v.kind });
+    }
+    /* arrival */
+    var T = r.target;
+    if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
+      r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++;
+      r.bus.emit('ride:arrive', { key: T.key, name: T.name });
+    }
+  } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
+    hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
+    if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
+    if (b.slide > 0) { var sx = b.x + Math.sin(b.h) * b.slide * DT, sz = b.z + Math.cos(b.h) * b.slide * DT; if (mapMod.onRoad(sx, sz, R.BIKE_R)) { b.x = sx; b.z = sz; } b.slide = Math.max(0, b.slide - 18 * DT); }
+    if (r.t >= R.FLY_TICKS) { r.state = 'run'; r.t = 0; r.bus.emit('ride:getup', {}); }
+  } else if (r.state === 'run') {                                     /* back on his feet, he runs to Bijli */
+    var dx = b.x - hero.x, dz = b.z - hero.z, d = Math.hypot(dx, dz);
+    if (d < 0.6) { r.state = 'ride'; r.t = 0; b.speed = 0; b.grace = R.GRACE_TICKS; r.bus.emit('ride:remount', {}); }
+    else { var st = Math.min(d, R.RUN_SPEED * DT); hero.x += dx / d * st; hero.z += dz / d * st; hero.face = Math.atan2(dx, dz); }
+  } else if (r.state === 'arrived') {
+    /* until the fight link exists (M4) the ride carries on to the next signal after a pause */
+    if (r.t > 180) { r.state = 'ride'; r.t = 0; pickTarget(r); }
+  }
+  r.tick++;
+}
+
+function hash(r) {
+  var h = 2166136261 >>> 0;
+  function mix(n) { h ^= (Math.round(n * 1000) | 0); h = Math.imul(h, 16777619) >>> 0; }
+  mix(r.bike.x); mix(r.bike.z); mix(r.bike.h); mix(r.bike.speed); mix(r.hero.x); mix(r.tick); mix(r.crashes); mix(r.arrivals);
+  r.traffic.forEach(function (v) { mix(v.x); mix(v.z); mix(v.v); });
+  return h >>> 0;
+}
+
+module.exports = { createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+
+};
+defs["sim/ridemap"]=function(module,exports,require){
+/* sim: the city map for ride mode. A grid of four-lane roads with built-up blocks between them and the ten trouble spots
+   placed on the pavements. Plain data from a seed: the view turns the boxes into meshes, the ride sim uses the road test. */
+'use strict';
+
+var R = require('../data/ride');
+var LOC = require('../data/locations');
+var rngMod = require('../core/rng');
+
+function lineAt(i) { return (i - (R.GRID - 1) / 2) * R.SPACING; }
+function extent() { return lineAt(R.GRID - 1) + R.HALF + R.PAVE; }
+
+/* nearest road centre line to a coordinate */
+function nearestLine(v) {
+  var i = Math.round(v / R.SPACING + (R.GRID - 1) / 2); if (i < 0) i = 0; if (i > R.GRID - 1) i = R.GRID - 1;
+  return lineAt(i);
+}
+
+/* is this point on a road or its pavement (where the bike may go)? */
+function onRoad(x, z, margin) {
+  var w = R.HALF + R.PAVE - (margin || 0), E = extent();
+  if (Math.abs(x) > E || Math.abs(z) > E) return false;
+  return Math.abs(z - nearestLine(z)) <= w || Math.abs(x - nearestLine(x)) <= w;
+}
+/* on the carriageway itself (not the pavement) */
+function onCarriageway(x, z) {
+  var E = extent();
+  if (Math.abs(x) > E || Math.abs(z) > E) return false;
+  return Math.abs(z - nearestLine(z)) <= R.HALF || Math.abs(x - nearestLine(x)) <= R.HALF;
+}
+
+/* building boxes for one block: rows facing each road, roofs with tanks, parapets and stair huts */
+function buildBlock(rng, x0, z0, x1, z1) {
+  var out = [], side, k;
+  function b(ax, az, bx, bz, h, c, y0) { out.push({ x0: Math.min(ax, bx), z0: Math.min(az, bz), x1: Math.max(ax, bx), z1: Math.max(az, bz), y0: y0 || 0, y1: h, c: c }); }
+  function roof(ax, az, bx, bz, h) {
+    var mx = (ax + bx) / 2, mz = (az + bz) / 2, r = rng.next();
+    b(ax, az, bx, az + 0.3, h + 0.6, 22, h); b(ax, bz - 0.3, bx, bz, h + 0.6, 22, h);                             /* parapet on two edges */
+    if (r < 0.55) b(mx - 0.8, mz - 0.8, mx + 0.8, mz + 0.8, h + 1.6, 15, h);                               /* black water tank */
+    else if (r < 0.75) b(mx - 1.4, mz - 1.0, mx + 1.4, mz + 1.0, h + 2.4, 13, h);                           /* stair hut */
+    else if (r < 0.9) b(mx - 2, mz - 1.2, mx + 2, mz + 1.2, h + 0.5, 5, h);                                 /* solar panel */
+    if (rng.next() < 0.5) b(mx + 1.6, mz - 0.4, mx + 2.4, mz + 0.4, h + 0.7, 25, h);                        /* AC unit */
+  }
+  var COLS = [3, 4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 23, 26, 27, 28, 29, 30, 31, 33, 34, 35];
+  var depth = 11;
+  for (side = 0; side < 4; side++) {                                                                     /* each block face: a row of buildings */
+    var len = side < 2 ? x1 - x0 : z1 - z0, pos = 0;
+    while (pos < len - 3) {
+      var wdt = Math.min(len - pos, 6 + Math.floor(rng.next() * 9)), h = 4 + Math.floor(rng.next() * 4) * 3, c = COLS[Math.floor(rng.next() * COLS.length)];
+      var ax, az, bx, bz;
+      if (side === 0) { ax = x0 + pos; bx = ax + wdt; az = z0; bz = z0 + depth; }
+      else if (side === 1) { ax = x0 + pos; bx = ax + wdt; az = z1 - depth; bz = z1; }
+      else if (side === 2) { az = z0 + depth + pos; bz = Math.min(z1 - depth, az + wdt); ax = x0; bx = x0 + depth; }
+      else { az = z0 + depth + pos; bz = Math.min(z1 - depth, az + wdt); ax = x1 - depth; bx = x1; }
+      if (bz - az > 2 && bx - ax > 2) { b(ax + 0.2, az + 0.2, bx - 0.2, bz - 0.2, h, c); roof(ax + 0.2, az + 0.2, bx - 0.2, bz - 0.2, h); }
+      pos += wdt;
+    }
+  }
+  /* the courtyard: a low godown or a patch of trees */
+  var cx0 = x0 + depth + 1, cz0 = z0 + depth + 1, cx1 = x1 - depth - 1, cz1 = z1 - depth - 1;
+  if (rng.next() < 0.5) b(cx0 + 2, cz0 + 2, cx1 - 2, cz1 - 2, 4, 7);
+  else for (k = 0; k < 6; k++) { var tx = cx0 + 2 + rng.next() * (cx1 - cx0 - 4), tz = cz0 + 2 + rng.next() * (cz1 - cz0 - 4); b(tx - 0.3, tz - 0.3, tx + 0.3, tz + 0.3, 3, 24); b(tx - 2, tz - 2, tx + 2, tz + 2, 5.5, 6, 2.5); }
+  return out;
+}
+
+function generate(seed) {
+  var rng = rngMod.createRng((seed >>> 0) ^ 0x51ce), lines = [], i, j, blocks = [], targets = [];
+  for (i = 0; i < R.GRID; i++) lines.push(lineAt(i));
+  var inset = R.HALF + R.PAVE;
+  for (i = 0; i < R.GRID - 1; i++) for (j = 0; j < R.GRID - 1; j++) {
+    var x0 = lines[i] + inset, x1 = lines[i + 1] - inset, z0 = lines[j] + inset, z1 = lines[j + 1] - inset;
+    blocks.push({ key: i + ',' + j, x0: x0, z0: z0, x1: x1, z1: z1, boxes: buildBlock(rng, x0, z0, x1, z1) });
+  }
+  /* the ten trouble spots: on a pavement, mid-way between two junctions, spread over the map */
+  var used = {};
+  for (var n = 0; n < LOC.ORDER.length; n++) {
+    var tries = 0, axis, li, seg, sd, key;
+    do {
+      axis = rng.next() < 0.5 ? 'x' : 'z'; li = Math.floor(rng.next() * R.GRID); seg = Math.floor(rng.next() * (R.GRID - 1)); sd = rng.next() < 0.5 ? -1 : 1;
+      key = axis + li + ':' + seg; tries++;
+    } while (used[key] && tries < 50);
+    used[key] = 1;
+    var along = (lines[seg] + lines[seg + 1]) / 2, off = lines[li] + sd * (R.HALF + R.PAVE * 0.5);
+    var name = LOC.LOCATIONS[LOC.ORDER[n]].name;
+    targets.push(axis === 'x' ? { key: LOC.ORDER[n], name: name, x: along, z: off } : { key: LOC.ORDER[n], name: name, x: off, z: along });
+  }
+  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets };
+}
+
+module.exports = { generate: generate, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };
 
 };
 defs["sim/streaming"]=function(module,exports,require){
@@ -4583,6 +5002,118 @@ function ridePose(b, t) {
 }
 
 module.exports = { createRideCam: createRideCam, ridePose: ridePose };
+
+};
+defs["view/rideview"]=function(module,exports,require){
+/* view: ride mode seen from above. The city map is baked into a road mesh and one mesh per block; traffic reuses the street's
+   voxel vehicles; Toofan sits on Bijli, and when he is thrown off he tumbles and runs back. Reads the ride sim only. */
+'use strict';
+
+var CONFIG = require('../data/config');
+var R = require('../data/ride');
+var boxmesh = require('./boxmesh');
+var ambient = require('./ambientvox');
+var bikevox = require('./bikevox');
+var herorig = require('./herorig');
+var posemath = require('./posemath');
+
+function meshOf(boxes, mat) {
+  var a = boxmesh.boxesToArrays(boxes, CONFIG.PALETTE), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere();
+  return new THREE.Mesh(g, mat);
+}
+
+/* roads: asphalt, pavements between junctions, lane dashes, a double yellow median and zebra crossings */
+function roadBoxes(map) {
+  var out = [], L = map.lines, E = map.ext, H = R.HALF, P = R.PAVE, i, k, s, sd;
+  function strip(axis, line, a0, a1, o0, o1, y1, c) {                       /* a box along a road: a = along, o = across */
+    if (axis === 'x') out.push({ x0: a0, x1: a1, z0: line + o0, z1: line + o1, y0: 0, y1: y1, c: c });
+    else out.push({ x0: line + o0, x1: line + o1, z0: a0, z1: a1, y0: 0, y1: y1, c: c });
+  }
+  out.push({ x0: -E - 70, x1: E + 70, z0: -E - 70, z1: E + 70, y0: -0.2, y1: -0.01, c: 2 });
+  ['x', 'z'].forEach(function (axis) {
+    for (i = 0; i < L.length; i++) {
+      strip(axis, L[i], -E, E, -H, H, axis === 'x' ? 0.02 : 0.021, 1);
+      var ends = [-E].concat(L.map(function (l) { return l; })).concat([E]);
+      for (k = 0; k < ends.length - 1; k++) {                                 /* between junctions */
+        var a0 = ends[k] + (k === 0 ? 0 : H), a1 = ends[k + 1] - (k === ends.length - 2 ? 0 : H);
+        if (a1 - a0 < 2) continue;
+        for (sd = -1; sd <= 1; sd += 2) strip(axis, L[i], a0 + (k === 0 ? 0 : P), a1 - (k === ends.length - 2 ? 0 : P), sd > 0 ? H : -H - P, sd > 0 ? H + P : -H, 0.14, 8);
+        strip(axis, L[i], a0 + 1, a1 - 1, -0.28, -0.14, 0.03, 14); strip(axis, L[i], a0 + 1, a1 - 1, 0.14, 0.28, 0.03, 14);
+        for (s = a0 + 3; s < a1 - 4; s += 6) { strip(axis, L[i], s, s + 2.4, -3.6, -3.42, 0.03, 25); strip(axis, L[i], s, s + 2.4, 3.42, 3.6, 0.03, 25); }
+        if (k > 0) for (var zc = -H + 0.6; zc < H - 0.4; zc += 1.1) strip(axis, L[i], a0 + 0.6, a0 + 2.6, zc, zc + 0.55, 0.03, 25);
+        if (k < ends.length - 2) for (zc = -H + 0.6; zc < H - 0.4; zc += 1.1) strip(axis, L[i], a1 - 2.6, a1 - 0.6, zc, zc + 0.55, 0.03, 25);
+      }
+    }
+  });
+  return out;
+}
+
+function createRideView(scene) {
+  var root = new THREE.Group(), mat = new THREE.MeshLambertMaterial({ vertexColors: true }), built = null, i;
+  scene.add(root);
+  var bike = bikevox.createBike(), rig = herorig.createHeroRig(), seat = bike.seat;
+  root.add(bike.root);
+  var ride = posemath.named('ride'), down = posemath.named('down');
+  function seatRider() { bike.pitch.add(rig.root); rig.root.position.set(seat.x, seat.y + 0.08 - 0.85, seat.z); rig.root.rotation.set(0, 0, 0); rig.applyPose(ride, { plant: false }); }
+  seatRider();
+  /* the signal: a pulsing ring and a soft column of light over the trouble spot */
+  var mark = new THREE.Group();
+  var ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.25, 6, 40), new THREE.MeshBasicMaterial({ color: 0xffc21a }));
+  ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; mark.add(ring);
+  var beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 30, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+  beam.position.y = 15; mark.add(beam); root.add(mark);
+  var cars = {}, wheel = 0, runPhase = 0, layOn = 0;
+
+  return {
+    build: function (map) {
+      if (built) return;
+      built = [meshOf(roadBoxes(map), mat)];
+      map.blocks.forEach(function (b) { built.push(meshOf(b.boxes, mat)); });
+      built.forEach(function (m) { root.add(m); });
+    },
+    sync: function (r, alpha, dt, t) {
+      var b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha, h = b.ph + Math.atan2(Math.sin(b.h - b.ph), Math.cos(b.h - b.ph)) * alpha;
+      bike.root.position.set(x, 0, z); bike.root.rotation.y = h;
+      var onBike = r.state === 'ride' || r.state === 'arrived';
+      layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
+      bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14)) : 0);
+      wheel += (onBike ? b.speed : (b.slide || 0)) * dt / bike.wheelR; bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
+      if (onBike) {
+        if (rig.root.parent !== bike.pitch) seatRider();
+        rig.flutter(t, Math.min(1, b.speed / 12));
+      } else {
+        if (rig.root.parent !== root) { root.add(rig.root); rig.root.rotation.set(0, 0, 0); }
+        var hx = r.hero.px + (r.hero.x - r.hero.px) * alpha, hz = r.hero.pz + (r.hero.z - r.hero.pz) * alpha;
+        rig.root.position.set(hx, 0, hz); rig.root.rotation.y = r.hero.face;
+        if (r.state === 'fly') { var u = Math.min(1, r.t / R.FLY_TICKS); rig.applyPose(down, { plant: true }); rig.root.rotation.x = 0; rig.root.position.y = Math.sin(Math.PI * Math.min(1, u * 2.2)) * 0.6 * (1 - u); rig.body.rotation.x = r.hero.spin; }
+        else { runPhase += dt * 9; rig.body.rotation.x = 0; rig.applyPose(posemath.walkPose(runPhase, 1.4), { plant: true }); }
+        rig.flutter(t, 0.6);
+      }
+      if (onBike) rig.body.rotation.x = 0;
+      /* the target */
+      if (r.target && r.state !== 'arrived') { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
+      else mark.visible = false;
+      /* traffic near the bike */
+      var seen = {};
+      for (i = 0; i < r.traffic.length; i++) {
+        var v = r.traffic[i]; if (Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
+        seen[v.id] = 1; var m = cars[v.id];
+        if (!m) { m = cars[v.id] = ambient.createMesh({ kind: v.kind, look: v.look, id: v.id }); root.add(m); }
+        m.position.set(v.px + (v.x - v.px) * alpha, 0, v.pz + (v.z - v.pz) * alpha); m.rotation.y = v.h;
+      }
+      for (var id in cars) if (!seen[id]) { root.remove(cars[id]); delete cars[id]; }
+    },
+    dispose: function () {
+      scene.remove(root);
+      if (built) built.forEach(function (m) { m.geometry.dispose(); });
+      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); ambient.dispose(); cars = {};
+    }
+  };
+}
+
+module.exports = { createRideView: createRideView };
 
 };
 defs["view/sfx"]=function(module,exports,require){

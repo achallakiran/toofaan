@@ -13,6 +13,7 @@ var hudMod = require('./view/hud');
 var controls = require('./view/controls');
 var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
+var ride = require('./modes/ride');
 
 function boot() {
   var storage = null;
@@ -38,15 +39,17 @@ function boot() {
   var modes = modesMod.createModes(ctx);
   modes.register(freeroam.createFreeroam());
   modes.register(studio.createStudio());
-  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet') };
+  modes.register(ride.createRide());
+  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name) {
     modes.switchTo(name);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'freeroam' ? '#street' : '#studio'); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
   tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
-  go(window.location.hash === '#street' ? 'freeroam' : 'studio');
+  tabs.ride.addEventListener('click', function () { go('ride'); });
+  go(window.location.hash === '#street' ? 'freeroam' : window.location.hash === '#ride' ? 'ride' : 'studio');
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,

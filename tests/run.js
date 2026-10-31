@@ -540,5 +540,47 @@ test('locations: arriving at an uncleared place starts its fight; clearing it ma
   assert.deepStrictEqual(cleared, ['Market lane']); assert(w.locs.cleared['2,0']); assert(!w.locs.active);
   w.combat.enemies.length = 0; for (i = 0; i < 600; i++) { inp.tick(w.tick); worldMod.step(w, inp); } assert.strictEqual(w.combat.enemies.length, 0, 'no endless waves'); assert.notStrictEqual(w.locs.next.key, '2,0');
 });
+
+console.log('ride mode (Phase 4)');
+(function () {
+  var rideMod = req('sim/ride'), rmap = req('sim/ridemap'), RD = req('data/ride');
+  function run(r, n, axis) { var inp = inputMod.createInput(), i; for (i = 0; i < n; i++) { var a = axis(i); inp.setAxis(a[0], a[1]); inp.tick(r.tick); rideMod.step(r, inp); } }
+  test('ride map: same seed, same map; ten trouble spots, each on a pavement, all different', function () {
+    var a = rmap.generate(9), b = rmap.generate(9), keys = {};
+    assert.strictEqual(JSON.stringify(a), JSON.stringify(b)); assert.strictEqual(a.targets.length, 10);
+    a.targets.forEach(function (t) { assert(rmap.onRoad(t.x, t.z, 0) && !rmap.onCarriageway(t.x, t.z), t.key + ' on the pavement'); keys[t.key] = 1; });
+    assert.strictEqual(Object.keys(keys).length, 10);
+  });
+  test('ride: the bike never leaves the roads, whatever the stick does', function () {
+    var r = rideMod.createRide(4, null), off = 0, inp = inputMod.createInput();
+    for (var i = 0; i < 4000; i++) { var k = Math.floor(i / 150) % 8, ang = k * Math.PI / 4; inp.setAxis(Math.sin(ang), Math.cos(ang)); inp.tick(r.tick); rideMod.step(r, inp); if (r.state === 'ride' && !rmap.onRoad(r.bike.x, r.bike.z, 0)) off++; }
+    assert.strictEqual(off, 0);
+  });
+  test('ride: hitting traffic fast throws him off; he gets up, runs back and rides on, and no heart is lost', function () {
+    var log = [], r = rideMod.createRide(4, { emit: function (n) { log.push(n); } }), b = r.bike, v = r.traffic[0];
+    b.speed = 15; v.kind = 'bus'; v.wait = 9999; v.axis = 'x'; v.x = b.x + Math.sin(b.h) * 2.2; v.z = b.z + Math.cos(b.h) * 2.2; v.h = b.h + Math.PI / 2;
+    run(r, 3, function () { return [0, 0]; });
+    assert.strictEqual(r.state, 'fly', 'thrown ' + r.state);
+    run(r, 900, function () { return [0, 0]; });
+    assert(log.indexOf('ride:crash') >= 0 && log.indexOf('ride:getup') >= 0 && log.indexOf('ride:remount') >= 0, log.join(','));
+    assert.strictEqual(r.state === 'ride' || r.state === 'arrived', true); assert.strictEqual(r.crashes, 1);
+  });
+  test('ride: reaching the signal stops the bike and marks the place active; the next signal is another open place', function () {
+    var log = [], r = rideMod.createRide(4, { emit: function (n, e) { log.push(n + ':' + (e && e.key)); } }), T = r.target;
+    r.bike.x = T.x; r.bike.z = T.z; run(r, 2, function () { return [0, 0]; });
+    assert.strictEqual(r.state, 'arrived'); assert.strictEqual(r.missions[T.key], 'active'); assert.strictEqual(r.bike.speed, 0);
+    run(r, 200, function () { return [0, 0]; });
+    assert(r.target && r.target.key !== T.key && r.missions[r.target.key] === 'open');
+  });
+  test('ride: same seed and same input give the same ride (deterministic)', function () {
+    var a = rideMod.createRide(11, null), b2 = rideMod.createRide(11, null), f = function (i) { return [Math.sin(i / 90), 0.6]; };
+    run(a, 700, f); run(b2, 700, f); assert.strictEqual(rideMod.hash(a), rideMod.hash(b2));
+  });
+  test('ride: traffic keeps left, in both directions on both axes', function () {
+    var r = rideMod.createRide(6, null), bad = 0; run(r, 900, function () { return [0, 0]; });
+    r.traffic.forEach(function (v) { var lat = v.axis === 'x' ? v.z - v.line : v.x - v.line, lx = Math.cos(v.h), lz = -Math.sin(v.h); if ((v.axis === 'x' ? lz : lx) * lat <= 0) bad++; });
+    assert.strictEqual(bad, 0, 'vehicles on the wrong side: ' + bad);
+  });
+})();
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
