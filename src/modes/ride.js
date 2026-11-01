@@ -16,6 +16,18 @@ var GANGS = require('../data/gangs');
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
 
+/* the ride state lives for the whole session (the hideout's gang chart reads it too); first use loads the saved progress */
+function ensureRide(ctx) {
+  if (!ctx.ride) {
+    ctx.ride = rideSim.createRide(ctx.world.seed, ctx.bus);
+    var saved = ctx.save.get('ride.missions', null);
+    if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k] === 'active' ? 'open' : saved[k]; }); rideSim.pickTarget(ctx.ride); }
+    var pos = ctx.save.get('ride.pos', null), B = ctx.ride.bike;     /* Continue: back where Bijli was parked */
+    if (pos && isFinite(pos.x) && isFinite(pos.z)) { B.x = B.px = pos.x; B.z = B.pz = pos.z; B.h = B.ph = pos.h || 0; }
+  }
+  return ctx.ride;
+}
+
 function createRide() {
   var S = {};
   return {
@@ -25,13 +37,7 @@ function createRide() {
       view.setSky('#a9c7da', false);
       ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
       /* the ride carries on where you left it */
-      if (!ctx.ride) {
-        ctx.ride = rideSim.createRide(ctx.world.seed, ctx.bus);
-        var saved = ctx.save.get('ride.missions', null);
-        if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k] === 'active' ? 'open' : saved[k]; }); rideSim.pickTarget(ctx.ride); }
-        var pos = ctx.save.get('ride.pos', null), B = ctx.ride.bike;     /* Continue: back where Bijli was parked */
-        if (pos && isFinite(pos.x) && isFinite(pos.z)) { B.x = B.px = pos.x; B.z = B.pz = pos.z; B.h = B.ph = pos.h || 0; }
-      }
+      ensureRide(ctx);
       S.r = ctx.ride; S.t = 0; S.cam = null; S.msgT = 0; S.honkT = 0; S.cut = null; S.fx = null; S.slow = 0; S.slowAcc = 0; S.shake = 0; S.sideW = 0; S.last = 0;
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
@@ -221,4 +227,4 @@ function drawMap(cv, r, t, yaw) {
   g.restore(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(W / 2, W / 2 - 7); g.lineTo(W / 2 + 5, W / 2 + 6); g.lineTo(W / 2 - 5, W / 2 + 6); g.closePath(); g.fill();
 }
 
-module.exports = { createRide: createRide };
+module.exports = { createRide: createRide, ensureRide: ensureRide };

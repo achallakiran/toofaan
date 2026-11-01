@@ -7,6 +7,7 @@
      ride    - lighter cruising groove, vocal every 16 bars    road    - fast and heavy for the road fights, vocal chops
      arena   - the heaviest riff for the fight areas            boss    - arena at full tilt with the lead and chops
      hideout - laid-back clean guitar                           thappad - dreamy pad, far-away vocal
+     night   - the nightmare: a low pad and a heartbeat, no singing
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
@@ -18,6 +19,7 @@ var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;
 var CHANT = ['K', '', 'S', '', 'T', '', 'T', 't', 'K', '', 'K', 't', 't', '', 'S', ''];
 var DOUBLE = ['K', '', 'K', '', 'S', '', 'K', 'K', 'K', '', 'K', '', 'S', '', 'K', 'K'];
 var HALF = ['K', '', '', '', '', '', 'K', '', 'S', '', '', '', '', '', 'K', ''];
+var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
 var LEAD = [64, 67, 69, 67, 64, 67, 71, 69, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -41,6 +43,7 @@ var TRACKS = {
   boss: function (n) { var m = n % 4; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: true, fill: m === 3, crash: true, chop: m % 2 === 0 ? n % 4 : null }; },
   hideout: function (n) { var m = n % 16; return { drums: m >= 4 ? SOFT : null, hats: m >= 8 ? 8 : 0, gtr: 'clean', bass: 'sub', vol: 0.7, vox: m === 12 ? 1 : null, voxSoft: true }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
+  night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },
   sting: function (n) { return { sting: n }; }
 };
 

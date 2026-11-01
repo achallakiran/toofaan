@@ -111,7 +111,7 @@ function createTitle() {
         document.body.appendChild(el); scope.add(function () { el.remove(); });
         setTimeout(function () { el.style.opacity = 1; }, 1600);
         var nb = el.querySelector('#tNew'), cb = el.querySelector('#tCont');
-        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'ride' }); });
+        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'hideout' }); });
         if (cb) cb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('ride'); });
       }
     },

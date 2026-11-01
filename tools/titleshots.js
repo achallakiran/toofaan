@@ -30,6 +30,10 @@ var out = path.resolve(__dirname, '..', 'dist');
     var wakeMode = await page.evaluate(function () { return __game.modes.currentName(); });      /* New Game opens on the nightmare */
     await page.click('text=SKIP'); await page.waitForTimeout(1200);
     var after = await page.evaluate(function () { return __game.modes.currentName(); }) + (wakeMode === 'wake' ? '' : ' (no nightmare!)');
+    /* he wakes in the hideout; walk to Bijli and ride out */
+    await page.evaluate(function () { var S = __game.ctx.debug.hideout; S.p.x = 1.0; S.p.z = 5.1; }); await page.waitForTimeout(400);
+    await page.keyboard.press('Space'); await page.waitForTimeout(2200);
+    after += ' -> ' + await page.evaluate(function () { return __game.modes.currentName(); });
     /* drive a little, then reload: Continue should show and carry on from there */
     await page.keyboard.down('KeyW'); await page.waitForTimeout(4000); await page.keyboard.up('KeyW'); await page.waitForTimeout(3500);
     var pos = await page.evaluate(function () { var b = __game.ctx.ride.bike; return { x: b.x, z: b.z }; });

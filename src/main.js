@@ -17,6 +17,7 @@ var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
 var wake = require('./modes/wake');
+var hideoutMode = require('./modes/hideout');
 var musicMod = require('./view/music');
 var pixelfont = require('./view/pixelfont');
 
@@ -72,12 +73,13 @@ function boot() {
   modes.register(ride.createRide());
   modes.register(title.createTitle());
   modes.register(wake.createWake());
+  modes.register(hideoutMode.createHideout());
   var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name, args) {
     if (name === 'studio' || (name === 'freeroam' && !(args && args.mission))) musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer views are silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : name === 'wake' ? '#wake' : '#studio')); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : name === 'wake' ? '#wake' : name === 'hideout' ? '#hideout' : '#studio')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
   tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
@@ -86,7 +88,7 @@ function boot() {
   ctx.go = go;
   if (!params.get('dev')) document.getElementById('tabs').style.display = 'none';
   var H = window.location.hash;
-  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : 'title', H === '#menu' ? { menu: true } : undefined);
+  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
