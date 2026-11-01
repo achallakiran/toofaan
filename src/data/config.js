@@ -2,7 +2,7 @@
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 54',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 55',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -30,7 +30,10 @@ var CONFIG = {
     '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a',
     '#2b2d31', '#7d8087', '#f2c230', '#17181b', '#f08a24', '#c2306f', '#18a0a8', '#8cc63f', '#2a55b8', '#d0312d', '#efe3c8', '#7a3fa0',
     '#7b5a3c', '#f2f2ee', '#9b4a2a', '#e8708a',
-    '#e9a23b', '#d4577c', '#5bb5b0', '#9cc84e', '#4f7fd0', '#e8d9a8', '#c8762f', '#b86ad0'
+    '#e9a23b', '#d4577c', '#5bb5b0', '#9cc84e', '#4f7fd0', '#e8d9a8', '#c8762f', '#b86ad0',
+    /* 36+: the fight arenas' kit (stone, wood, brass, marigold, brick, foliage, paint) */
+    '#9b958b', '#80796f', '#5e5850', '#b07a45', '#7a4f2a', '#c9a227', '#ff9f1c', '#ffd166', '#e63946', '#2d6a4f', '#52b788', '#264653',
+    '#a8854c', '#a89f8c', '#8a8a83', '#3d405b', '#f4f1de', '#1d3557', '#457b9d', '#bc6c25', '#8b3a1e', '#606c38', '#ffb4a2', '#6d597a'
   ],
   GROUND: { road: 1, sidewalk: 8, dirt: 2 }
 };

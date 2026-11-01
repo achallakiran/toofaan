@@ -16,7 +16,7 @@ function createView(canvas, tierName) {
   var hemi = new THREE.HemisphereLight('#dfeaff', '#7a6a58', 0.85); scene.add(hemi);
   var sun = new THREE.DirectionalLight('#fff3dc', 0.75); sun.position.set(-20, 40, 15); scene.add(sun);
 
-  var chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  var chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true }), frameHooks = [];
   var chunks = {}, chunkBytes = 0, disposed = false;
 
   function resize() {
@@ -68,9 +68,11 @@ function createView(canvas, tierName) {
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }
     },
     render: function () {
-      var n = performance.now(); if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      var n = performance.now(), dt = lastT ? Math.min(0.1, (n - lastT) / 1000) : 1 / 60; if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      for (var h = 0; h < frameHooks.length; h++) frameHooks[h](camera, dt);   /* last word before drawing, once the camera is placed (the arena's see-through fade) */
       renderer.render(scene, camera);
     },
+    onFrame: function (fn) { frameHooks.push(fn); return function () { var i = frameHooks.indexOf(fn); if (i >= 0) frameHooks.splice(i, 1); }; },
     stats: function () {
       var i = renderer.info;
       return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries, ms: frameMs, tier: tierId };

@@ -1,6 +1,9 @@
 /* modes: the link between the ride and a fight area (Phase 4, M4). Arriving at a trouble spot on the ride opens the brawler (Street) with
    Toofan walking into that kind of place; when the area is clear the game goes back to the ride, where the police take the goons away.
-   The brawler itself is not changed: this only places the hero before the fight and listens for the area to be cleared. */
+   The brawler itself is not changed: this only places the hero before the fight and listens for the area to be cleared.
+   For the kinds of place that have one, the fight is held in a closed arena (sim/arenagen): for the length of the fight the world's
+   streaming is swapped for one that builds only that arena, passing traffic is switched off, and the hero and the men are kept inside
+   its walls. The open city comes back the moment the fight is over. */
 'use strict';
 
 var CONFIG = require('../data/config');
@@ -9,6 +12,9 @@ var locsMod = require('../sim/citylocs');
 var cinecard = require('../view/cinecard');
 var combatMod = require('../sim/combat');
 var sfxmod = require('../view/sfx');
+var streamingMod = require('../sim/streaming');
+var arenagen = require('../sim/arenagen');
+var arenaview = require('../view/arenaview');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -22,7 +28,14 @@ function place(ctx, m) {
   }
   if (!best) return null;
   var ew = mod3(best.cz) === 0, p = w.player;
-  p.x = best.cx * S - (ew ? 9 : 0); p.z = best.cz * S - (ew ? 0 : 9); p.px = p.x; p.pz = p.z; p.face = ew ? Math.PI / 2 : 0;
+  if (arenagen.has(best.type)) {                                       /* the closed arena: swap the ground for the fight */
+    m.city = w.streaming;
+    w.streaming = streamingMod.createStreaming(w.seed, ctx.bus, arenagen.createGen(best.type, best.cx, best.cz));
+    var spec = arenagen.build(w.seed, best.type, best.cx, best.cz);
+    w.bounds = spec.bounds; w.traffic.off = true; w.traffic.list.length = 0;
+    p.x = spec.start.x; p.z = spec.start.z; p.face = Math.PI;
+  } else { p.x = best.cx * S - (ew ? 9 : 0); p.z = best.cz * S - (ew ? 0 : 9); p.face = ew ? Math.PI / 2 : 0; }
+  p.px = p.x; p.pz = p.z;
   p.hp = p.maxHp; p.down = false; p.stun = 0;
   w.mounted = false; w.bike.x = p.x + 4000; w.bike.z = p.z; w.bike.speed = 0;               /* Bijli is left on the road: not reachable during the fight */
   w.locs.cleared[best.key] = false; w.locs.active = null;
@@ -37,6 +50,22 @@ function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
   scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
+  if (m.city) {
+    /* the arena's tall pieces and signs, faded whenever one stands between the camera and the fight */
+    var spec = w.streaming.specAt(w.player.x, w.player.z - 6) || w.streaming.specAt(w.player.x, w.player.z), av = spec && spec.kind === 'arena' && ctx.view && ctx.view.scene ? arenaview.createArenaView(ctx.view.scene, spec) : null;
+    var hero = av && new THREE.Vector3(), hero2 = av && new THREE.Vector3(), foe = av && new THREE.Vector3();
+    var off = av ? ctx.view.onFrame(function (camera, dt) {
+      var p = w.player, t = [hero.set(p.x, 1.0, p.z), hero2.set(p.x, 1.7, p.z)], best = null, bd = 9, i, l = w.combat.enemies;
+      for (i = 0; i < l.length; i++) { var e = l[i]; if (e.dead || e.st === 'dead') continue; var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
+      if (best) t.push(foe.set(best.x, 1.3, best.z));
+      av.fade(camera, t, dt);
+    }) : null;
+    ctx.debug.arena = av;
+    scope.add(function () {
+      if (off) off(); if (av) av.dispose(); ctx.debug.arena = null;
+      w.streaming = m.city; m.city = null; w.bounds = null; w.traffic.off = false;     /* the open city again */
+    });
+  }
   /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
   timers.push(setTimeout(function () {
     var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;

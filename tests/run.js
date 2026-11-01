@@ -649,5 +649,39 @@ test('fight areas: for every kind of place, arriving from the ride starts its fi
     assert(w.combat.enemies.length >= 4 && far === 0, type + ': ' + w.combat.enemies.length + ' men, ' + far + ' far away');
   });
 });
+test('arenas: every arena builds the same twice, its men start inside the walls and clear of props', function () {
+  var ag = req('sim/arenagen'), LOCD = req('data/locations');
+  LOCD.ORDER.filter(ag.has).forEach(function (type) {
+    var a = ag.build(777, type, 4, 0), b = ag.build(777, type, 4, 0);
+    assert.strictEqual(JSON.stringify(a), JSON.stringify(b), type + ' not deterministic');
+    var B = a.bounds;
+    a.loc.spawns.forEach(function (s) {
+      assert(s.x >= B.x0 && s.x <= B.x1 && s.z >= B.z0 && s.z <= B.z1, type + ': spawn outside ' + JSON.stringify(s));
+      var inSolid = a.solids.some(function (q) { return q.y1 > 0.25 && s.x > q.x0 + a.ox && s.x < q.x1 + a.ox && s.z > q.z0 + a.oz && s.z < q.z1 + a.oz; });
+      assert(!inSolid, type + ': spawn inside a prop ' + JSON.stringify(s));
+    });
+    var n = a.boxes.length + a.tall.reduce(function (t, g) { return t + g.boxes.length; }, 0);
+    assert(a.tall.length >= 3 && n > 700, type + ': too bare (' + n + ' boxes, ' + a.tall.length + ' tall pieces)');
+  });
+});
+test('arenas: from the ride, the fight is in a closed arena: no traffic, nobody walks out, and the city is back afterwards', function () {
+  var mission = req('modes/mission'), ag = req('sim/arenagen'), LOCD = req('data/locations');
+  LOCD.ORDER.filter(ag.has).forEach(function (type) {
+    var bus = busMod.createBus(), w = worldMod.createWorld(20261028, bus), inp = inputMod.createInput(), city = w.streaming, i, d, m = { type: type }, disposers = [];
+    mission.place({ world: w, bus: bus }, m);
+    assert(w.bounds && w.traffic.off && w.streaming !== city, type + ': not an arena');
+    worldMod.startFight(w); w.combat.enabled = false;
+    [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(function (dir) {
+      inp.setAxis(dir[0], dir[1]);
+      for (i = 0; i < 900; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
+      var p = w.player, B = w.bounds;
+      assert(p.x >= B.x0 - 1e-6 && p.x <= B.x1 + 1e-6 && p.z >= B.z0 - 1e-6 && p.z <= B.z1 + 1e-6, type + ': walked out going ' + dir);
+      assert.strictEqual(w.traffic.list.length, 0, type + ': traffic in the arena');
+    });
+    mission.watch({ world: w, bus: bus, view: { scene: null, onFrame: function () { return function () {}; } }, debug: {}, go: function () {} }, { add: function (f) { disposers.push(f); } }, m);
+    disposers.forEach(function (f) { f(); });
+    assert(w.streaming === city && !w.bounds && !w.traffic.off, type + ': the city did not come back');
+  });
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

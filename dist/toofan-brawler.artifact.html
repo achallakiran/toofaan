@@ -359,7 +359,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 54',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 55',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -387,7 +387,10 @@ var CONFIG = {
     '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a',
     '#2b2d31', '#7d8087', '#f2c230', '#17181b', '#f08a24', '#c2306f', '#18a0a8', '#8cc63f', '#2a55b8', '#d0312d', '#efe3c8', '#7a3fa0',
     '#7b5a3c', '#f2f2ee', '#9b4a2a', '#e8708a',
-    '#e9a23b', '#d4577c', '#5bb5b0', '#9cc84e', '#4f7fd0', '#e8d9a8', '#c8762f', '#b86ad0'
+    '#e9a23b', '#d4577c', '#5bb5b0', '#9cc84e', '#4f7fd0', '#e8d9a8', '#c8762f', '#b86ad0',
+    /* 36+: the fight arenas' kit (stone, wood, brass, marigold, brick, foliage, paint) */
+    '#9b958b', '#80796f', '#5e5850', '#b07a45', '#7a4f2a', '#c9a227', '#ff9f1c', '#ffd166', '#e63946', '#2d6a4f', '#52b788', '#264653',
+    '#a8854c', '#a89f8c', '#8a8a83', '#3d405b', '#f4f1de', '#1d3557', '#457b9d', '#bc6c25', '#8b3a1e', '#606c38', '#ffb4a2', '#6d597a'
   ],
   GROUND: { road: 1, sidewalk: 8, dirt: 2 }
 };
@@ -1377,7 +1380,10 @@ module.exports = { createFreeroam: createFreeroam };
 defs["modes/mission"]=function(module,exports,require){
 /* modes: the link between the ride and a fight area (Phase 4, M4). Arriving at a trouble spot on the ride opens the brawler (Street) with
    Toofan walking into that kind of place; when the area is clear the game goes back to the ride, where the police take the goons away.
-   The brawler itself is not changed: this only places the hero before the fight and listens for the area to be cleared. */
+   The brawler itself is not changed: this only places the hero before the fight and listens for the area to be cleared.
+   For the kinds of place that have one, the fight is held in a closed arena (sim/arenagen): for the length of the fight the world's
+   streaming is swapped for one that builds only that arena, passing traffic is switched off, and the hero and the men are kept inside
+   its walls. The open city comes back the moment the fight is over. */
 'use strict';
 
 var CONFIG = require('../data/config');
@@ -1386,6 +1392,9 @@ var locsMod = require('../sim/citylocs');
 var cinecard = require('../view/cinecard');
 var combatMod = require('../sim/combat');
 var sfxmod = require('../view/sfx');
+var streamingMod = require('../sim/streaming');
+var arenagen = require('../sim/arenagen');
+var arenaview = require('../view/arenaview');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -1399,7 +1408,14 @@ function place(ctx, m) {
   }
   if (!best) return null;
   var ew = mod3(best.cz) === 0, p = w.player;
-  p.x = best.cx * S - (ew ? 9 : 0); p.z = best.cz * S - (ew ? 0 : 9); p.px = p.x; p.pz = p.z; p.face = ew ? Math.PI / 2 : 0;
+  if (arenagen.has(best.type)) {                                       /* the closed arena: swap the ground for the fight */
+    m.city = w.streaming;
+    w.streaming = streamingMod.createStreaming(w.seed, ctx.bus, arenagen.createGen(best.type, best.cx, best.cz));
+    var spec = arenagen.build(w.seed, best.type, best.cx, best.cz);
+    w.bounds = spec.bounds; w.traffic.off = true; w.traffic.list.length = 0;
+    p.x = spec.start.x; p.z = spec.start.z; p.face = Math.PI;
+  } else { p.x = best.cx * S - (ew ? 9 : 0); p.z = best.cz * S - (ew ? 0 : 9); p.face = ew ? Math.PI / 2 : 0; }
+  p.px = p.x; p.pz = p.z;
   p.hp = p.maxHp; p.down = false; p.stun = 0;
   w.mounted = false; w.bike.x = p.x + 4000; w.bike.z = p.z; w.bike.speed = 0;               /* Bijli is left on the road: not reachable during the fight */
   w.locs.cleared[best.key] = false; w.locs.active = null;
@@ -1414,6 +1430,22 @@ function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
   scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
+  if (m.city) {
+    /* the arena's tall pieces and signs, faded whenever one stands between the camera and the fight */
+    var spec = w.streaming.specAt(w.player.x, w.player.z - 6) || w.streaming.specAt(w.player.x, w.player.z), av = spec && spec.kind === 'arena' && ctx.view && ctx.view.scene ? arenaview.createArenaView(ctx.view.scene, spec) : null;
+    var hero = av && new THREE.Vector3(), hero2 = av && new THREE.Vector3(), foe = av && new THREE.Vector3();
+    var off = av ? ctx.view.onFrame(function (camera, dt) {
+      var p = w.player, t = [hero.set(p.x, 1.0, p.z), hero2.set(p.x, 1.7, p.z)], best = null, bd = 9, i, l = w.combat.enemies;
+      for (i = 0; i < l.length; i++) { var e = l[i]; if (e.dead || e.st === 'dead') continue; var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
+      if (best) t.push(foe.set(best.x, 1.3, best.z));
+      av.fade(camera, t, dt);
+    }) : null;
+    ctx.debug.arena = av;
+    scope.add(function () {
+      if (off) off(); if (av) av.dispose(); ctx.debug.arena = null;
+      w.streaming = m.city; m.city = null; w.bounds = null; w.traffic.off = false;     /* the open city again */
+    });
+  }
   /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
   timers.push(setTimeout(function () {
     var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;
@@ -1903,6 +1935,580 @@ function createTitle() {
 }
 
 module.exports = { createTitle: createTitle };
+
+};
+defs["sim/arenagen"]=function(module,exports,require){
+/* sim: fight arenas as chunk specs. When the ride brings Toofan to a trouble spot, the fight is held in a closed arena built for that
+   kind of place instead of the open city: the arena is one spec at the location's chunk (same world position, so keys and clears line
+   up), and every chunk round it is bare ground the camera never sees past the backdrop. The spec has the usual fields (boxes, solids,
+   ramps, hazards, loc) plus `tall` (fadeable groups), `signs` (painted text for the view) and `bounds` (where the fight can go). */
+'use strict';
+
+var CONFIG = require('../data/config');
+var rngMod = require('../core/rng');
+var gen = require('./chunkgen');
+var kit = require('./arenakit');
+var arenas = require('./arenas');
+var D = require('../data/locations');
+
+function has(type) { return !!arenas.A[type]; }
+
+function build(seed, type, cx, cz) {
+  var S = CONFIG.CHUNK_SIZE, rng = rngMod.createRng(rngMod.hash32(seed ^ 0x3ae11a, cx, cz)), K = kit.createBuilder(rng);
+  var info = arenas.A[type](K), o = K.out, ox = cx * S, oz = cz * S, def = D.LOCATIONS[type];
+  o.boxes.unshift({ x0: -26, y0: -0.3, z0: -26, x1: 26, y1: 0, z1: 26, c: info.ground });            /* the ground under everything */
+  /* the view's fade test needs each tall group's box */
+  o.tall.forEach(function (g) {
+    var b = { x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 };
+    g.boxes.forEach(function (q) { b.x0 = Math.min(b.x0, q.x0); b.y0 = Math.min(b.y0, q.y0); b.z0 = Math.min(b.z0, q.z0); b.x1 = Math.max(b.x1, q.x1); b.y1 = Math.max(b.y1, q.y1); b.z1 = Math.max(b.z1, q.z1); });
+    g.box = b;
+  });
+  var B = arenas.BOUNDS;
+  return {
+    key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: ox, oz: oz, kind: 'arena', arena: type,
+    boxes: o.boxes, tall: o.tall, signs: o.signs, solids: o.solids, ramps: [], hazards: [],
+    bounds: { x0: ox + B.x0, z0: oz + B.z0, x1: ox + B.x1, z1: oz + B.z1 },
+    start: { x: ox + arenas.START.x, z: oz + arenas.START.z },
+    loc: { type: type, name: def.name, n: def.n, stick: def.stick, r: def.r, x: ox, z: oz, side: 0, axis: 'x',
+           spawns: info.spawns.map(function (s) { var q = kit.squeeze(s[0], s[1]); return { x: ox + q[0], z: oz + q[1] }; }) }
+  };
+}
+
+/* a chunk generator for the streaming system: the arena at (cx, cz), bare ground elsewhere */
+function createGen(type, acx, acz) {
+  return function (seed, cx, cz) {
+    if (cx === acx && cz === acz) return build(seed, type, cx, cz);
+    var S = CONFIG.CHUNK_SIZE;
+    return { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, kind: 'void', boxes: [], solids: [], ramps: [], hazards: [], loc: null };
+  };
+}
+
+module.exports = { has: has, build: build, createGen: createGen };
+
+};
+defs["sim/arenakit"]=function(module,exports,require){
+/* sim: the fight arenas' modular kit. Pure data: every piece is a set of small boxes (palette colours) in arena-local metres, with
+   footprints that block walking. A piece is built in its own frame (u across, v deep, y up; its front faces +v) and placed with a
+   position and a quarter-turn, so the same stall or barricade can stand on any edge. Tall pieces go into named groups the view
+   can fade when they come between the camera and the fight. No graphics, no randomness except the seeded rng passed in. */
+'use strict';
+
+var C = {
+  GREY: 0, DARK: 1, KHAKI: 2, TERRA: 3, OCHRE: 4, BLUE0: 5, SAGE: 6, BROWN: 7, CONCRETE: 8, PLUM: 9, ROSE0: 10, TEAL0: 11,
+  CHAR: 12, GREYP: 13, YELLOW: 14, BLACK: 15, SAFFRON: 16, MAGENTA: 17, TEAL: 18, LIME: 19, BLUE: 20, RED: 21, CREAM: 22, PURPLE: 23,
+  DIRT: 24, WHITE: 25, RUST: 26, PINK: 27, W_SAF: 28, W_ROSE: 29, W_TURQ: 30, W_LIME: 31, W_BLUE: 32, W_CREAM: 33, W_OCHRE: 34, W_ORCH: 35,
+  STONE: 36, STONE2: 37, STONE3: 38, WOOD: 39, WOOD2: 40, BRASS: 41, MARIGOLD: 42, LEMON: 43, CRIMSON: 44, DGREEN: 45, LEAF: 46, SLATE: 47,
+  SAND: 48, CEMENT: 49, CONC2: 50, BLUEGREY: 51, OFFWHITE: 52, NAVY: 53, STEEL: 54, BRICK: 55, BRICK2: 56, OLIVE: 57, PEACH: 58, MAUVE: 59
+};
+var WALLS = [C.W_SAF, C.W_ROSE, C.W_TURQ, C.W_LIME, C.W_BLUE, C.W_CREAM, C.W_OCHRE, C.W_ORCH, C.PEACH, C.OFFWHITE];
+var BRIGHT = [C.SAFFRON, C.MAGENTA, C.TEAL, C.LIME, C.BLUE, C.RED, C.YELLOW, C.PURPLE, C.PINK, C.MARIGOLD, C.CRIMSON];
+
+/* the builder: collects boxes (static), tall groups (fadeable), solids, signs and spawn points */
+/* layouts are written on a 30 m square; the pieces are placed closer in (x by SX, the north half by SZ) so the edges and the showpiece sit
+   inside the fight camera's frame while the pieces themselves keep their real size */
+var SX = 0.84, SZ = 0.84;
+function squeeze(x, z) { return [x * SX, z < 0 ? z * SZ : z]; }
+function createBuilder(rng) {
+  var out = { boxes: [], tall: [], solids: [], signs: [], lights: [] }, group = null;
+  var fr = { x: 0, z: 0, r: 0 };                                   /* the current piece frame: origin and quarter turns */
+  function tx(u, v) {                                              /* piece-local (u, v) to arena (x, z) */
+    switch (fr.r & 3) { case 0: return [fr.x + u, fr.z + v]; case 1: return [fr.x + v, fr.z - u]; case 2: return [fr.x - u, fr.z - v]; default: return [fr.x - v, fr.z + u]; }
+  }
+  function rect(u0, v0, u1, v1) { var a = tx(u0, v0), b = tx(u1, v1); return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]; }
+  var K = {
+    rng: rng, C: C, out: out,
+    /* a box in the piece frame */
+    b: function (u0, y0, v0, u1, y1, v1, c) {
+      var q = rect(Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1));
+      if (q[2] - q[0] < 0.005 || q[3] - q[1] < 0.005 || y1 - y0 < 0.005) return;
+      (group ? group.boxes : out.boxes).push({ x0: q[0], y0: y0, z0: q[1], x1: q[2], y1: y1, z1: q[3], c: c });
+    },
+    /* a footprint nobody walks through (height for the camera checks) */
+    s: function (u0, v0, u1, v1, h) { var q = rect(Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)); out.solids.push({ x0: q[0], z0: q[1], x1: q[2], z1: q[3], y1: h || 1 }); },
+    /* a painted sign (text drawn by the view): centre (u, y, v), size, facing the piece's front */
+    sign: function (u, y, v, w, h, text, bg, fg) { var p = tx(u, v); out.signs.push({ x: p[0], y: y, z: p[1], w: w, h: h, ry: (fr.r & 3) * Math.PI / 2, text: text, bg: bg, fg: fg, group: group ? group.id : null }); },
+    at: function (x, z, r) { var q = squeeze(x, z); fr = { x: q[0], z: q[1], r: r || 0 }; return K; },
+    SX: SX,
+    /* start / end a tall group (one fadeable mesh) */
+    tall: function (id) { group = { id: id, boxes: [] }; out.tall.push(group); return K; },
+    end: function () { group = null; return K; },
+    pick: function (a) { return a[Math.floor(rng.next() * a.length) % a.length]; },
+    range: function (a, b) { return a + rng.next() * (b - a); }
+  };
+  return K;
+}
+
+/* ---------------- the pieces (each draws at the current frame; front faces +v) ---------------- */
+var P = {};
+
+/* road barricade: yellow-black striped board on two A-frame legs, 2 m */
+P.barricade = function (K, len) {
+  var L = len || 2, h = L / 2, k, n = Math.round(L / 0.25);
+  [-h + 0.1, h - 0.16].forEach(function (u) { K.b(u, 0, -0.25, u + 0.06, 0.95, -0.19, K.C.GREYP); K.b(u, 0, 0.19, u + 0.06, 0.95, 0.25, K.C.GREYP); K.b(u - 0.04, 0, -0.3, u + 0.1, 0.05, 0.3, K.C.DARK); });
+  for (k = 0; k < n; k++) K.b(-h + k * L / n, 0.6, -0.04, -h + (k + 1) * L / n, 0.9, 0.04, k % 2 ? K.C.BLACK : K.C.YELLOW);
+  K.b(-h, 0.35, -0.03, h, 0.45, 0.03, K.C.WHITE);
+  K.s(-h, -0.3, h, 0.3, 1.0);
+};
+/* police tape between two cones */
+P.tape = function (K, len) {
+  var h = (len || 3) / 2;
+  [-h, h].forEach(function (u) { K.b(u - 0.18, 0, -0.18, u + 0.18, 0.08, 0.18, K.C.SAFFRON); K.b(u - 0.12, 0.08, -0.12, u + 0.12, 0.35, 0.12, K.C.SAFFRON); K.b(u - 0.09, 0.35, -0.09, u + 0.09, 0.55, 0.09, K.C.WHITE); K.b(u - 0.06, 0.55, -0.06, u + 0.06, 0.75, 0.06, K.C.SAFFRON); });
+  for (var k = 0; k < Math.round(h * 4); k++) K.b(-h + k * 0.5, 0.66, -0.01, -h + k * 0.5 + 0.5, 0.72, 0.01, k % 2 ? K.C.BLACK : K.C.YELLOW);
+  K.s(-h - 0.2, -0.2, h + 0.2, 0.2, 0.8);
+};
+/* low brick wall with a plastered coping, `len` long */
+P.lowWall = function (K, len, h, paint) {
+  var L = len, H = h || 0.9, u, y, row = 0;
+  for (y = 0; y < H - 0.12; y += 0.15, row++) for (u = -L / 2 + (row % 2 ? 0.14 : 0); u < L / 2; u += 0.28) K.b(Math.max(-L / 2, u), y, -0.12, Math.min(L / 2, u + 0.26), y + 0.13, 0.12, (row + Math.round(u * 3)) % 5 === 0 ? K.C.BRICK2 : K.C.BRICK);
+  K.b(-L / 2 - 0.03, H - 0.12, -0.15, L / 2 + 0.03, H, 0.15, paint || K.C.CEMENT);
+  K.s(-L / 2, -0.15, L / 2, 0.15, H);
+};
+/* steel railing with posts */
+P.railing = function (K, len) {
+  var L = len, u;
+  for (u = -L / 2; u <= L / 2 + 0.01; u += 0.9) K.b(u - 0.03, 0, -0.03, u + 0.03, 0.95, 0.03, K.C.STEEL);
+  K.b(-L / 2, 0.9, -0.035, L / 2, 0.96, 0.035, K.C.STEEL); K.b(-L / 2, 0.45, -0.02, L / 2, 0.5, 0.02, K.C.STEEL);
+  K.s(-L / 2, -0.1, L / 2, 0.1, 1.0);
+};
+/* crates and sacks */
+P.crate = function (K, s, c) {
+  var w = (s || 0.6) / 2, h = s || 0.6, col = c === undefined ? K.C.WOOD : c;
+  K.b(-w, 0, -w, w, h, w, col);
+  K.b(-w - 0.01, 0, -w - 0.01, -w + 0.06, h, w + 0.01, K.C.WOOD2); K.b(w - 0.06, 0, -w - 0.01, w + 0.01, h, w + 0.01, K.C.WOOD2);
+  K.b(-w, h * 0.45, -w - 0.015, w, h * 0.55, w + 0.015, K.C.WOOD2); K.b(-w - 0.01, h - 0.05, -w - 0.01, w + 0.01, h, w + 0.01, K.C.WOOD2);
+  K.s(-w, -w, w, w, h);
+};
+P.sack = function (K, c) {
+  var col = c === undefined ? K.C.KHAKI : c;
+  K.b(-0.32, 0, -0.22, 0.32, 0.28, 0.22, col); K.b(-0.28, 0.28, -0.18, 0.28, 0.36, 0.18, col); K.b(-0.08, 0.36, -0.06, 0.08, 0.42, 0.06, col);
+  K.b(-0.33, 0.12, -0.23, 0.33, 0.15, 0.23, K.C.BROWN);
+};
+P.drum = function (K, c) {
+  var col = c === undefined ? K.C.BLUE : c, r = 0.29, k;
+  for (k = 0; k < 3; k++) { var a = k * 0.07; K.b(-r + a, 0, -r + 0.2 - a * 2.6, r - a, 0.88, r - 0.2 + a * 2.6, col); K.b(-r + 0.2 - a * 2.6, 0, -r + a, r - 0.2 + a * 2.6, 0.88, r - a, col); }
+  K.b(-r + 0.02, 0.28, -r + 0.02, r - 0.02, 0.32, r - 0.02, K.C.DARK); K.b(-r + 0.02, 0.58, -r + 0.02, r - 0.02, 0.62, r - 0.02, K.C.DARK);
+  K.b(-0.24, 0.88, -0.24, 0.24, 0.9, 0.24, K.C.DARK); K.b(0.1, 0.9, 0.08, 0.16, 0.93, 0.14, K.C.GREY);
+  K.s(-r, -r, r, r, 0.9);
+};
+P.tyres = function (K, n) {
+  for (var k = 0; k < (n || 3); k++) { var y = k * 0.22; K.b(-0.36, y, -0.2, 0.36, y + 0.2, 0.2, K.C.CHAR); K.b(-0.2, y, -0.36, 0.2, y + 0.2, 0.36, K.C.CHAR); K.b(-0.14, y + 0.19, -0.14, 0.14, y + 0.21, 0.14, K.C.BLACK); }
+  K.s(-0.36, -0.36, 0.36, 0.36, (n || 3) * 0.22);
+};
+P.cylinder = function (K) {                                        /* red gas cylinder */
+  K.b(-0.15, 0, -0.15, 0.15, 0.62, 0.15, K.C.CRIMSON); K.b(-0.11, 0.62, -0.11, 0.11, 0.7, 0.11, K.C.CRIMSON); K.b(-0.05, 0.7, -0.05, 0.05, 0.78, 0.05, K.C.BRASS);
+  K.b(-0.16, 0.05, -0.16, 0.16, 0.08, 0.16, K.C.DARK);
+};
+/* wooden bench */
+P.bench = function (K, len) {
+  var L = (len || 1.8) / 2;
+  [-L + 0.1, L - 0.16].forEach(function (u) { K.b(u, 0, -0.2, u + 0.06, 0.42, -0.14, K.C.DARK); K.b(u, 0, 0.14, u + 0.06, 0.42, 0.2, K.C.DARK); K.b(u, 0.42, -0.24, u + 0.06, 0.9, -0.18, K.C.DARK); });
+  for (var k = 0; k < 3; k++) K.b(-L, 0.42, -0.2 + k * 0.14, L, 0.46, -0.1 + k * 0.14, K.C.WOOD);
+  K.b(-L, 0.62, -0.25, L, 0.7, -0.21, K.C.WOOD); K.b(-L, 0.8, -0.25, L, 0.88, -0.21, K.C.WOOD);
+  K.s(-L, -0.25, L, 0.22, 0.9);
+};
+/* the handcart (thela): two big wheels, a plank bed, goods heaped on it */
+P.cart = function (K, goods) {
+  var g = goods || [K.C.RED, K.C.LIME, K.C.SAFFRON, K.C.YELLOW], i, j;
+  K.b(-1.0, 0.62, -0.5, 1.0, 0.7, 0.5, K.C.WOOD); K.b(-1.0, 0.7, -0.52, 1.0, 0.84, -0.46, K.C.WOOD2); K.b(-1.0, 0.7, 0.46, 1.0, 0.84, 0.52, K.C.WOOD2);
+  [-0.56, 0.56].forEach(function (v) { K.b(-0.08, 0.05, v - 0.04, 0.08, 0.6, v + 0.04, K.C.DARK); K.b(-0.3, 0.12, v - 0.05, 0.3, 0.5, v + 0.05, K.C.DARK); K.b(-0.22, 0, v - 0.05, 0.22, 0.6, v + 0.05, K.C.DARK); K.b(-0.04, 0.27, v - 0.07, 0.04, 0.35, v + 0.07, K.C.GREY); });
+  K.b(1.0, 0.66, -0.35, 1.6, 0.72, -0.29, K.C.WOOD2); K.b(1.0, 0.66, 0.29, 1.6, 0.72, 0.35, K.C.WOOD2); K.b(-1.0, 0, -0.04, -0.9, 0.62, 0.04, K.C.WOOD2);
+  for (i = 0; i < 6; i++) for (j = 0; j < 3; j++) { var c = g[(i + j * 2) % g.length], hh = 0.12 + ((i * 7 + j * 3) % 4) * 0.03; K.b(-0.9 + i * 0.3, 0.7, -0.4 + j * 0.27, -0.66 + i * 0.3, 0.7 + hh, -0.17 + j * 0.27, c); }
+  K.s(-1.0, -0.56, 1.6, 0.56, 0.9);
+};
+/* a market stall: plank counter, goods, poles, a striped awning; front faces +v */
+P.stall = function (K, w, kind) {
+  var W = (w || 2.6) / 2, a = K.pick([K.C.RED, K.C.BLUE, K.C.SAFFRON, K.C.DGREEN, K.C.MAGENTA]), b2 = K.pick([K.C.WHITE, K.C.LEMON, K.C.OFFWHITE]), k, i;
+  K.b(-W, 0, -0.5, W, 0.85, 0.45, K.C.WOOD2); K.b(-W - 0.05, 0.85, -0.55, W + 0.05, 0.92, 0.55, K.C.WOOD);
+  for (i = 0; i < 6; i++) K.b(-W + 0.05, 0.1 + i * 0.12, 0.45, W - 0.05, 0.12 + i * 0.12, 0.47, K.C.WOOD);
+  [-W, W - 0.08].forEach(function (u) { K.b(u, 0, -0.55, u + 0.08, 2.35, -0.47, K.C.DARK); K.b(u, 0, 0.47, u + 0.08, 2.1, 0.55, K.C.DARK); });
+  var n = Math.round(W * 2 / 0.3);
+  for (k = 0; k < n; k++) { var u0 = -W - 0.1 + k * (W * 2 + 0.2) / n, u1 = u0 + (W * 2 + 0.2) / n; K.b(u0, 2.35, -0.7, u1, 2.45, 0.2, k % 2 ? a : b2); K.b(u0, 2.12, 0.2, u1, 2.36, 0.85, k % 2 ? a : b2); K.b(u0, 2.02, 0.82, u1, 2.12, 0.9, k % 2 ? b2 : a); }
+  var goods = kind === 'flowers' ? [K.C.MARIGOLD, K.C.LEMON, K.C.CRIMSON, K.C.WHITE, K.C.PINK] : kind === 'veg' ? [K.C.LIME, K.C.RED, K.C.DGREEN, K.C.SAFFRON, K.C.PURPLE] : kind === 'fruit' ? [K.C.YELLOW, K.C.RED, K.C.SAFFRON, K.C.LIME, K.C.LEAF] : kind === 'tea' ? [K.C.WHITE, K.C.BRASS, K.C.SAND] : BRIGHT;
+  for (i = 0; i < Math.round(W * 2 / 0.3); i++) for (k = 0; k < 2; k++) { var c = goods[(i * 3 + k) % goods.length], gh = 0.1 + ((i + k * 2) % 3) * 0.05; K.b(-W + 0.08 + i * 0.3, 0.92, -0.42 + k * 0.42, -W + 0.32 + i * 0.3, 0.92 + gh, -0.1 + k * 0.42, c); }
+  if (kind === 'flowers') for (i = 0; i < Math.round(W * 2 / 0.16); i++) K.b(-W + i * 0.16, 1.55 + (i % 3) * 0.05 - Math.sin(i / (W * 2 / 0.16) * Math.PI) * 0.25, 0.83, -W + i * 0.16 + 0.12, 1.67 + (i % 3) * 0.05 - Math.sin(i / (W * 2 / 0.16) * Math.PI) * 0.25, 0.92, i % 2 ? K.C.MARIGOLD : K.C.LEMON);
+  if (kind === 'tea') { K.b(-0.5, 0.92, -0.25, -0.2, 1.25, 0.05, K.C.BRASS); K.b(-0.45, 1.25, -0.2, -0.25, 1.32, 0.0, K.C.DARK); for (i = 0; i < 5; i++) K.b(0.1 + i * 0.14, 0.92, 0.1, 0.18 + i * 0.14, 1.02, 0.18, K.C.WHITE); }
+  else for (i = 0; i < 4; i++) K.b(-W + 0.25 + i * W * 0.5, 1.6, 0.5, -W + 0.35 + i * W * 0.5, 2.0 - (i % 2) * 0.15, 0.6, goods[i % goods.length]);   /* hanging goods */
+  K.b(-0.06, 2.0, 0.4, 0.06, 2.12, 0.5, K.C.DARK); K.b(-0.12, 1.88, 0.38, 0.12, 2.0, 0.52, K.C.LEMON);   /* the bulb */
+  K.s(-W, -0.55, W, 0.55, 2.4);
+};
+/* a parked auto-rickshaw: yellow and green, black canvas hood (front faces +v) */
+P.auto = function (K, look) {
+  var body = look ? K.C.DGREEN : K.C.YELLOW, top = K.C.BLACK, i;
+  K.b(-0.62, 0.22, -1.3, 0.62, 0.62, 0.9, body); K.b(-0.62, 0.22, -1.3, 0.62, 0.3, 0.9, K.C.DGREEN);
+  K.b(-0.55, 0.62, -1.25, 0.55, 1.02, -0.6, top); K.b(-0.6, 1.48, -1.3, 0.6, 1.62, 1.0, top); K.b(-0.56, 1.62, -1.2, 0.56, 1.68, 0.9, top);
+  [-0.6, 0.54].forEach(function (u) { K.b(u, 0.62, -1.3, u + 0.06, 1.48, -1.24, top); K.b(u, 0.62, 0.92, u + 0.06, 1.48, 0.98, K.C.DARK); });
+  K.b(-0.55, 0.62, 0.9, 0.55, 1.4, 0.96, K.C.STEEL); K.b(-0.5, 0.7, 0.96, 0.5, 1.35, 0.97, K.C.SLATE);
+  K.b(-0.26, 0.2, 0.9, 0.26, 0.62, 1.25, body); K.b(-0.14, 0.45, 1.25, 0.14, 0.62, 1.32, K.C.LEMON); K.b(-0.3, 0.62, 1.0, 0.3, 0.7, 1.1, K.C.DARK);
+  K.b(-0.5, 0.62, -0.5, 0.5, 0.75, 0.2, K.C.BROWN); K.b(-0.5, 0.75, -0.6, 0.5, 1.15, -0.5, K.C.BROWN);
+  for (i = 0; i < 6; i++) K.b(-0.55 + i * 0.2, 1.38, 1.0, -0.47 + i * 0.2, 1.48, 1.02, i % 2 ? K.C.RED : K.C.LEMON);   /* the fringe */
+  [[-0.66, -0.9], [0.5, -0.9]].forEach(function (q) { K.b(q[0], 0, q[1] - 0.25, q[0] + 0.16, 0.5, q[1] + 0.25, K.C.CHAR); K.b(q[0] + 0.02, 0.17, q[1] - 0.07, q[0] + 0.14, 0.33, q[1] + 0.07, K.C.GREY); });
+  K.b(-0.08, 0, 0.95, 0.08, 0.46, 1.35, K.C.CHAR); K.b(-0.2, 0.35, -1.35, 0.2, 0.5, -1.3, K.C.WHITE); K.b(-0.1, 0.38, -1.36, 0.1, 0.47, -1.35, K.C.BLACK);
+  K.s(-0.66, -1.32, 0.66, 1.35, 1.7);
+};
+/* a parked scooter */
+P.scooter = function (K, c) {
+  var col = c === undefined ? K.pick([K.C.RED, K.C.BLUE, K.C.WHITE, K.C.TEAL, K.C.GREYP]) : c;
+  K.b(-0.07, 0, 0.55, 0.07, 0.42, 0.85, K.C.CHAR); K.b(-0.07, 0, -0.75, 0.07, 0.42, -0.45, K.C.CHAR);
+  K.b(-0.2, 0.2, -0.75, 0.2, 0.62, -0.05, col); K.b(-0.18, 0.62, -0.7, 0.18, 0.72, -0.1, K.C.BLACK);
+  K.b(-0.18, 0.18, -0.05, 0.18, 0.26, 0.5, K.C.DARK); K.b(-0.16, 0.2, 0.45, 0.16, 0.95, 0.6, col);
+  K.b(-0.05, 0.85, 0.6, 0.05, 1.05, 0.68, K.C.DARK); K.b(-0.35, 1.02, 0.6, 0.35, 1.07, 0.66, K.C.DARK); K.b(-0.09, 0.9, 0.66, 0.09, 1.0, 0.72, K.C.LEMON);
+  K.b(-0.28, 1.07, 0.6, -0.22, 1.18, 0.62, K.C.GREY); K.b(0.22, 1.07, 0.6, 0.28, 1.18, 0.62, K.C.GREY);
+  K.b(-0.1, 0.0, 0.0, -0.06, 0.2, 0.04, K.C.GREY);
+  K.s(-0.22, -0.78, 0.22, 0.88, 1.1);
+};
+/* a lamp post with a bracket lamp */
+P.lamp = function (K, h) {
+  var H = h || 5.2;
+  K.b(-0.18, 0, -0.18, 0.18, 0.4, 0.18, K.C.CONC2); K.b(-0.07, 0.4, -0.07, 0.07, H, 0.07, K.C.STEEL);
+  K.b(-0.04, H - 0.1, -0.04, 0.04, H - 0.02, 1.1, K.C.STEEL); K.b(-0.16, H - 0.22, 0.85, 0.16, H - 0.08, 1.25, K.C.DARK); K.b(-0.13, H - 0.26, 0.88, 0.13, H - 0.22, 1.22, K.C.LEMON);
+  K.out.lights.push({ x: 0, y: H - 0.3, z: 0 });
+  K.s(-0.18, -0.18, 0.18, 0.18, H);
+};
+/* a voxel tree: trunk and a stack of leaf blocks (a neem / peepal) */
+P.tree = function (K, h) {
+  var H = h || 5, rng = K.rng, i, j, k;
+  K.b(-0.22, 0, -0.22, 0.22, H * 0.55, 0.22, K.C.WOOD2); K.b(-0.12, H * 0.4, -0.5, 0.12, H * 0.55, 0.12, K.C.WOOD2);
+  K.b(-0.5, 0, -0.5, 0.5, 0.35, 0.5, K.C.BRICK); K.b(-0.42, 0.35, -0.42, 0.42, 0.4, 0.42, K.C.DIRT);
+  for (i = -2; i <= 2; i++) for (j = -2; j <= 2; j++) for (k = 0; k < 3; k++) {
+    if (Math.abs(i) + Math.abs(j) + k > 4 || rng.next() < 0.15) continue;
+    var y = H * 0.5 + k * 0.6 + (Math.abs(i) + Math.abs(j)) * -0.15;
+    K.b(i * 0.6 - 0.32, y, j * 0.6 - 0.32, i * 0.6 + 0.32, y + 0.62, j * 0.6 + 0.32, (i + j + k) % 3 ? K.C.LEAF : K.C.DGREEN);
+  }
+  K.s(-0.5, -0.5, 0.5, 0.5, H);
+};
+/* a building front: plastered wall, shuttered shop on the ground, windows with sills and grilles, a balcony, AC units, a water tank.
+   w wide, h tall, d deep; the front faces +v at v = 0 */
+P.building = function (K, w, h, d, opt) {
+  opt = opt || {};
+  var W = w / 2, D = d || 6, H = h, wall = opt.wall === undefined ? K.pick(WALLS) : opt.wall, trim = opt.trim === undefined ? K.C.OFFWHITE : opt.trim, u, f, floors = Math.max(1, Math.floor((H - 0.4) / 3));
+  K.b(-W, 0, -D, W, H, 0, wall);
+  K.b(-W - 0.05, H, -D - 0.05, W + 0.05, H + 0.25, 0.08, trim);                                   /* parapet */
+  for (u = -W + 0.2; u < W - 0.2; u += 0.5) K.b(u, H + 0.25, -0.05, u + 0.12, H + 0.6, 0.06, trim);
+  K.b(-W, 2.9, 0, W, 3.05, 0.12, trim);                                                           /* floor band */
+  if (opt.shop !== false) {                                                                       /* the shop: shutter half up, goods inside */
+    var sc = K.pick([K.C.GREYP, K.C.BLUE, K.C.TEAL, K.C.SAFFRON, K.C.CRIMSON]);
+    for (u = -W + 0.3; u + 2.4 <= W - 0.2; u += 2.8) {
+      K.b(u, 0, -0.02, u + 2.4, 2.6, 0.03, K.C.DARK);
+      for (var k = 0; k < 6; k++) K.b(u, 1.6 + k * 0.17, 0.03, u + 2.4, 1.72 + k * 0.17, 0.06, sc);
+      K.b(u + 0.1, 0, 0.03, u + 2.3, 0.7, 0.4, K.C.WOOD2);
+      for (k = 0; k < 6; k++) K.b(u + 0.2 + k * 0.35, 0.7, 0.05, u + 0.45 + k * 0.35, 0.95 + (k % 3) * 0.08, 0.3, K.pick(BRIGHT));
+    }
+    if (opt.board) K.sign(0, 2.6 + 0.0 + 0.0, 0.14, Math.min(w - 0.6, 6), 0.55, opt.board, opt.boardBg || '#c2306f', opt.boardFg || '#ffffff');
+  }
+  for (f = 1; f < floors; f++) {
+    var y = f * 3 + 0.6;
+    for (u = -W + 0.6; u + 1.0 <= W - 0.4; u += 1.7) {
+      K.b(u, y, -0.02, u + 1.0, y + 1.3, 0.02, K.C.SLATE);
+      K.b(u - 0.08, y - 0.1, 0, u + 1.08, y, 0.12, trim); K.b(u - 0.08, y + 1.3, 0, u + 1.08, y + 1.4, 0.08, trim);
+      for (var g = 1; g < 4; g++) K.b(u + g * 0.25 - 0.015, y, 0.02, u + g * 0.25 + 0.015, y + 1.3, 0.05, K.C.DARK);
+      if ((f + Math.round(u)) % 3 === 0) { K.b(u + 0.1, y - 0.6, 0, u + 0.9, y - 0.15, 0.4, K.C.OFFWHITE); K.b(u + 0.15, y - 0.55, 0.4, u + 0.85, y - 0.2, 0.42, K.C.GREY); }   /* AC unit */
+    }
+    if (f === 1 && opt.balcony !== false) {                                                       /* a balcony with railing and washing */
+      K.b(-W * 0.6, f * 3, 0, W * 0.6, f * 3 + 0.15, 1.0, trim);
+      for (u = -W * 0.6; u <= W * 0.6; u += 0.2) K.b(u, f * 3 + 0.15, 0.95, u + 0.04, f * 3 + 1.05, 1.0, K.C.DARK);
+      K.b(-W * 0.6, f * 3 + 1.0, 0.95, W * 0.6, f * 3 + 1.06, 1.0, K.C.DARK);
+      for (u = -W * 0.5; u < W * 0.5; u += 0.55) K.b(u, f * 3 + 0.55, 0.9, u + 0.4, f * 3 + 1.0, 0.92, K.pick(BRIGHT));
+    }
+  }
+  if (opt.tank !== false) { K.b(-W + 0.6, H + 0.25, -D + 1, -W + 1.6, H + 1.25, -D + 2, K.C.CHAR); K.b(-W + 0.65, H + 1.25, -D + 1.05, -W + 1.55, H + 1.32, -D + 1.95, K.C.CHAR); }
+  K.s(-W, -D, W, 0, H);
+};
+/* steps: n steps rising toward -v */
+P.steps = function (K, w, n, c) {
+  for (var i = 0; i < n; i++) K.b(-w / 2, 0, -0.35 * (i + 1) - 0.0, w / 2, 0.16 * (i + 1), -0.35 * i, c === undefined ? K.C.STONE : c);
+};
+/* hanging marigold garland between two points along u at height y */
+P.garland = function (K, u0, u1, y, v, sag) {
+  var n = Math.max(4, Math.round(Math.abs(u1 - u0) / 0.12));
+  for (var i = 0; i <= n; i++) { var t = i / n, u = u0 + (u1 - u0) * t, yy = y - Math.sin(t * Math.PI) * (sag || 0.4); K.b(u - 0.05, yy - 0.05, v - 0.05, u + 0.05, yy + 0.05, v + 0.05, i % 3 ? K.C.MARIGOLD : K.C.CRIMSON); }
+};
+/* wires between two poles */
+P.wire = function (K, u0, u1, y, v) { var n = Math.round(Math.abs(u1 - u0) / 0.5); for (var i = 0; i < n; i++) { var t = i / n, yy = y - Math.sin(t * Math.PI) * 0.35; K.b(u0 + (u1 - u0) * t, yy, v - 0.015, u0 + (u1 - u0) * (t + 1 / n), yy + 0.03, v + 0.015, K.C.BLACK); } };
+/* an electric pole with a transformer box */
+P.pole = function (K, h) {
+  var H = h || 7;
+  K.b(-0.1, 0, -0.1, 0.1, H, 0.1, K.C.CONC2); K.b(-0.9, H - 0.6, -0.05, 0.9, H - 0.5, 0.05, K.C.DARK);
+  for (var k = -1; k <= 1; k++) K.b(k * 0.7 - 0.04, H - 0.5, -0.04, k * 0.7 + 0.04, H - 0.4, 0.04, K.C.WHITE);
+  K.b(-0.3, H * 0.45, 0.1, 0.3, H * 0.45 + 0.6, 0.45, K.C.GREYP);
+  K.s(-0.12, -0.12, 0.12, 0.12, H);
+};
+/* poster wall strip: a run of bright posters at eye height */
+P.posters = function (K, len, y) {
+  for (var u = -len / 2; u < len / 2 - 0.5; u += 0.75) K.b(u, (y || 1.0), 0, u + 0.6, (y || 1.0) + 0.85, 0.02, K.pick([K.C.MAGENTA, K.C.LEMON, K.C.SAFFRON, K.C.TEAL, K.C.RED, K.C.WHITE, K.C.LEAF]));
+};
+/* a paved floor: tiles in two tones (or stone flags), drawn as thin slabs */
+P.floor = function (K, x0, z0, x1, z1, a, b, s) {
+  var S = s || 1.0, x, z;
+  for (x = x0; x < x1 - 0.01; x += S) for (z = z0; z < z1 - 0.01; z += S) {
+    var c = ((Math.round((x - x0) / S) + Math.round((z - z0) / S)) % 2) ? a : b;
+    K.b(x + 0.02, 0, z + 0.02, Math.min(x1, x + S) - 0.02, 0.025, Math.min(z1, z + S) - 0.02, c);
+  }
+};
+
+/* scattered floor detail: cracks, oil stains, puddles, leaves, litter, a manhole; flat slabs, never in the way */
+P.scatter = function (K, x0, z0, x1, z1, n, kinds) {
+  var i, ks = kinds || ['crack', 'stain', 'leaf', 'paper', 'puddle'];
+  K.at(0, 0, 0);
+  for (i = 0; i < n; i++) {
+    var x = K.range(x0, x1), z = K.range(z0, z1), k = ks[i % ks.length], a;
+    if (k === 'crack') { for (a = 0; a < 5; a++) { var dx = K.range(-0.25, 0.25); K.b(x, 0.026, z, x + 0.35 + dx, 0.03, z + 0.04, K.C.STONE3); x += 0.35 + dx; z += K.range(-0.15, 0.15); } }
+    else if (k === 'stain') K.b(x, 0.026, z, x + K.range(0.5, 1.2), 0.029, z + K.range(0.4, 0.9), K.C.CHAR);
+    else if (k === 'puddle') { K.b(x, 0.026, z, x + K.range(0.8, 1.6), 0.03, z + K.range(0.5, 1.0), K.C.BLUEGREY); }
+    else if (k === 'leaf') { for (a = 0; a < 6; a++) { var lx = x + K.range(-0.6, 0.6), lz = z + K.range(-0.6, 0.6); K.b(lx, 0.026, lz, lx + 0.12, 0.034, lz + 0.08, a % 2 ? K.C.OLIVE : K.C.OCHRE); } }
+    else if (k === 'paper') { for (a = 0; a < 3; a++) { var px = x + K.range(-0.5, 0.5), pz = z + K.range(-0.5, 0.5); K.b(px, 0.026, pz, px + 0.16, 0.036, pz + 0.12, a % 2 ? K.C.OFFWHITE : K.C.PEACH); } }
+    else if (k === 'manhole') { K.b(x - 0.4, 0.026, z - 0.4, x + 0.4, 0.04, z + 0.4, K.C.STONE3); for (a = 0; a < 4; a++) K.b(x - 0.35, 0.04, z - 0.3 + a * 0.18, x + 0.35, 0.045, z - 0.26 + a * 0.18, K.C.CHAR); }
+    else if (k === 'marigold') { for (a = 0; a < 8; a++) { var mx = x + K.range(-0.5, 0.5), mz = z + K.range(-0.5, 0.5); K.b(mx, 0.026, mz, mx + 0.08, 0.07, mz + 0.08, a % 3 ? K.C.MARIGOLD : K.C.CRIMSON); } }
+    else if (k === 'brick') { K.b(x, 0, z, x + 0.24, 0.1, z + 0.12, K.C.BRICK); K.b(x + 0.3, 0, z + 0.1, x + 0.54, 0.1, z + 0.22, K.C.BRICK2); }
+  }
+};
+
+module.exports = { createBuilder: createBuilder, squeeze: squeeze, SX: SX, SZ: SZ, P: P, C: C, WALLS: WALLS, BRIGHT: BRIGHT };
+
+};
+defs["sim/arenas"]=function(module,exports,require){
+/* sim: the fight arenas' layouts, one per kind of trouble spot. Arena-local metres: the fight happens in the open middle, the camera
+   looks from the south (+z). So the south edge is only low things (barricades, tape, low walls, parked two-wheelers), the east and west
+   edges step up from stalls to sheds, and the tall showpiece stands to the north behind the fight. Tall pieces go in groups the view fades
+   if a swinging camera ever puts one in the way. Each layout also says where the men come in from. */
+'use strict';
+
+var kit = require('./arenakit');
+var P = kit.P, C = kit.C;
+
+/* the walkable rectangle and where Toofan walks in */
+var BOUNDS = (function () { var a = kit.squeeze(-12.6, -8.6), b = kit.squeeze(12.6, 11.6); return { x0: a[0], z0: a[1], x1: b[0], z1: b[1] }; })();
+var START = { x: 0, z: 9.5 };
+
+/* shared edges ----------------------------------------------------------- */
+function southBarrier(K, style) {                                  /* the camera side: nothing above 1.2 m */
+  var x;
+  if (style === 'wall') { for (x = -14; x < 14; x += 4) { K.at(x + 2, 13.6, 0); if (Math.abs(x + 2) > 2) P.lowWall(K, 3.9, 0.85); } K.at(0, 13.9, 0); P.tape(K, 3.6); }
+  else if (style === 'fence') { for (x = -14; x < 14; x += 2) { K.at(x + 1, 13.6, 0); K.b(-1, 0, -0.03, 1, 1.15, 0.03, C.SAFFRON); K.b(-1, 0, -0.06, -0.94, 1.2, 0.06, C.GREYP); for (var k = 0; k < 5; k++) K.b(-1, 0.15 + k * 0.22, -0.035, 1, 0.19 + k * 0.22, 0.035, C.MARIGOLD); K.s(-1, -0.1, 1, 0.1, 1.2); } }
+  else if (style === 'rail') { for (x = -14; x < 14; x += 4) { K.at(x + 2, 13.6, 0); P.railing(K, 3.9); } }
+  else { for (x = -14; x < 14; x += 2.4) { K.at(x + 1.2, 13.6, 0); if ((x + 14) % 7.2 < 2.4) P.tape(K, 2.2); else P.barricade(K, 2.2); } }
+  K.at(-9.5, 12.6, 0.25 * 0); P.scooter(K); K.at(-8.5, 12.7, 0); P.scooter(K); K.at(10, 12.6, 0); P.scooter(K);
+}
+function cornerTrees(K, nw, ne) {
+  if (nw) { K.tall('treeNW'); K.at(-13.5, -8.8, 0); P.tree(K, 5.5); K.end(); }
+  if (ne) { K.tall('treeNE'); K.at(13.5, -8.8, 0); P.tree(K, 5); K.end(); }
+}
+function backdrop(K, x0, x1, z, opts) {                           /* a row of building fronts facing the fight, as separate fadeable pieces */
+  var x = x0, i = 0;
+  while (x < x1 - 2) {
+    var w = Math.min(x1 - x, K.range(5, 7.5)), h = K.range(6.5, 11);
+    K.tall('back' + i + (opts && opts.tag || '')); K.at(x + w / 2, z, 0); P.building(K, (w - 0.2) * K.SX, h, 6, { board: opts && opts.boards ? opts.boards[i % opts.boards.length] : null, boardBg: opts && opts.bgs ? opts.bgs[i % opts.bgs.length] : null }); K.end();
+    x += w; i++;
+  }
+}
+
+/* the arenas ---------------------------------------------------------------- */
+var A = {};
+
+A.temple = function (K) {
+  var x, k;
+  P.floor(K, -12, -9, 12, 12, C.STONE, C.STONE2, 0.9); P.scatter(K, -10, -7, 10, 11, 26, ['crack', 'marigold', 'leaf', 'stain']);
+  /* the temple: plinth, steps, pillared porch, the stepped shikhara with a kalash and a saffron flag */
+  K.at(0, -9.2, 0); P.steps(K, 7, 4, C.STONE);
+  K.tall('temple').at(0, -10.6, 0);
+  K.b(-5, 0, -6, 5, 0.64, 0, C.STONE); K.b(-5.1, 0.6, -6.1, 5.1, 0.68, 0.1, C.STONE3);
+  for (x = -3.6; x <= 3.7; x += 2.4) { K.b(x - 0.25, 0.68, -0.6, x + 0.25, 3.6, -0.1, C.OFFWHITE); K.b(x - 0.32, 0.68, -0.67, x + 0.32, 0.9, -0.03, C.STONE); K.b(x - 0.32, 3.4, -0.67, x + 0.32, 3.6, -0.03, C.STONE); for (k = 0; k < 4; k++) K.b(x - 0.27, 1.1 + k * 0.6, -0.62, x + 0.27, 1.18 + k * 0.6, -0.08, C.SAFFRON); }
+  K.b(-4.4, 3.6, -1.2, 4.4, 4.0, 0.2, C.SAFFRON); K.b(-4.6, 4.0, -1.4, 4.6, 4.2, 0.4, C.MARIGOLD);
+  K.b(-4, 0.68, -5.6, 4, 4.0, -1.2, C.OFFWHITE); K.b(-1.1, 0.68, -1.25, 1.1, 3.0, -1.18, C.WOOD2); K.b(-0.95, 0.8, -1.18, 0.95, 2.85, -1.16, C.BRASS);
+  for (k = 0; k < 6; k++) { var s = 3.4 - k * 0.5, y = 4.0 + k * 1.05; K.b(-s, y, -5.4 + k * 0.35, s, y + 1.05, -1.6 - k * 0.3, k % 2 ? C.SAFFRON : C.OFFWHITE); K.b(-s - 0.1, y + 0.95, -5.5 + k * 0.35, s + 0.1, y + 1.05, -1.5 - k * 0.3, C.MARIGOLD); }
+  K.b(-0.7, 10.3, -3.9, 0.7, 10.9, -2.9, C.BRASS); K.b(-0.35, 10.9, -3.6, 0.35, 11.5, -3.2, C.BRASS); K.b(-0.08, 11.5, -3.45, 0.08, 12.1, -3.35, C.BRASS);
+  K.b(0.04, 11.4, -3.42, 0.08, 13.6, -3.38, C.DARK); K.b(0.08, 12.6, -3.42, 1.3, 13.5, -3.38, C.SAFFRON);
+  P.garland(K, -4.3, 4.3, 3.5, 0.25, 0.5);
+  for (x = -2.2; x <= 2.3; x += 1.1) { K.b(x - 0.02, 2.6, 0.18, x + 0.02, 3.5, 0.22, C.DARK); K.b(x - 0.12, 2.35, 0.08, x + 0.12, 2.6, 0.32, C.BRASS); }
+  K.sign(0, 4.95, 0.45, 5.4, 0.7, 'SHRI HANUMAN MANDIR', '#c8762f', '#fff3c4');
+  K.s(-5, -6, 5, 0, 12); K.end();
+  /* the lamp pillar (deepastambha) with diya shelves */
+  K.tall('deepa').at(7.2, -7.2, 0);
+  K.b(-0.6, 0, -0.6, 0.6, 0.4, 0.6, C.STONE3); K.b(-0.3, 0.4, -0.3, 0.3, 5.6, 0.3, C.STONE2);
+  for (k = 0; k < 6; k++) { var yy = 1.2 + k * 0.75, r = 0.75 - k * 0.07; K.b(-r, yy, -r, r, yy + 0.08, r, C.STONE); for (var d = 0; d < 4; d++) { var a = d * Math.PI / 2; K.b(Math.cos(a) * (r - 0.1) - 0.06, yy + 0.08, Math.sin(a) * (r - 0.1) - 0.06, Math.cos(a) * (r - 0.1) + 0.06, yy + 0.16, Math.sin(a) * (r - 0.1) + 0.06, C.MARIGOLD); } }
+  K.b(-0.4, 5.6, -0.4, 0.4, 5.8, 0.4, C.BRASS); K.s(-0.6, -0.6, 0.6, 0.6, 5.8); K.end();
+  /* a bell arch on the west side, and the pipal tree with a raised platform */
+  K.tall('bell').at(-7.5, -7.4, 0);
+  K.b(-1.2, 0, -0.15, -0.9, 3.2, 0.15, C.STONE2); K.b(0.9, 0, -0.15, 1.2, 3.2, 0.15, C.STONE2); K.b(-1.4, 3.2, -0.25, 1.4, 3.5, 0.25, C.STONE);
+  K.b(-0.02, 2.4, -0.02, 0.02, 3.2, 0.02, C.DARK); K.b(-0.3, 1.95, -0.3, 0.3, 2.45, 0.3, C.BRASS); K.b(-0.36, 1.9, -0.36, 0.36, 1.98, 0.36, C.BRASS);
+  K.s(-1.2, -0.2, -0.9, 0.2, 3.5); K.s(0.9, -0.2, 1.2, 0.2, 3.5); K.end();
+  K.tall('pipal').at(-12.6, -6.5, 0); K.b(-1.6, 0, -1.6, 1.6, 0.5, 1.6, C.STONE3); K.b(-1.5, 0.5, -1.5, 1.5, 0.55, 1.5, C.STONE); P.tree(K, 6.5);
+  for (k = 0; k < 6; k++) K.b(-0.24 + k * 0.08, 1.2 + (k % 2) * 0.15, 0.22, -0.2 + k * 0.08, 1.6, 0.25, k % 2 ? C.CRIMSON : C.MARIGOLD);   /* threads on the trunk */
+  K.s(-1.6, -1.6, 1.6, 1.6, 6.5); K.end();
+  /* west edge: flower and puja stalls facing the square; east edge: the chai stall, shoe racks, a bench */
+  K.at(-13.4, -1.5, 1); P.stall(K, 2.6, 'flowers'); K.at(-13.4, 2.0, 1); P.stall(K, 2.6, 'flowers'); K.at(-13.4, 5.6, 1); P.stall(K, 2.4, null);
+  K.at(13.4, -1.0, 3); P.stall(K, 2.6, 'tea'); K.at(13.4, 2.6, 3); P.stall(K, 2.4, 'flowers');
+  K.at(12.0, 6.6, 3); P.bench(K, 1.8);
+  K.at(-4.2, -8.0, 0); for (k = 0; k < 3; k++) { K.b(-0.9, k * 0.35, -0.2, 0.9, k * 0.35 + 0.04, 0.2, C.WOOD2); for (var j = 0; j < 5; j++) K.b(-0.8 + j * 0.34, k * 0.35 + 0.04, -0.12, -0.6 + j * 0.34, k * 0.35 + 0.12, 0.12, [C.BROWN, C.BLACK, C.RED, C.DARK][(j + k) % 4]); } K.s(-0.9, -0.2, 0.9, 0.2, 1.1);
+  /* rangoli in front of the steps */
+  K.at(0, -7.2, 0); for (k = 0; k < 4; k++) { var q = 1.4 - k * 0.32; K.b(-q, 0.025, -q * 0.6, q, 0.03 + k * 0.002, q * 0.6, [C.MAGENTA, C.MARIGOLD, C.WHITE, C.LIME][k]); }
+  backdrop(K, -16, -8.2, -12.6, { tag: 'w' }); backdrop(K, 8.6, 16, -12.6, { tag: 'e' });
+  southBarrier(K, 'wall');
+  return { ground: C.STONE3, spawns: [[-9, -5], [9, -5], [-1.8, -8], [3, -8], [-11, 3], [11, 3], [0, -7.5]] };
+};
+
+A.market = function (K) {
+  var x, k;
+  P.floor(K, -12, -9, 12, 12, C.CEMENT, C.CONC2, 0.8); P.scatter(K, -10, -7, 10, 11, 34, ['crack', 'stain', 'paper', 'leaf', 'puddle', 'manhole']);
+  K.at(0, 0, 0); for (x = -12; x < 12; x += 0.8) K.b(x, 0.026, -0.3, x + 0.6, 0.03, 0.3, C.GREYP);   /* the drain cover strip */
+  backdrop(K, -15, 15, -9.6, { boards: ['KIRANA STORE', 'SHARMA CLOTH HOUSE', 'MOBILE REPAIR', 'MITHAI BHANDAR', 'HARDWARE'], bgs: ['#d0312d', '#2a55b8', '#18a0a8', '#f08a24', '#7a3fa0'] });
+  /* wires over the street between two poles */
+  K.tall('poleW').at(-12.8, -8.4, 0); P.pole(K, 7.5); K.end(); K.tall('poleE').at(12.8, -8.4, 0); P.pole(K, 7.5); K.end();
+  K.at(0, -8.4, 0); P.wire(K, -12.8 * K.SX, 12.8 * K.SX, 7.0, 0); P.wire(K, -12.8 * K.SX, 12.8 * K.SX, 6.6, 0.1);
+  /* stalls down both sides, facing in */
+  var kinds = ['veg', 'fruit', 'flowers', 'veg'];
+  for (k = 0; k < 4; k++) { K.at(-13.4, -5 + k * 3.6, 1); P.stall(K, 3.0, kinds[k]); K.at(13.4, -5 + k * 3.6, 3); P.stall(K, 3.0, kinds[(k + 2) % 4]); }
+  /* the clutter the fight goes round: a cart, crates, sacks, a cylinder, a drum */
+  K.at(-9.4, 6.2, 1); P.cart(K); K.at(9.6, -6.6, 3); P.cart(K, [C.YELLOW, C.LIME, C.LEAF]);
+  K.at(-10.8, -7.2, 0); P.crate(K, 0.7); K.at(-10.0, -7.4, 0); P.crate(K, 0.6, C.WOOD2); K.at(-10.5, -7.3, 0); K.b(-0.3, 0.7, -0.3, 0.3, 1.3, 0.3, C.WOOD);
+  K.at(10.7, 8.4, 0); P.sack(K); K.at(10.0, 8.6, 0); P.sack(K, C.WHITE); K.at(10.4, 8.4, 0); K.b(-0.3, 0.36, -0.2, 0.3, 0.64, 0.2, C.KHAKI);
+  K.at(11.2, 5.3, 0); P.drum(K, C.BLUE); K.at(-11.2, 9.0, 0); P.cylinder(K);
+  K.at(0, -9.1, 0); P.posters(K, 8, 1.0);
+  southBarrier(K, 'barricade');
+  return { ground: C.GREY, spawns: [[-8, -7], [8, -7], [0, -8], [-11, 0], [11, 0], [-4, -7.5], [4, -7.5]] };
+};
+
+A.busstand = function (K) {
+  var x, k;
+  K.at(0, 0, 0); K.b(-12.5, 0, -9, 12.5, 0.02, 12, C.CHAR); P.scatter(K, -10, -5, 10, 11, 30, ['stain', 'crack', 'paper', 'puddle', 'manhole']); K.at(0, 0, 0);
+  for (x = -10; x <= 10; x += 4) { K.b(x - 0.06, 0.02, -6, x + 0.06, 0.03, -1, C.WHITE); }                       /* bay lines */
+  K.b(-12, 0.02, -6.1, 12, 0.03, -5.95, C.YELLOW); K.b(-12, 0.0, -9, 12, 0.18, -6.6, C.CEMENT); K.b(-12, 0.18, -6.62, 12, 0.2, -6.55, C.YELLOW);   /* the platform kerb */
+  for (x = -9; x <= 9; x += 6) { K.b(x - 1.4, 0.02, 3, x + 1.4, 0.03, 3.4, C.WHITE); }
+  /* the shelter: steel posts, a teal roof, benches, the timetable board */
+  K.tall('shelter').at(-5.5, -7.2, 0);
+  for (x = -5.5; x <= 5.6; x += 2.75) { K.b(x - 0.08, 0.18, -1.9, x + 0.08, 3.2, -1.74, C.STEEL); K.b(x - 0.08, 0.18, -0.08, x + 0.08, 3.0, 0.08, C.STEEL); }
+  K.b(-6, 3.0, -2.2, 6, 3.15, 0.5, C.TEAL); K.b(-6.1, 3.15, -2.3, 6.1, 3.35, 0.6, C.TEAL0); K.b(-6, 2.8, 0.45, 6, 3.0, 0.55, C.WHITE);
+  K.b(-5.6, 0.18, -1.95, 5.6, 2.6, -1.85, C.STEEL); K.b(-5.4, 0.9, -1.85, -1.0, 2.5, -1.82, C.WHITE);
+  for (k = 0; k < 6; k++) K.b(-5.2, 1.05 + k * 0.22, -1.82, -1.2, 1.13 + k * 0.22, -1.8, k % 2 ? C.SLATE : C.NAVY);
+  K.b(1.2, 1.0, -1.85, 5.2, 2.2, -1.82, C.MAGENTA); K.b(1.4, 1.2, -1.82, 3.4, 2.0, -1.8, C.LEMON);
+  K.sign(0, 3.05, 0.58, 6, 0.6, 'BUS STAND', '#18a0a8', '#ffffff');
+  K.at(-8.2, -8.6, 0); P.bench(K, 2.4); K.at(-3.0, -8.6, 0); P.bench(K, 2.4); K.at(-5.5, -7.2, 0);
+  K.s(-6, -2.2, 6, -1.7, 3.3); K.end();
+  /* the city bus at the platform: red and cream, a window row, the route board */
+  K.tall('bus').at(6.3, -10.8, 0);
+  var L = 5.4;
+  K.b(-L, 0.45, -1.25, L, 3.0, 1.25, C.CRIMSON); K.b(-L, 1.25, -1.26, L, 2.35, 1.26, C.SLATE); K.b(-L + 0.05, 2.35, -1.2, L - 0.05, 3.2, 1.2, C.OFFWHITE);
+  for (x = -L + 0.6; x < L - 0.6; x += 1.2) K.b(x, 1.25, 1.26, x + 0.08, 2.35, 1.3, C.OFFWHITE);
+  K.b(-L, 0.45, 1.25, L, 0.6, 1.3, C.CREAM); K.b(-L, 2.3, 1.26, L, 2.4, 1.3, C.CREAM);
+  K.b(-L + 1.4, 0.5, 1.26, -L + 2.4, 2.3, 1.32, C.DARK); K.b(2.0, 0.5, 1.26, 3.0, 2.3, 1.32, C.DARK);
+  K.b(L, 0.6, -1.1, L + 0.1, 2.9, 1.1, C.SLATE); K.b(L + 0.05, 2.45, -0.9, L + 0.12, 2.85, 0.9, C.BLACK);
+  [[-L + 1.6, 1], [-L + 1.6, -1], [L - 1.8, 1], [L - 1.8, -1]].forEach(function (q) { K.b(q[0] - 0.5, 0, q[1] * 1.0 - 0.18, q[0] + 0.5, 0.95, q[1] * 1.0 + 0.18, C.CHAR); K.b(q[0] - 0.25, 0.25, q[1] * 1.2 - 0.02, q[0] + 0.25, 0.7, q[1] * 1.2 + 0.02, C.GREY); });
+  K.sign(L + 0.13, 2.65, 0, 1.6, 0.36, '500-D', '#000000', '#ffd166');
+  K.s(-L, -1.25, L + 0.1, 1.3, 3.2); K.end();
+  /* east: the chai stall and luggage; west: the ticket booth and parked scooters */
+  K.at(13.4, -2.5, 3); P.stall(K, 2.8, 'tea'); K.at(13.4, 1.2, 3); P.stall(K, 2.4, 'fruit');
+  K.at(10.8, 5.6, 0); P.crate(K, 0.55, C.NAVY); K.at(11.4, 5.7, 0); P.sack(K, C.CRIMSON); K.at(11.0, 6.3, 0); K.b(-0.35, 0, -0.2, 0.35, 0.6, 0.2, C.BLUE); K.b(-0.1, 0.6, -0.04, 0.1, 0.7, 0.04, C.DARK);
+  K.tall('booth').at(-13.2, 1.0, 1);
+  K.b(-1.3, 0, -1.2, 1.3, 2.6, 0.8, C.W_CREAM); K.b(-1.45, 2.6, -1.35, 1.45, 2.8, 1.1, C.RED); K.b(-1.0, 1.0, 0.8, 1.0, 1.9, 0.84, C.SLATE); K.b(-1.1, 0.95, 0.8, 1.1, 1.0, 1.1, C.WOOD);
+  K.sign(0, 2.25, 0.86, 2.2, 0.35, 'TICKETS', '#d0312d', '#ffffff'); K.s(-1.3, -1.2, 1.3, 0.8, 2.8); K.end();
+  K.at(-12.2, 6.5, 1); P.scooter(K); K.at(-12.2, 7.5, 1); P.scooter(K);
+  K.tall('lampW').at(-12.8, -4.5, 1); P.lamp(K, 5.4); K.end();
+  backdrop(K, -16, 0.4, -13.4, { tag: 'b', boards: ['LODGE', 'TRAVELS'], bgs: ['#2a55b8', '#f08a24'] });
+  backdrop(K, 0.6, 16, -16.2, { tag: 'c', boards: ['HOTEL', 'MEDICAL'], bgs: ['#7a3fa0', '#18a0a8'] });
+  /* a news stall, dustbins, a hoarding on two legs */
+  K.at(-13.4, 4.4, 1); P.stall(K, 2.2, null);
+  [[-11.6, -6.8], [9.8, -7.4], [11.8, 7.4]].forEach(function (q) { K.at(q[0], q[1], 0); K.b(-0.28, 0, -0.28, 0.28, 0.85, 0.28, C.DGREEN); K.b(-0.3, 0.85, -0.3, 0.3, 0.92, 0.3, C.DARK); K.b(-0.12, 0.92, -0.05, 0.12, 0.96, 0.05, C.DARK); K.s(-0.3, -0.3, 0.3, 0.3, 0.95); });
+  K.tall('hoarding').at(13.6, -8.6, 3);
+  K.b(-2.2, 0, -0.1, -2.0, 6.0, 0.1, C.STEEL); K.b(2.0, 0, -0.1, 2.2, 6.0, 0.1, C.STEEL);
+  K.b(-2.6, 3.4, -0.12, 2.6, 6.2, 0.0, C.OFFWHITE); for (k = 0; k < 9; k++) K.b(-2.5 + k * 0.56, 3.5, 0.0, -2.0 + k * 0.56, 6.1, 0.04, [C.MAGENTA, C.MARIGOLD, C.LEMON, C.NAVY, C.CRIMSON, C.TEAL, C.LIME, C.MARIGOLD, C.MAGENTA][k]);
+  K.sign(0, 4.8, 0.06, 4.6, 1.0, 'TOOFAN COLA', '#e63946', '#ffffff');
+  K.s(-2.2, -0.1, 2.2, 0.1, 6.2); K.end();
+  southBarrier(K, 'rail');
+  return { ground: C.CHAR, spawns: [[-9, -5], [9, -6], [0, -5.5], [-11, 4], [11, 3], [5, -6.5], [-5, -5.5]] };
+};
+
+A.construction = function (K) {
+  var x, y, k;
+  K.at(0, 0, 0);
+  for (k = 0; k < 40; k++) { var px = K.range(-12, 12), pz = K.range(-9, 11), w = K.range(0.8, 2.6); K.b(px, 0.0, pz, px + w, 0.012 + (k % 4) * 0.004, pz + K.range(0.6, 2), k % 3 ? C.SAND : C.BROWN); }
+  for (k = 0; k < 6; k++) { var tz = -4 + k * 0.32; K.b(-11, 0.031, tz, 11, 0.035, tz + 0.18, C.BROWN); }      /* tyre tracks */
+  P.scatter(K, -10, -7, 10, 11, 30, ['brick', 'puddle', 'stain', 'paper', 'crack']);
+  /* the half-built frame: columns, slabs, rebar sticking up, scaffolding with planks in front */
+  K.tall('frame').at(-2, -10.6, 0);
+  for (y = 0; y < 3; y++) { for (x = -6; x <= 6; x += 3) { K.b(x - 0.2, y * 3.2, -5.2, x + 0.2, y * 3.2 + 3.0, -4.8, C.CEMENT); K.b(x - 0.2, y * 3.2, -0.4, x + 0.2, y * 3.2 + 3.0, 0, C.CEMENT); } K.b(-6.4, y * 3.2 + 3.0, -5.4, 6.4, y * 3.2 + 3.2, 0.2, y % 2 ? C.CONC2 : C.CEMENT); }
+  for (x = -6; x <= 6; x += 3) for (k = 0; k < 4; k++) K.b(x - 0.18 + k * 0.1, 9.6, -0.35, x - 0.15 + k * 0.1, 10.6, -0.32, C.RUST);
+  for (x = -5.6; x <= 5.6; x += 1.4) { K.b(x, 0, 0.6, x + 0.06, 6.6, 0.66, C.WOOD2); }
+  for (y = 1.6; y < 6.6; y += 1.6) { K.b(-6, y, 0.4, 6, y + 0.08, 1.0, C.WOOD); K.b(-6, y + 0.9, 0.95, 6, y + 0.96, 1.0, C.WOOD2); }
+  for (x = -5.6; x < 5.6; x += 2.8) K.b(x, 0.1, 0.62, x + 2.8, 6.4, 0.64, C.WOOD2);
+  K.b(-5.6, 0, -4.7, -0.6, 3.0, -4.6, C.BRICK); K.b(1.0, 0, -4.7, 5.6, 1.8, -4.6, C.BRICK);
+  K.sign(0, 3.6, 1.05, 4.4, 0.6, 'SITE - NO ENTRY', '#f2c230', '#17181b');
+  K.s(-6.4, -5.4, 6.4, 1.0, 10); K.end();
+  /* the cement mixer, the tower crane's mast in the far corner */
+  K.at(8.2, -7.6, 0); K.b(-0.8, 0, -0.5, 0.8, 0.5, 0.5, C.SAFFRON); K.b(-0.6, 0.5, -0.6, 0.6, 1.5, 0.6, C.SAFFRON); K.b(-0.5, 1.5, -0.4, 0.5, 1.8, 0.4, C.SAFFRON); K.b(-0.3, 1.8, -0.2, 0.3, 2.0, 0.2, C.DARK);
+  [[-0.7, -0.5], [0.7, -0.5], [-0.7, 0.5], [0.7, 0.5]].forEach(function (q) { K.b(q[0] - 0.1, 0, q[1] - 0.12, q[0] + 0.1, 0.36, q[1] + 0.12, C.CHAR); }); K.s(-0.8, -0.6, 0.8, 0.6, 2);
+  K.tall('crane').at(12.6, -11.6, 0);
+  for (y = 0; y < 16; y += 1) { K.b(-0.5, y, -0.5, -0.4, y + 1, -0.4, C.YELLOW); K.b(0.4, y, -0.5, 0.5, y + 1, -0.4, C.YELLOW); K.b(-0.5, y, 0.4, -0.4, y + 1, 0.5, C.YELLOW); K.b(0.4, y, 0.4, 0.5, y + 1, 0.5, C.YELLOW); K.b(-0.5, y + 0.45, -0.5, 0.5, y + 0.55, 0.5, C.YELLOW); }
+  K.b(-9, 16, -0.3, 3.5, 16.6, 0.3, C.YELLOW); K.b(2.5, 15.2, -0.6, 4, 16, 0.6, C.CONC2); K.b(-0.6, 16.6, -0.6, 0.6, 17.4, 0.6, C.SAFFRON);
+  K.b(-7.02, 9, -0.02, -6.98, 16, 0.02, C.DARK); K.b(-7.3, 8.6, -0.3, -6.7, 9.0, 0.3, C.SAFFRON);
+  K.s(-0.5, -0.5, 0.5, 0.5, 17); K.end();
+  /* west: brick stacks, cement bags, a sand heap, rebar; east: the site office cabin, a water drum, a wheelbarrow */
+  for (k = 0; k < 3; k++) { K.at(-12.4, -5 + k * 2.2, 1); for (y = 0; y < 5; y++) for (x = 0; x < 4; x++) K.b(-0.9 + x * 0.45 + (y % 2) * 0.1, y * 0.18, -0.55, -0.5 + x * 0.45 + (y % 2) * 0.1, y * 0.18 + 0.16, 0.55, (x + y + k) % 4 ? C.BRICK : C.BRICK2); K.s(-0.9, -0.55, 0.9, 0.55, 0.9); }
+  K.at(-12.0, 3.4, 1); for (y = 0; y < 4; y++) for (x = 0; x < 3 - (y > 1 ? 1 : 0); x++) K.b(-0.8 + x * 0.55 + y * 0.12, y * 0.2, -0.4, -0.3 + x * 0.55 + y * 0.12, y * 0.2 + 0.19, 0.4, C.OFFWHITE); K.s(-0.8, -0.4, 0.9, 0.4, 0.8);
+  K.at(-10.6, 7.6, 0); for (k = 0; k < 4; k++) K.b(-1.6 + k * 0.3, k * 0.25, -1.2 + k * 0.25, 1.6 - k * 0.3, k * 0.25 + 0.25, 1.2 - k * 0.25, C.SAND); K.s(-1.6, -1.2, 1.6, 1.2, 1);
+  K.at(-6.5, 7.4, 0); for (k = 0; k < 8; k++) K.b(-1.8, 0.05 + (k % 3) * 0.05, -0.3 + k * 0.07, 1.8, 0.09 + (k % 3) * 0.05, -0.27 + k * 0.07, C.RUST);
+  K.tall('cabin').at(13.2, -1.5, 3);
+  K.b(-2.6, 0, -1.2, 2.6, 2.6, 1.0, C.BLUE); for (x = -2.5; x < 2.6; x += 0.25) K.b(x, 0.05, 1.0, x + 0.08, 2.55, 1.04, C.NAVY);
+  K.b(-2.7, 2.6, -1.3, 2.7, 2.75, 1.15, C.GREYP); K.b(-1.9, 0, 1.0, -1.0, 2.0, 1.06, C.WHITE); K.b(0.3, 1.1, 1.0, 1.8, 1.9, 1.06, C.SLATE);
+  K.sign(0.6, 2.25, 1.07, 2.4, 0.3, 'SITE OFFICE', '#ffffff', '#1d3557'); K.s(-2.6, -1.2, 2.6, 1.05, 2.8); K.end();
+  K.at(11.6, 3.4, 0); P.drum(K, C.BLUE); K.at(12.2, 4.2, 0); P.drum(K, C.CRIMSON);
+  K.at(10.4, 7.6, 3); K.b(-0.3, 0.3, -0.4, 0.3, 0.65, 0.4, C.GREYP); K.b(-0.05, 0, 0.35, 0.05, 0.3, 0.55, C.CHAR); K.b(-0.35, 0.4, -1.0, -0.3, 0.45, -0.4, C.WOOD2); K.b(0.3, 0.4, -1.0, 0.35, 0.45, -0.4, C.WOOD2); K.s(-0.35, -1, 0.35, 0.6, 0.7);
+  K.at(-4, 0, 0); P.tyres(K, 2); K.at(5.5, 6.5, 0); K.b(-1.4, 0, -0.15, 1.4, 0.3, 0.15, C.WOOD); K.b(-1.4, 0.3, -0.12, 1.4, 0.36, 0.12, C.WOOD2);
+  backdrop(K, -16, 10.5, -17.4, { tag: 'k', boards: ['CEMENT DEPOT', 'STEEL TRADERS'], bgs: ['#5e5850', '#1d3557'] });
+  K.at(-1, -9.6, 0); P.posters(K, 6, 0.6); K.b(-3.2, 0, -0.1, 3.2, 2.2, -0.02, C.SAFFRON);
+  southBarrier(K, 'fence');
+  return { ground: C.DIRT, spawns: [[-9, -6], [9, -5], [-3, -8], [4, -8], [-11, 1], [11, 4], [0, -7]] };
+};
+
+A.petrol = function (K) {
+  var x, k;
+  P.floor(K, -12, -9, 12, 12, C.CONC2, C.STONE2, 1.0); P.scatter(K, -10, -7, 10, 11, 26, ['stain', 'stain', 'crack', 'paper', 'puddle']);
+  K.at(0, 0, 0); for (x = -11; x <= 11; x += 2.2) K.b(x, 0.026, 5.0, x + 1.2, 0.03, 5.2, C.WHITE);
+  /* the canopy over two pump islands, north of the fight */
+  K.tall('canopy').at(0, -10.6, 0);
+  [[-6.5, -0.6], [6.5, -0.6], [-6.5, -4.2], [6.5, -4.2]].forEach(function (q) { K.b(q[0] - 0.3, 0, q[1] - 0.3, q[0] + 0.3, 5.0, q[1] + 0.3, C.OFFWHITE); K.s(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 5); });
+  K.b(-8, 5.0, -5.2, 8, 5.5, 0.6, C.OFFWHITE); K.b(-8.05, 5.5, -5.25, 8.05, 6.1, 0.65, C.NAVY); K.b(-8.06, 5.62, 0.6, 8.06, 5.98, 0.68, C.MARIGOLD);
+  K.sign(0, 5.8, 0.7, 6, 0.42, 'DESI FUEL', '#1d3557', '#ffd166');
+  [-3.4, 3.4].forEach(function (u) {
+    K.b(u - 1.6, 0, -3.0, u + 1.6, 0.2, -1.6, C.CEMENT); K.b(u - 1.62, 0.2, -3.02, u + 1.62, 0.25, -1.58, C.YELLOW);
+    K.b(u - 0.45, 0.25, -2.6, u + 0.45, 1.9, -2.0, C.OFFWHITE); K.b(u - 0.4, 1.9, -2.55, u + 0.4, 2.1, -2.05, C.NAVY); K.b(u - 0.35, 1.2, -2.0, u + 0.35, 1.7, -1.97, C.SLATE);
+    K.b(u - 0.3, 1.3, -1.97, u + 0.3, 1.45, -1.95, C.LIME); K.b(u + 0.45, 0.9, -2.4, u + 0.6, 1.3, -2.2, C.DARK); K.b(u + 0.55, 0.4, -2.35, u + 0.6, 0.95, -2.3, C.DARK);
+    K.s(u - 1.6, -3.0, u + 1.6, -1.6, 2);
+  });
+  K.end();
+  /* the kiosk, the price board on its pole */
+  K.tall('kiosk').at(-12.0, -6.0, 1);
+  K.b(-2.2, 0, -1.4, 2.2, 3.0, 1.0, C.OFFWHITE); K.b(-2.3, 3.0, -1.5, 2.3, 3.4, 1.2, C.NAVY); K.b(-1.6, 0.9, 1.0, 1.6, 2.4, 1.04, C.SLATE); K.b(1.7, 0, 1.0, 2.1, 2.2, 1.06, C.WOOD2);
+  K.sign(0, 3.2, 1.22, 3.6, 0.32, 'AIR - WATER - OIL', '#1d3557', '#ffffff'); K.s(-2.2, -1.4, 2.2, 1.0, 3.4); K.end();
+  K.tall('price').at(12.4, -8.2, 3);
+  K.b(-0.12, 0, -0.12, 0.12, 6.4, 0.12, C.STEEL); K.b(-1.1, 4.4, -0.15, 1.1, 6.8, 0.15, C.NAVY);
+  K.sign(0, 6.25, 0.16, 2.0, 0.5, 'DESI FUEL', '#1d3557', '#ffd166'); K.sign(0, 5.5, 0.16, 2.0, 0.5, 'PETROL 104', '#000000', '#8cc63f'); K.sign(0, 4.85, 0.16, 2.0, 0.5, 'DIESEL 91', '#000000', '#f2c230');
+  K.s(-0.15, -0.15, 0.15, 0.15, 6.8); K.end();
+  /* west: the air pump, oil drums, tyres; east: a parked water tanker */
+  K.at(-11.6, 0.6, 1); K.b(-0.25, 0, -0.2, 0.25, 1.3, 0.2, C.CRIMSON); K.b(-0.2, 1.3, -0.15, 0.2, 1.5, 0.15, C.OFFWHITE); K.b(-0.04, 0.6, 0.2, 0.04, 0.64, 0.8, C.BLACK); K.s(-0.25, -0.2, 0.25, 0.2, 1.5);
+  K.at(-12.0, 3.4, 0); P.drum(K, C.CRIMSON); K.at(-11.3, 3.6, 0); P.drum(K, C.NAVY); K.at(-11.7, 4.4, 0); P.drum(K, C.YELLOW); K.at(-11.2, 6.6, 0); P.tyres(K, 4); K.at(-12.0, 7.4, 0); P.tyres(K, 2);
+  K.tall('tanker').at(13.4, 2.0, 3);
+  K.b(-1.1, 0.5, -3.2, 1.1, 0.75, 3.2, C.DARK); K.b(-1.1, 0.75, 1.6, 1.1, 2.7, 3.2, C.BLUE); K.b(-1.05, 1.7, 3.2, 1.05, 2.5, 3.24, C.SLATE); K.b(-1.12, 0.9, 3.2, 1.12, 1.4, 3.3, C.GREYP);
+  for (k = 0; k < 3; k++) K.b(-1.05 + k * 0.05, 0.85 + k * 0.08, -3.1, 1.05 - k * 0.05, 2.35 - k * 0.08, 1.4, C.OFFWHITE);
+  K.b(-0.2, 2.35, -1.2, 0.2, 2.5, -0.8, C.STEEL); for (x = -2.6; x < 1.2; x += 1.2) K.b(-1.12, 1.4, x, 1.12, 1.48, x + 0.08, C.STEEL);
+  [[-1.05, 2.4], [1.05, 2.4], [-1.05, -1.6], [1.05, -1.6], [-1.05, -2.6], [1.05, -2.6]].forEach(function (q) { K.b(q[0] - 0.2, 0, q[1] - 0.45, q[0] + 0.2, 0.9, q[1] + 0.45, C.CHAR); });
+  K.sign(0, 1.6, -3.12, 1.8, 0.4, 'DRINKING WATER', '#2a55b8', '#ffffff');
+  K.s(-1.2, -3.2, 1.2, 3.3, 2.7); K.end();
+  K.at(12.0, 8.0, 3); P.cylinder(K);
+  /* the fire bucket stand, a water cooler, scooters waiting at the pumps, the town behind */
+  K.at(-6.0, -8.3, 0); K.b(-0.9, 0, -0.1, 0.9, 1.6, 0.0, C.CRIMSON); K.b(-0.95, 1.6, -0.15, 0.95, 1.7, 0.05, C.CRIMSON);
+  for (k = 0; k < 4; k++) { K.b(-0.8 + k * 0.42, 0.7, 0.0, -0.5 + k * 0.42, 1.0, 0.25, C.CRIMSON); K.b(-0.78 + k * 0.42, 0.96, 0.02, -0.52 + k * 0.42, 1.0, 0.23, C.SAND); }
+  K.b(-0.7, 0.1, 0, -0.4, 0.6, 0.25, C.CRIMSON); K.sign(0, 1.35, 0.01, 1.6, 0.3, 'FIRE', '#e63946', '#ffffff'); K.s(-0.9, -0.1, 0.9, 0.3, 1.7);
+  K.at(5.8, -8.4, 0); K.b(-0.35, 0, -0.3, 0.35, 1.3, 0.3, C.STEEL); K.b(-0.3, 1.3, -0.25, 0.3, 1.36, 0.25, C.OFFWHITE); K.b(-0.1, 0.8, 0.3, 0.1, 0.9, 0.36, C.STEEL); K.s(-0.35, -0.3, 0.35, 0.3, 1.3);
+  K.at(-2.0, -9.4, 1); P.scooter(K); K.at(2.4, -9.4, 3); P.scooter(K);
+  K.at(0, -10.0, 0); K.sign(0, 1.8, 0, 2.2, 0.36, 'NO SMOKING', '#e63946', '#ffffff');
+  backdrop(K, -16, 16, -15.2, { tag: 'p', boards: ['TYRE WORKS', 'DHABA', 'AUTO PARTS'], bgs: ['#17181b', '#f08a24', '#2a55b8'] });
+  cornerTrees(K, true, false);
+  /* a low planter kerb with shrubs on the south side, then barricades */
+  K.at(0, 12.2, 0); for (x = -11; x < 11; x += 2.2) { K.b(x, 0, -0.3, x + 2.0, 0.4, 0.3, C.CEMENT); K.b(x + 0.1, 0.4, -0.25, x + 1.9, 0.7, 0.25, (x | 0) % 2 ? C.LEAF : C.DGREEN); }
+  southBarrier(K, 'barricade');
+  return { ground: C.CONC2, spawns: [[-8, -6], [8, -6], [0, -7], [-10, 2], [10, -1], [-4, -7], [4, -7]] };
+};
+
+module.exports = { A: A, BOUNDS: BOUNDS, START: START, southBarrier: southBarrier, backdrop: backdrop, cornerTrees: cornerTrees };
 
 };
 defs["sim/bike"]=function(module,exports,require){
@@ -3525,6 +4131,7 @@ function blocked(t, e, world) {
 
 function step(t, world) {
   var p = world.player, rng = world.rng, dt = 1 / 60, i, e;
+  if (t.off) { t.list.length = 0; return; }        /* a fight arena: no passing traffic, people or animals */
   t.tick++;
   if (t.tick % 20 === 0) {
     var cls = ['veh', 'ped', 'animal'][t.tick / 20 % 3 | 0];
@@ -3743,8 +4350,32 @@ function step(world, input) {
   if (s.pressed.block) { world.counters.blocks++; world.bus.emit('action', { type: 'block' }); }
   if (s.pressed.finisher && p.rage >= 100) { world.counters.finishers++; p.rage = 0; world.bus.emit('action', { type: 'finisher' }); }
   combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
+  if (world.bounds) keepInArena(world);
   world.streaming.update(p.x, p.z);
   world.tick++;
+}
+
+/* in a fight arena (world.bounds set by the mission), nobody walks through the props or out of the arena: the hero and every man are
+   pushed out of solid footprints and kept inside the rectangle. The open city never sets bounds, so the street plays as before. */
+var ARENA_R = 0.35;
+function pushOut(o, world) {
+  var near = world.streaming.solidsNear(o.x, o.z, ARENA_R + 0.1, []), i;
+  for (i = 0; i < near.length; i++) {
+    var q = near[i]; if (q.y1 < 0.25) continue;
+    var cx = Math.max(q.x0, Math.min(q.x1, o.x)), cz = Math.max(q.z0, Math.min(q.z1, o.z)), dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz);
+    if (d >= ARENA_R) continue;
+    if (d < 1e-5) {                                   /* inside the footprint: leave by the nearest side */
+      var l = o.x - q.x0, r = q.x1 - o.x, t = o.z - q.z0, b = q.z1 - o.z, m = Math.min(l, r, t, b);
+      if (m === l) o.x = q.x0 - ARENA_R; else if (m === r) o.x = q.x1 + ARENA_R; else if (m === t) o.z = q.z0 - ARENA_R; else o.z = q.z1 + ARENA_R;
+    } else { o.x = cx + dx / d * ARENA_R; o.z = cz + dz / d * ARENA_R; }
+  }
+  var B = world.bounds;
+  o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
+}
+function keepInArena(world) {
+  pushOut(world.player, world);
+  var l = world.combat.enemies, i;
+  for (i = 0; i < l.length; i++) if (!l[i].dead) pushOut(l[i], world);
 }
 
 /* order-stable fingerprint of everything that must be identical between two runs */
@@ -3879,7 +4510,7 @@ function createView(canvas, tierName) {
   var hemi = new THREE.HemisphereLight('#dfeaff', '#7a6a58', 0.85); scene.add(hemi);
   var sun = new THREE.DirectionalLight('#fff3dc', 0.75); sun.position.set(-20, 40, 15); scene.add(sun);
 
-  var chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  var chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true }), frameHooks = [];
   var chunks = {}, chunkBytes = 0, disposed = false;
 
   function resize() {
@@ -3931,9 +4562,11 @@ function createView(canvas, tierName) {
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }
     },
     render: function () {
-      var n = performance.now(); if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      var n = performance.now(), dt = lastT ? Math.min(0.1, (n - lastT) / 1000) : 1 / 60; if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
+      for (var h = 0; h < frameHooks.length; h++) frameHooks[h](camera, dt);   /* last word before drawing, once the camera is placed (the arena's see-through fade) */
       renderer.render(scene, camera);
     },
+    onFrame: function (fn) { frameHooks.push(fn); return function () { var i = frameHooks.indexOf(fn); if (i >= 0) frameHooks.splice(i, 1); }; },
     stats: function () {
       var i = renderer.info;
       return { triangles: i.render.triangles, calls: i.render.calls, bytes: chunkBytes, chunkMeshes: Object.keys(chunks).length, geometries: i.memory.geometries, ms: frameMs, tier: tierId };
@@ -3948,6 +4581,86 @@ function createView(canvas, tierName) {
 }
 
 module.exports = { createView: createView };
+
+};
+defs["view/arenaview"]=function(module,exports,require){
+/* view: the fight arena's tall pieces and painted signs. Each tall piece (the temple, a bus, a building front, a tree) is its own mesh,
+   so that when the camera swings round and one comes between it and the fight, it fades to see-through and comes back once the view is
+   clear. Signs are small canvas textures (shop boards, the temple name, the price board) fixed to their piece. */
+'use strict';
+
+var CONFIG = require('../data/config');
+var boxmesh = require('./boxmesh');
+
+function geom(boxes) {
+  var a = boxmesh.boxesToArrays(boxes, CONFIG.PALETTE), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3));
+  g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere();
+  return { g: g, tris: a.triangles };
+}
+function signTexture(s) {
+  var cv = document.createElement('canvas'), H = 64, W = Math.max(64, Math.round(H * s.w / s.h / 8) * 8), g = cv.getContext('2d');
+  cv.width = Math.min(1024, W); cv.height = H;
+  g.fillStyle = s.bg || '#c2306f'; g.fillRect(0, 0, cv.width, H);
+  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3; g.strokeRect(4, 4, cv.width - 8, H - 8);
+  var fs = 40; g.font = '900 ' + fs + 'px "Arial Black",Impact,system-ui,sans-serif';
+  while (g.measureText(s.text).width > cv.width - 24 && fs > 12) { fs -= 2; g.font = '900 ' + fs + 'px "Arial Black",Impact,system-ui,sans-serif'; }
+  g.fillStyle = s.fg || '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.text, cv.width / 2, H / 2 + 2);
+  var t = new THREE.CanvasTexture(cv); t.anisotropy = 4; return t;
+}
+/* does the segment a->b pass through the box (slab test)? */
+function hits(a, b, q) {
+  var t0 = 0, t1 = 1, d = [b.x - a.x, b.y - a.y, b.z - a.z], o = [a.x, a.y, a.z], lo = [q.x0, q.y0, q.z0], hi = [q.x1, q.y1, q.z1], i;
+  for (i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-6) { if (o[i] < lo[i] || o[i] > hi[i]) return false; continue; }
+    var u = (lo[i] - o[i]) / d[i], v = (hi[i] - o[i]) / d[i]; if (u > v) { var w = u; u = v; v = w; }
+    t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) return false;
+  }
+  return true;
+}
+
+function createArenaView(scene, spec) {
+  var root = new THREE.Group(), pieces = [], tris = 0;
+  root.position.set(spec.ox, 0, spec.oz); scene.add(root);
+  var byGroup = {};
+  (spec.tall || []).forEach(function (grp) {
+    if (!grp.boxes.length) return;
+    var G = geom(grp.boxes), mat = new THREE.MeshLambertMaterial({ vertexColors: true }), m = new THREE.Mesh(G.g, mat);
+    root.add(m); tris += G.tris;
+    var b = grp.box, P = { id: grp.id, mesh: m, mat: mat, mats: [mat], box: { x0: b.x0 + spec.ox - 0.2, y0: b.y0, z0: b.z0 + spec.oz - 0.2, x1: b.x1 + spec.ox + 0.2, y1: b.y1 + 0.3, z1: b.z1 + spec.oz + 0.2 }, a: 1 };
+    pieces.push(P); byGroup[grp.id] = P;
+  });
+  (spec.signs || []).forEach(function (s) {
+    var tex = signTexture(s), mat = new THREE.MeshBasicMaterial({ map: tex }), m = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h), mat);
+    m.position.set(s.x, s.y, s.z); m.rotation.y = s.ry; root.add(m);
+    var P = s.group && byGroup[s.group]; if (P) P.mats.push(mat); else pieces.push({ id: 'sign', mesh: m, mat: mat, mats: [mat], box: null, a: 1 });
+  });
+  return {
+    triangles: function () { return tris; },
+    /* each frame, before drawing: fade whatever stands between the camera and the people who matter */
+    fade: function (camera, targets, dt) {
+      var c = camera.position, k = 1 - Math.exp(-(dt || 1 / 60) * 14), i, j;
+      for (i = 0; i < pieces.length; i++) {
+        var P = pieces[i]; if (!P.box) continue;
+        var block = false;
+        for (j = 0; j < targets.length && !block; j++) block = hits(c, targets[j], P.box);
+        P.a += ((block ? 0.22 : 1) - P.a) * k;
+        var see = P.a < 0.985;
+        P.mats.forEach(function (m) { m.transparent = see; m.opacity = see ? P.a : 1; m.depthWrite = !see; });
+        P.blocking = block;
+      }
+    },
+    faded: function () { return pieces.filter(function (P) { return P.blocking; }).map(function (P) { return P.id; }); },
+    dispose: function () {
+      scene.remove(root);
+      root.traverse(function (m) { if (m.isMesh) { m.geometry.dispose(); if (m.material.map) m.material.map.dispose(); m.material.dispose(); } });
+    }
+  };
+}
+
+module.exports = { createArenaView: createArenaView, hits: hits };
 
 };
 defs["view/bikevox"]=function(module,exports,require){

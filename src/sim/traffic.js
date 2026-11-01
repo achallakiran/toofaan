@@ -70,6 +70,7 @@ function blocked(t, e, world) {
 
 function step(t, world) {
   var p = world.player, rng = world.rng, dt = 1 / 60, i, e;
+  if (t.off) { t.list.length = 0; return; }        /* a fight arena: no passing traffic, people or animals */
   t.tick++;
   if (t.tick % 20 === 0) {
     var cls = ['veh', 'ped', 'animal'][t.tick / 20 % 3 | 0];

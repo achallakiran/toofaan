@@ -159,8 +159,32 @@ function step(world, input) {
   if (s.pressed.block) { world.counters.blocks++; world.bus.emit('action', { type: 'block' }); }
   if (s.pressed.finisher && p.rage >= 100) { world.counters.finishers++; p.rage = 0; world.bus.emit('action', { type: 'finisher' }); }
   combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
+  if (world.bounds) keepInArena(world);
   world.streaming.update(p.x, p.z);
   world.tick++;
+}
+
+/* in a fight arena (world.bounds set by the mission), nobody walks through the props or out of the arena: the hero and every man are
+   pushed out of solid footprints and kept inside the rectangle. The open city never sets bounds, so the street plays as before. */
+var ARENA_R = 0.35;
+function pushOut(o, world) {
+  var near = world.streaming.solidsNear(o.x, o.z, ARENA_R + 0.1, []), i;
+  for (i = 0; i < near.length; i++) {
+    var q = near[i]; if (q.y1 < 0.25) continue;
+    var cx = Math.max(q.x0, Math.min(q.x1, o.x)), cz = Math.max(q.z0, Math.min(q.z1, o.z)), dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz);
+    if (d >= ARENA_R) continue;
+    if (d < 1e-5) {                                   /* inside the footprint: leave by the nearest side */
+      var l = o.x - q.x0, r = q.x1 - o.x, t = o.z - q.z0, b = q.z1 - o.z, m = Math.min(l, r, t, b);
+      if (m === l) o.x = q.x0 - ARENA_R; else if (m === r) o.x = q.x1 + ARENA_R; else if (m === t) o.z = q.z0 - ARENA_R; else o.z = q.z1 + ARENA_R;
+    } else { o.x = cx + dx / d * ARENA_R; o.z = cz + dz / d * ARENA_R; }
+  }
+  var B = world.bounds;
+  o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
+}
+function keepInArena(world) {
+  pushOut(world.player, world);
+  var l = world.combat.enemies, i;
+  for (i = 0; i < l.length; i++) if (!l[i].dead) pushOut(l[i], world);
 }
 
 /* order-stable fingerprint of everything that must be identical between two runs */
