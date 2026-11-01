@@ -16,6 +16,7 @@ var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
+var musicMod = require('./view/music');
 
 function boot() {
   var storage = null;
@@ -46,10 +47,20 @@ function boot() {
     b.innerHTML = sfx.on ? ON : OFF;
     b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = on ? ON : OFF; });
     document.body.appendChild(b);
+    /* the music switch beside it: music off keeps the effects */
+    var music = musicMod.createMusic(sfx), mb = document.createElement('button');
+    var NOTE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="17.5" cy="16" r="2.5" fill="#fff"/></svg>';
+    var NOTE_OFF = NOTE.replace('</svg>', '<path d="M3 3l18 18" stroke="#ff5a5a"/></svg>');
+    mb.setAttribute('aria-label', 'Music'); mb.setAttribute('data-ok', '1');
+    mb.style.cssText = b.style.cssText.replace('left:max(12px,env(safe-area-inset-left))', 'left:calc(max(12px,env(safe-area-inset-left)) + 48px)');
+    mb.innerHTML = music.enabled ? NOTE : NOTE_OFF;
+    mb.addEventListener('click', function () { var on = music.toggle(); mb.innerHTML = on ? NOTE : NOTE_OFF; window.dispatchEvent(new Event('toofan:music')); });
+    document.body.appendChild(mb);
   })();
 
   var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };
+  ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
   var modes = modesMod.createModes(ctx);
   modes.register(freeroam.createFreeroam());
   modes.register(studio.createStudio());
@@ -57,6 +68,7 @@ function boot() {
   modes.register(title.createTitle());
   var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name, args) {
+    if (name === 'studio' || (name === 'freeroam' && !(args && args.mission))) musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer views are silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
     try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }

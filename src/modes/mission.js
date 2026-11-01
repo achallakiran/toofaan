@@ -15,6 +15,7 @@ var sfxmod = require('../view/sfx');
 var streamingMod = require('../sim/streaming');
 var arenagen = require('../sim/arenagen');
 var arenaview = require('../view/arenaview');
+var musicMod = require('../view/music');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -49,6 +50,7 @@ function place(ctx, m) {
 function watch(ctx, scope, m) {
   var w = ctx.world, timers = [];
   w.combat.enemies.length = 0; w.combat.auto = false;
+  var music = musicMod.createMusic(sfxmod.createSfx()); music.setTrack('arena');
   scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
   if (m.city) {
     /* the arena's tall pieces and signs, faded whenever one stands between the camera and the fight */
@@ -76,6 +78,7 @@ function watch(ctx, scope, m) {
   }, 1500));
   scope.add(ctx.bus.on('location:clear', function (e) {
     if (e.key !== m.brawlKey) return;
+    music.setTrack('sting');
     timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));
     timers.push(setTimeout(function () { ctx.go('ride', { after: 'arrest', key: m.type }); }, 2100));
   }));

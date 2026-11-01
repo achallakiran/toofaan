@@ -39,7 +39,6 @@ function createTitle() {
     enter: function (ctx, scope, args) {
       ctx.hudRoot.hidden = true; ctx.touchRoot.hidden = true;
       S.sfx = sfxmod.createSfx(); S.music = music.createMusic(S.sfx); S.last = 0; S.t = 0; S.v = null; S.vid = null; S.el = null;
-      scope.add(function () { S.music.stop(0.6); });
       var layer = document.createElement('div');
       layer.style.cssText = 'position:fixed;inset:0;z-index:44;pointer-events:none;font-family:system-ui,sans-serif;color:#fff';
       document.body.appendChild(layer); scope.add(function () { layer.remove(); });
@@ -57,7 +56,7 @@ function createTitle() {
         S.phase = 'menu'; S.t = 0; skip.style.display = 'none';
         if (S.fx) { S.fx.dispose(); S.fx = null; }
         if (S.vid) { S.vid.dispose(); S.vid = null; }
-        if (S.music.playing()) S.music.toLoop(); else if (S.sfx.running()) S.music.play('loop');
+        if (S.music.playing() && S.music.track() === 'intro') S.music.toLoop(); else if (S.sfx.running()) S.music.setTrack('menu');
         buildMenu();
       }
       S.toMenu = toMenu;
@@ -131,7 +130,7 @@ function createTitle() {
       }
       /* the menu: Bijli rides along the road; the camera starts low at her front right and cranes up and back */
       if (!S.v) return;
-      if (live && !S.music.playing()) S.music.play('loop'); else if (!S.sfx.on && S.music.playing()) S.music.stop(0.3);
+      if (live && S.music.enabled && (!S.music.playing() || S.music.track() !== 'menu')) S.music.setTrack('menu'); else if (!S.sfx.on && S.music.playing()) S.music.stop(0.3);
       var r = S.r, b = r.bike;
       b.px = b.x; b.pz = b.z; b.ph = b.h; b.x += b.speed * dt; b.turn = Math.sin(S.t * 0.7) * 0.012; b.z = S.lane + Math.sin(S.t * 0.7) * 0.5;
       if (b.x > 150) { b.x = b.px = -150; S.v.prime(b.x, b.z); }

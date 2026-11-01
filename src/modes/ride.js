@@ -9,6 +9,7 @@ var R = require('../data/ride');
 var rideview = require('../view/rideview');
 var sfxmod = require('../view/sfx');
 var cinecard = require('../view/cinecard');
+var musicMod = require('../view/music');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -75,7 +76,8 @@ function createRide() {
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
       scope.add(ctx.bus.on('ride:signal', function (e) { say('Signal: ' + e.name, 2); }));
       /* road fights */
-      scope.add(ctx.bus.on('enc:start', function (e) { if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
+      S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
+      scope.add(ctx.bus.on('enc:start', function (e) { S.music.setTrack(e.kind === 'car' ? 'boss' : e.kind === 'bikes' ? 'road' : 'ride'); if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
       scope.add(ctx.bus.on('enc:swing', function () { S.sfx.whoosh(0.5); }));
       scope.add(ctx.bus.on('enc:hit', function (e) { S.sfx.hit(/kick|Kick/.test(e.move) ? 'kick' : 'jab', 0.8); word(WORD[e.move.replace(/R$/, 'L')] || 'DISHUM!'); S.shake = 0.15; boom(e.id, 0xffffff, 0.8); }));
       scope.add(ctx.bus.on('enc:ko', function (e) { S.sfx.hit('uppercut', 1); S.sfx.fall(); word('DHADAAM!'); big('ko', e.id, 1.3, 1.0); }));
@@ -87,11 +89,11 @@ function createRide() {
       scope.add(ctx.bus.on('enc:spin', function () { S.sfx.crash(true); word('DHADAAM!'); big('spin', 0, 1.4, 1.0); }));
       scope.add(ctx.bus.on('ride:abandon', function (e) { say('LEFT FOR LATER: ' + e.name.toUpperCase() + (e.next ? '  \u2192  ' + e.next.toUpperCase() : ''), 2.6); }));
       scope.add(ctx.bus.on('enc:police', function () { S.sfx.honk(); setTimeout(function () { S.sfx.honk(); }, 350); say('POLICE!', 1.6); }));
-      scope.add(ctx.bus.on('enc:arrest', function () { cinecard.show({ title: 'ARRESTED!', sub: 'Police le gayi goondon ko', ms: 1500 }); }));
+      scope.add(ctx.bus.on('enc:arrest', function () { S.music.setTrack('sting'); cinecard.show({ title: 'ARRESTED!', sub: 'Police le gayi goondon ko', ms: 1500 }); }));
       scope.add(ctx.bus.on('enc:clear', function () { say('ROAD CLEAR!', 1.6); }));
       scope.add(ctx.bus.on('enc:fail', function () { say('TOOFAN IS DOWN!', 1.8); }));
       scope.add(ctx.bus.on('enc:retry', function () { say('AGAIN!', 1.2); }));
-      scope.add(ctx.bus.on('enc:end', function (e) { if (e.kind !== 'bikes') { var T = S.r.target; cinecard.show({ title: 'TOOFAN IS BACK!', sub: T ? 'Next: ' + T.name : 'All clear', ms: 1400 }); } }));
+      scope.add(ctx.bus.on('enc:end', function (e) { if (S.music.track() !== 'sting') S.music.setTrack('ride'); if (e.kind !== 'bikes') { var T = S.r.target; cinecard.show({ title: 'TOOFAN IS BACK!', sub: T ? 'Next: ' + T.name : 'All clear', ms: 1400 }); } }));
       ctx.debug.rideStart = function (k) { if (S.r.state === 'ride') rideSim.startEncounter(S.r, k); };     /* for the test tools */
       if (S.r.target && !(args && args.after)) say('Signal: ' + S.r.target.name, 2.2);
     },
@@ -150,6 +152,7 @@ function createRide() {
         }
       }
       if (S.slow > 0) S.slow -= dt;
+      if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(r.enc ? (r.enc.kind === 'car' ? 'boss' : r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');   /* music switched back on, or sound just unlocked */
 
       /* ---- the arrival cut shot: circle low round Toofan as he pulls up, then the card and the fight area ---- */
       if (S.cut) {
