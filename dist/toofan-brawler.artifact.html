@@ -359,7 +359,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 64',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 65',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -455,6 +455,27 @@ var GUARD_HITS = 2, GUARD_COOLDOWN = 300, GUARD_BREAK = 55;
 var RAGE = { hit: 5, counterHit: 3, block: 3, timedBlock: 16, hurt: 2 };
 
 module.exports = { RAMP: RAMP, KINDS: KINDS, STRIKES: STRIKES, RAGE: RAGE, GUARD_HITS: GUARD_HITS, GUARD_COOLDOWN: GUARD_COOLDOWN, GUARD_BREAK: GUARD_BREAK };
+
+};
+defs["data/gangs"]=function(module,exports,require){
+/* data: the five gangs that hold the city, each with its own district (two kinds of trouble spot), colour, kind of fighters and road
+   vehicle; and Taka, the unseen man behind them, shown only as "?" until the end. */
+'use strict';
+
+var GANGS = {
+  antu:    { name: 'Antu Automatic', theme: 'Machines and robots', color: '#e8742a', types: ['construction', 'warehouse'], mix: { chain: 2, blocker: 2, kicker: 1 }, vehicle: 'armoured auto' },
+  kalia:   { name: 'Kalia Lootera',  theme: 'Brawlers',            color: '#d0312d', types: ['market', 'slum'],           mix: { heavy: 3, thug: 2 },             vehicle: 'pickup of goons' },
+  bhairav: { name: 'Bhairav Kalari', theme: 'Martial arts',        color: '#f2a51a', types: ['temple', 'railway'],        mix: { kicker: 3, blocker: 2 },         vehicle: 'bike gang' },
+  teja:    { name: 'Teja Talwar',    theme: 'Weapons',             color: '#8a9a3a', types: ['petrol', 'toll'],           mix: { stick: 2, chain: 2, thrower: 2 }, vehicle: 'jeep with a spotlight' },
+  raju:    { name: 'Rocket Raju',    theme: 'Speed',               color: '#2fd37a', types: ['flyover', 'busstand'],      mix: { kicker: 2, thrower: 1, thug: 1 }, vehicle: 'tuned cars' }
+};
+var ORDER = ['antu', 'kalia', 'bhairav', 'teja', 'raju'];
+var BOSS = { name: 'TAKA', shown: '?' };
+
+/* which gang holds a kind of place */
+function gangOf(type) { for (var i = 0; i < ORDER.length; i++) if (GANGS[ORDER[i]].types.indexOf(type) >= 0) return ORDER[i]; return null; }
+
+module.exports = { GANGS: GANGS, ORDER: ORDER, BOSS: BOSS, gangOf: gangOf };
 
 };
 defs["data/locations"]=function(module,exports,require){
@@ -1051,6 +1072,7 @@ var freeroam = require('./modes/freeroam');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
+var wake = require('./modes/wake');
 var musicMod = require('./view/music');
 var pixelfont = require('./view/pixelfont');
 
@@ -1105,12 +1127,13 @@ function boot() {
   modes.register(studio.createStudio());
   modes.register(ride.createRide());
   modes.register(title.createTitle());
+  modes.register(wake.createWake());
   var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   function go(name, args) {
     if (name === 'studio' || (name === 'freeroam' && !(args && args.mission))) musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer views are silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : '#studio')); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : name === 'wake' ? '#wake' : '#studio')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
   tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
@@ -1119,7 +1142,7 @@ function boot() {
   ctx.go = go;
   if (!params.get('dev')) document.getElementById('tabs').style.display = 'none';
   var H = window.location.hash;
-  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#menu' ? 'title' : 'title', H === '#menu' ? { menu: true } : undefined);
+  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
@@ -1459,6 +1482,7 @@ var arenagen = require('../sim/arenagen');
 var arenaview = require('../view/arenaview');
 var musicMod = require('../view/music');
 var lineupMod = require('../sim/lineup');
+var GANGS = require('../data/gangs');
 var rngMod = require('../core/rng');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
@@ -1487,7 +1511,8 @@ function place(ctx, m) {
   /* who turns up: the more places cleared on the ride, the bigger and tougher the crowd */
   var level = 0; if (ctx.ride && ctx.ride.missions) Object.keys(ctx.ride.missions).forEach(function (k) { if (ctx.ride.missions[k] === 'cleared') level++; });
   if (m.level !== undefined) level = m.level;
-  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)));
+  var gang = GANGS.GANGS[GANGS.gangOf(best.type)];
+  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)), gang && gang.mix);
   m.lineup = w.combat.lineup.slice();
   w.locs.next = { key: best.key, type: best.type, name: LOC.LOCATIONS[best.type].name, x: best.cx * S, z: best.cz * S, dist: 15 };
   w.streaming.update(p.x, p.z);
@@ -1549,6 +1574,8 @@ var rideview = require('../view/rideview');
 var sfxmod = require('../view/sfx');
 var cinecard = require('../view/cinecard');
 var musicMod = require('../view/music');
+var fullmap = require('../view/fullmap');
+var GANGS = require('../data/gangs');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -1602,6 +1629,10 @@ function createRide() {
       S.ui = { point: el.querySelector('#rPoint'), hearts: el.querySelector('#rHearts'), arrow: el.querySelector('#rArrow'), target: el.querySelector('#rTarget'), msg: el.querySelector('#rMsg'),
                word: el.querySelector('#rWord'), lines: lines, speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), flash: flashEl, red: red };
       S.flashT = 0; S.whiteT = 0; S.wordT = 0;
+      /* tapping the mini-map opens the full city map; tapping a place there makes it the next signal */
+      S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
+      S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
+      S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
       function boom(id, color, size) { var b = S.r.bike, p = id ? S.v.ev.worldOf(S.r, id, b.x, b.z) : null; if (p) S.v.ev.burst(p.x, 1.7, p.z, color, size); else S.v.ev.burst(b.x, 1.8, b.z, color, size); }
@@ -1639,6 +1670,7 @@ function createRide() {
     step: function (ctx, tick) {
       ctx.input.tick(tick);
       if (S.cut) return;                                                     /* the arrival cut shot: the ride waits */
+      if (S.map && S.map.isOpen()) return;                                  /* the full map is open: the ride waits */
       if (ctx.debug.freeze) return;                                          /* (test tools: hold the moment for a screenshot) */
       if (S.slow > 0) { S.slowAcc += 0.3; if (S.slowAcc < 1) return; S.slowAcc -= 1; }     /* slow motion: the sim steps less often */
       if (ctx.input.state.pressed.attack && S.r.state === 'ride') S.honk = true;
@@ -1698,7 +1730,7 @@ function createRide() {
         var C = S.cut; C.t += dt;
         var a2 = c.yaw + 2.2 + C.t * 0.7, rad = 5.2 - C.t * 0.6;
         mix({ x: x + Math.sin(a2) * rad, y: 1.4 + C.t * 0.3, z: z + Math.cos(a2) * rad, lx: x, ly: 1.5, lz: z, fov: 40 }, ease(C.t / 0.6));
-        if (C.t > 1.7 && !C.card) { C.card = true; cinecard.show({ title: C.name.toUpperCase(), sub: 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
+        if (C.t > 1.7 && !C.card) { C.card = true; var gk = GANGS.gangOf(C.key), gg = gk && GANGS.GANGS[gk]; cinecard.show({ title: C.name.toUpperCase(), sub: gg ? gg.name.toUpperCase() + ' KA ILAAKA' : 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
         if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('freeroam', { mission: { type: C.key, name: C.name } }); return; }
       }
       if (S.shake > 0) { var sh = S.shake * 0.25; shot.x += (Math.random() - 0.5) * sh; shot.y += (Math.random() - 0.5) * sh; S.shake = Math.max(0, S.shake - dt * 1.5); }
@@ -1970,17 +2002,18 @@ function createTitle() {
         scope.add(function () { if (S.v) { S.v.dispose(); S.v = null; } });
         var el = S.el = document.createElement('div');
         el.style.cssText = 'position:fixed;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;align-items:center;padding:max(62px,calc(env(safe-area-inset-top) + 54px)) 16px max(26px,env(safe-area-inset-bottom));opacity:0;transition:opacity .6s';
-        var cont = hasSave(ctx);
+        var cont = hasSave(ctx), saved = ctx.save.get('ride.missions', null) || {}, cleared = Object.keys(saved).filter(function (k) { return saved[k] === 'cleared'; }).length;
         el.innerHTML =
           '<div style="text-align:center;transform:rotate(-4deg)"><div style="font:900 clamp(52px,min(15vw,20vh),150px)/.9 \'Arial Black\',Impact,system-ui,sans-serif;color:#ffd21f;-webkit-text-stroke:2px #000;text-shadow:5px 5px 0 #000,-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000;letter-spacing:.04em">TOOFAN</div>' +
-          '<div style="margin-top:6px;font:900 clamp(12px,3vw,18px) system-ui,sans-serif;letter-spacing:.35em;color:#fff;text-shadow:2px 2px 0 #000">AAYA AAYA AAYA RE</div></div>' +
+          '<div style="margin-top:6px;font:900 clamp(12px,3vw,18px) system-ui,sans-serif;letter-spacing:.35em;color:#fff;text-shadow:2px 2px 0 #000">AAYA AAYA AAYA RE</div>' +
+          (cont ? '<div style="margin-top:10px;font-size:12px;letter-spacing:.2em;color:#ffd21f;text-shadow:2px 2px 0 #000">CLEARED ' + cleared + ' / 10  \u00b7  TAKA: ?</div>' : '') + '</div>' +
           '<div style="pointer-events:auto">' +
           (cont ? '<button id="tCont" data-ok="1" style="' + BTN + ';background:#ffd21f;color:#000">CONTINUE</button>' : '') +
           '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
         setTimeout(function () { el.style.opacity = 1; }, 1600);
         var nb = el.querySelector('#tNew'), cb = el.querySelector('#tCont');
-        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('ride'); });
+        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'ride' }); });
         if (cb) cb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('ride'); });
       }
     },
@@ -2024,6 +2057,146 @@ function createTitle() {
 }
 
 module.exports = { createTitle: createTitle };
+
+};
+defs["modes/wake"]=function(module,exports,require){
+/* modes: the New Game opening. Night, in Toofan's room. He is asleep and the nightmare comes: he tosses, the dream world flashes in
+   (the opening video's colours and silhouettes), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
+   awake and sits up. A card, and the game rides out into the city. Skippable. The room, the dog and the dream are built here and freed
+   on the way out. */
+'use strict';
+
+var herorig = require('../view/herorig');
+var posemath = require('../view/posemath');
+var dogvox = require('../view/dogvox');
+var intro = require('../view/intro');
+var boxmesh = require('../view/boxmesh');
+var cinecard = require('../view/cinecard');
+var sfxmod = require('../view/sfx');
+var musicMod = require('../view/music');
+var kit = require('../sim/arenakit');
+var rngMod = require('../core/rng');
+var CONFIG = require('../data/config');
+
+function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+/* the room: plank floor, plastered walls, the bed, a window with the moon, a guitar on the wall, dumbbells, a rug, the door Raka comes in by */
+function room() {
+  var K = kit.createBuilder(rngMod.createRng(11)), C = kit.C, P = kit.P, x, z, k;
+  K.at(0, 0, 0);
+  for (x = -2.6; x < 2.6; x += 0.32) K.b(x, 0, -2.4, x + 0.3, 0.02, 2.4, (Math.round(x * 3) % 2) ? C.WOOD : C.WOOD2);   /* floor planks */
+  K.b(-2.6, 0, -2.5, 2.6, 3.0, -2.4, C.W_TURQ); K.b(-2.6, 0, -2.5, 2.6, 0.12, -2.38, C.WOOD2);                       /* back wall + skirting */
+  K.b(-2.7, 0, -2.5, -2.6, 3.0, 2.4, C.W_TURQ);                                                                      /* left wall */
+  K.b(2.6, 0, -2.5, 2.7, 3.0, -0.2, C.W_TURQ); K.b(2.6, 0, 0.9, 2.7, 3.0, 2.4, C.W_TURQ); K.b(2.6, 2.2, -0.2, 2.7, 3.0, 0.9, C.W_TURQ);   /* right wall with the door gap */
+  K.b(2.58, 0, -0.26, 2.72, 2.26, -0.2, C.WOOD2); K.b(2.58, 0, 0.9, 2.72, 2.26, 0.96, C.WOOD2); K.b(2.58, 2.2, -0.26, 2.72, 2.26, 0.96, C.WOOD2);
+  /* the window and the moon outside */
+  K.b(-0.7, 1.3, -2.41, 0.7, 2.4, -2.39, C.NAVY); K.b(-0.04, 1.3, -2.39, 0.04, 2.4, -2.37, C.WOOD2); K.b(-0.7, 1.84, -2.39, 0.7, 1.9, -2.37, C.WOOD2);
+  K.b(-0.78, 1.22, -2.4, 0.78, 1.3, -2.3, C.WOOD); K.b(0.25, 1.95, -2.405, 0.5, 2.2, -2.395, C.OFFWHITE);
+  for (k = 0; k < 6; k++) K.b(-0.68 + k * 0.25, 1.3, -2.385, -0.64 + k * 0.25, 2.4, -2.375, C.DARK);                   /* the grille */
+  /* the bed: frame, mattress, pillow, a tangled sheet */
+  K.b(-1.1, 0, -1.7, 1.1, 0.35, -0.5, C.WOOD2); K.b(-1.15, 0, -1.75, -1.0, 0.95, -0.45, C.WOOD2);
+  K.b(-1.05, 0.35, -1.65, 1.05, 0.55, -0.55, C.OFFWHITE); K.b(-1.0, 0.55, -1.5, -0.7, 0.68, -0.7, C.W_CREAM);
+  K.b(-0.2, 0.55, -1.66, 1.05, 0.6, -0.54, C.MAUVE); K.b(0.6, 0.35, -0.56, 1.05, 0.62, -0.5, C.MAUVE);
+  /* the side table, a lamp, a rug, dumbbells, a guitar on the wall, a poster */
+  K.b(-1.75, 0, -1.6, -1.25, 0.55, -1.1, C.WOOD); K.b(-1.6, 0.55, -1.45, -1.45, 0.6, -1.3, C.BRASS); K.b(-1.56, 0.6, -1.41, -1.49, 0.85, -1.34, C.BRASS); K.b(-1.66, 0.85, -1.5, -1.39, 1.0, -1.25, C.LEMON);
+  K.b(-1.3, 0.005, -0.3, 1.3, 0.025, 0.9, C.CRIMSON); K.b(-1.2, 0.025, -0.2, 1.2, 0.03, 0.8, C.MARIGOLD);
+  K.b(1.6, 0, 0.6, 2.2, 0.1, 0.7, C.STEEL); K.b(1.6, 0, 0.5, 1.7, 0.2, 0.8, C.CHAR); K.b(2.1, 0, 0.5, 2.2, 0.2, 0.8, C.CHAR);
+  K.b(1.2, 1.1, -2.39, 1.45, 2.1, -2.36, C.CRIMSON); K.b(1.29, 2.1, -2.39, 1.36, 2.7, -2.36, C.WOOD2); K.b(1.25, 2.6, -2.39, 1.4, 2.8, -2.36, C.BLACK);   /* the guitar */
+  K.b(-2.38, 1.2, -1.6, -2.36, 2.3, -0.4, C.MAGENTA); K.b(-2.36, 1.4, -1.4, -2.35, 2.1, -0.6, C.LEMON);                                              /* the poster */
+  return K.out.boxes;
+}
+
+function createWake() {
+  var S = {};
+  return {
+    name: 'wake',
+    enter: function (ctx, scope, args) {
+      var view = ctx.view;
+      view.setSky('#05070c', false); ctx.hudRoot.hidden = true; ctx.touchRoot.hidden = true;
+      S.t = 0; S.last = 0; S.done = false; S.next = (args && args.next) || 'ride'; S.flashes = 0; S.barked = 0; S.scream = false;
+      S.sfx = sfxmod.createSfx(); S.music = musicMod.createMusic(S.sfx); S.music.setTrack('thappad'); ctx.debug.wake = S;
+      /* the room */
+      var a = boxmesh.boxesToArrays(room(), CONFIG.PALETTE), g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1));
+      S.roomMat = new THREE.MeshLambertMaterial({ vertexColors: true }); S.room = new THREE.Mesh(g, S.roomMat); view.scene.add(S.room);
+      /* Toofan asleep: a holder turns his standing rig to lie on his back along the bed, head on the pillow */
+      S.rig = herorig.createHeroRig(); S.bed = new THREE.Group(); S.lie = new THREE.Group(); view.scene.add(S.bed); S.bed.add(S.lie); S.lie.add(S.rig.root);
+      S.bed.rotation.y = Math.PI / 2; S.bed.position.set(0.75, 0, -1.1);
+      S.lie.rotation.set(-Math.PI / 2, 0, Math.PI / 2, 'XYZ');                 /* on his back: head toward the pillow (-x), chest up */
+      S.lie.position.set(0, 0.68, 0);
+      /* Raka, asleep by the door at first */
+      S.dog = dogvox.createDog(); view.scene.add(S.dog.root); S.dog.root.position.set(3.4, 0, 0.35); S.dog.root.rotation.y = -Math.PI / 2;
+      /* moonlight and a night tint over everything (the text stays bright) */
+      var tint = document.createElement('div'); tint.style.cssText = 'position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 45% 35%,rgba(40,70,140,.28),rgba(4,8,22,.72));transition:background .4s';
+      document.body.appendChild(tint); S.tint = tint;
+      var red = document.createElement('div'); red.style.cssText = 'position:fixed;inset:0;z-index:4;pointer-events:none;background:#000;opacity:0'; document.body.appendChild(red); S.red = red;
+      var word = document.createElement('div'); word.className = 'comic';
+      word.style.cssText = 'position:fixed;left:0;right:0;top:34%;z-index:41;text-align:center;pointer-events:none;font:900 clamp(40px,11vw,120px)/1 "Arial Black",Impact,sans-serif;color:#fff;-webkit-text-stroke:3px #000;text-shadow:6px 6px 0 #b0102a;opacity:0;transform:scale(.6) rotate(-4deg);transition:opacity .12s,transform .18s';
+      word.textContent = 'NOOO MAAA!'; document.body.appendChild(word); S.word = word;
+      var skip = document.createElement('button'); skip.textContent = '[ SKIP ▸▸ ]'; skip.setAttribute('data-ok', '1');
+      skip.style.cssText = 'position:fixed;z-index:46;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));padding:9px 14px;border-radius:4px;border:1px solid rgba(140,255,156,.5);background:rgba(0,0,0,.6);color:#bdf5c6;font-size:13px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
+      skip.addEventListener('click', function (e) { e.stopPropagation(); finish(); }); document.body.appendChild(skip);
+      function finish() { if (S.done) return; S.done = true; ctx.go(S.next); }
+      S.finish = finish;
+      S.dream = intro.createIntro(view.renderer);
+      scope.add(function () {
+        view.scene.remove(S.room); g.dispose(); S.roomMat.dispose(); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
+        S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove();
+      });
+    },
+    step: function () {},
+    render: function (ctx) {
+      var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
+      var t = S.t, rig = S.rig, view = ctx.view, sleepP = posemath.named('stand'), shot;
+      /* ---- Toofan ---- */
+      if (t < 9.6) {
+        var toss = t > 1.2 && t < 6.2 ? Math.sin(t * (t > 3.5 ? 9 : 5)) * (t > 3.5 ? 1 : 0.6) : 0, scream = t > 4.8 && t < 6.2;
+        var p = posemath.layer(sleepP, { 'armA.sx': scream ? 150 : 10 + toss * 25, 'armB.sx': scream ? 150 : 10 - toss * 25, 'armA.sz': 20, 'armB.sz': 20, 'armA.e': scream ? 20 : 40, 'armB.e': scream ? 20 : 40,
+          'head.ry': toss * 40, 'head.rx': scream ? -25 : 0, 'spine.ry': toss * 12, 'legA.hx': 8 + toss * 10, 'legB.hx': 8 - toss * 10, 'legA.k': 10, 'legB.k': 10 }, 1, 1, 1, 1);
+        rig.applyPose(p, { plant: false }); S.lie.rotation.z = 0; S.lie.position.y = 0.68 + Math.abs(toss) * 0.03 + Math.sin(t * 1.6) * 0.005;
+      } else {
+        /* jolted awake: sitting up in bed, legs along it, turning to the dog */
+        if (S.rig.root.parent !== view.scene) { view.scene.add(S.rig.root); S.rig.root.rotation.set(0, Math.PI / 2, 0); S.rig.root.position.set(-0.55, -0.32, -1.1); S.lie.visible = false; }
+        var u = ease((t - 9.6) / 1.2);
+        rig.applyPose(posemath.layer(sleepP, { 'legA.hx': 88, 'legB.hx': 88, 'legA.k': 6, 'legB.k': 6, 'spine.rx': 8 - u * 6, 'head.ry': -55 * u, 'neck.ry': -20 * u,
+          'armA.sx': 20 + 40 * u, 'armA.e': 30 + 40 * u, 'armB.sx': -10, 'armB.sz': 25, 'armB.e': 20 }, 1, 1, 1, 1), { plant: false });
+      }
+      rig.flutter(t, 0);
+      /* ---- Raka ---- */
+      var D = S.dog, dx;
+      if (t < 6.2) D.pose('sleep', t);
+      else if (t < 8.0) { var w = ease((t - 6.2) / 1.8); dx = lerp(3.4, 1.15, w); D.root.position.set(dx, 0, lerp(0.35, -0.2, w)); D.root.rotation.y = -Math.PI / 2 - 0.4 * w; D.pose(w < 1 ? 'walk' : 'stand', t); }
+      else if (t < 9.2) { D.root.position.set(-0.5, 0, -0.32); D.root.rotation.y = Math.PI; D.pose('lick', t); }
+      else { D.pose(t < 11 ? 'bark' : 'sit', t); if (t > 9.25 && S.barked < 1) { S.barked = 1; S.sfx.bark(); } if (t > 9.75 && S.barked < 2) { S.barked = 2; S.sfx.bark(); } if (t > 10.6 && S.barked < 3) { S.barked = 3; S.sfx.bark(); } }
+      /* ---- the scream ---- */
+      var sw = t > 4.8 && t < 6.4; S.word.style.opacity = sw ? 1 : 0; S.word.style.transform = sw ? 'scale(1) rotate(-4deg)' : 'scale(.6) rotate(-4deg)';
+      if (t > 4.8 && !S.scream) { S.scream = true; S.sfx.hit && S.sfx.hit('cross', 1); }
+      /* ---- cameras ---- */
+      var shake = (t > 4.8 && t < 6.2) ? 0.04 : 0, sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+      if (t < 1.2) shot = { x: 2.3 - t * 0.15, y: 1.9, z: 1.8, lx: -0.2, ly: 0.6, lz: -1.1, fov: 52 };
+      else if (t < 6.2) { var c = ease((t - 1.2) / 3); shot = { x: lerp(1.4, 0.2, c) + sx, y: lerp(1.8, 1.55, c) + sy, z: lerp(0.4, -0.4, c), lx: -0.65, ly: 0.7, lz: -1.1, fov: lerp(50, 40, c) }; }
+      else if (t < 8.0) shot = { x: 1.0, y: 1.3, z: 1.7, lx: 1.4, ly: 0.4, lz: -0.2, fov: 55 };
+      else if (t < 9.6) shot = { x: -0.2, y: 1.25, z: 0.6, lx: -0.7, ly: 0.65, lz: -0.9, fov: 46 };
+      else shot = { x: 0.9, y: 1.5, z: 1.5, lx: -0.5, ly: 0.9, lz: -0.8, fov: 48 };
+      view.followCamera(0, 0, shot);
+      /* ---- the dream breaking in: short cuts to the opening video's world ---- */
+      var dreamOn = t > 1.6 && t < 4.8 && (t * 10 % 7) < (t > 3.4 ? 2.4 : 1.2);
+      S.red.style.opacity = t > 4.8 && t < 6.2 ? 0.25 + 0.2 * Math.sin(t * 30) : (t > 9.5 && t < 9.7 ? 0 : 0);
+      S.red.style.background = t > 9.5 && t < 9.75 ? '#fff' : '#b0102a';
+      if (t > 9.5 && t < 9.75) S.red.style.opacity = 0.85;
+      S.tint.style.opacity = dreamOn ? 0 : 1;
+      if (dreamOn) { S.dream.render(16 + (t * 7) % 40, t); } else { S.dream.hide(); view.render(); }
+      /* ---- the card, then out into the city ---- */
+      if (t > 11.6 && !S.card) { S.card = true; cinecard.show({ title: 'UTH JA, TOOFAN', sub: 'SHEHAR SO RAHA HAI. GANG NAHI.', ms: 2600 }); }
+      if (t > 13.9) S.finish();
+    },
+    exit: function () {}
+  };
+}
+
+module.exports = { createWake: createWake };
 
 };
 defs["sim/arenagen"]=function(module,exports,require){
@@ -3932,10 +4105,11 @@ defs["sim/lineup"]=function(module,exports,require){
 
 var D = require('../data/enemies');
 
-/* level: places cleared so far; rng: a seeded rng; returns a list of kinds, the toughest last (they arrive behind the others) */
-function lineup(level, rng) {
+/* level: places cleared so far; rng: a seeded rng; gangMix: the gang's favourite kinds (data/gangs); returns a list of kinds, the toughest last (they arrive behind the others) */
+function lineup(level, rng, gangMix) {
   var R = D.RAMP[Math.max(0, Math.min(D.RAMP.length - 1, level | 0))], pool = [], out = [], k, i;
   for (k in R.mix) for (i = 0; i < R.mix[k]; i++) pool.push(k);
+  if (gangMix) for (k in gangMix) if (R.mix[k]) for (i = 0; i < gangMix[k] * 2; i++) pool.push(k);   /* the gang's own kind of fighters, once the ramp has brought them in */
   if (pool.indexOf('stick') < 0) pool.push('stick');
   for (i = 0; i < R.n; i++) {
     if (i === 0) { out.push('stick'); continue; }                  /* the lathi man is always there */
@@ -4019,6 +4193,13 @@ function pickTarget(r) {
   r.target = best;
   if (best) r.bus.emit('ride:signal', { key: best.key, name: best.name });
   return best;
+}
+
+/* the player picked a place on the full map: it becomes the signal (if it is still open) */
+function chooseTarget(r, key) {
+  var T = r.map.targets.filter(function (t) { return t.key === key; })[0];
+  if (!T || r.missions[key] !== 'open' || r.state !== 'ride' || r.enc) return false;
+  r.target = T; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: T.key, name: T.name, chosen: true }); return true;
 }
 
 function stepTraffic(r) {
@@ -4157,7 +4338,7 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
 
 };
 defs["sim/ridemap"]=function(module,exports,require){
@@ -5336,6 +5517,85 @@ function attachTouch(input, root) {
 module.exports = { attachKeyboard: attachKeyboard, attachTouch: attachTouch };
 
 };
+defs["view/dogvox"]=function(module,exports,require){
+/* view: Raka, Toofan's dog. A desi street dog in fine voxels (4 cm): tan coat with a pale belly and muzzle, pointed ears, a tail curled
+   over the back. Separate parts (body, head, tail, four legs) so he can trot, sit, wag, bark and lick. Forward is local +z; the root sits
+   on the ground. Built when a scene needs him, freed with it. */
+'use strict';
+
+var vg = require('./voxgrid');
+var h = vg.hex, VS = 0.04;
+var C = { tan: h('#c8935a'), tanD: h('#a8763f'), tanL: h('#d9a86e'), belly: h('#ecd6aa'), muzzle: h('#e4c592'), nose: h('#1a1410'), eye: h('#120d0a'), earIn: h('#8a5a3a'), tongue: h('#e8707f'), collar: h('#c8202a'), tag: h('#ffd21f') };
+
+function mesh(g, pivot, mat) {
+  var a = vg.meshGrid(g, pivot, VS, { jitter: 0.06, seed: g.W * 7 + g.D }), geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); geo.setIndex(new THREE.BufferAttribute(a.indices, 1)); geo.computeBoundingSphere();
+  return new THREE.Mesh(geo, mat);
+}
+function body() {
+  var g = vg.createGrid(9, 9, 18);
+  vg.ellipsoid(g, 4, 4.5, 9, 3.6, 3.4, 8.4, function (x, y, z) { return y < 3 ? C.belly : (y > 6 && x % 3 === 1 ? C.tanD : C.tan); });
+  vg.box(g, 2, 5, 15, 6, 8, 17, C.tan);                                  /* the neck rising to the head */
+  vg.box(g, 2, 6, 15, 6, 6, 16, C.collar); vg.set(g, 4, 5, 17, C.tag);
+  return g;
+}
+function head() {
+  var g = vg.createGrid(8, 11, 11), x;
+  vg.box(g, 1, 2, 2, 6, 7, 7, C.tan); vg.box(g, 2, 7, 3, 5, 7, 6, C.tanL);
+  vg.box(g, 2, 1, 7, 5, 4, 10, C.muzzle); vg.box(g, 3, 3, 10, 4, 4, 10, C.nose); vg.box(g, 2, 1, 7, 5, 1, 9, C.muzzle);
+  vg.set(g, 2, 5, 7, C.eye); vg.set(g, 5, 5, 7, C.eye);
+  for (x = 0; x < 3; x++) { vg.box(g, 1 + x * 0, 8 + x, 3, 2, 8 + x, 4 - (x > 1 ? 1 : 0), x === 2 ? C.tanD : C.tan); vg.box(g, 5, 8 + x, 3, 6, 8 + x, 4 - (x > 1 ? 1 : 0), x === 2 ? C.tanD : C.tan); }
+  vg.set(g, 1, 9, 4, C.earIn); vg.set(g, 6, 9, 4, C.earIn);
+  return g;
+}
+function tongue() { var g = vg.createGrid(2, 1, 3); vg.box(g, 0, 0, 0, 1, 0, 2, C.tongue); return g; }
+function tail() {
+  var g = vg.createGrid(3, 9, 6), pts = [[1, 0, 0], [1, 1, 0], [1, 2, 1], [1, 3, 1], [1, 4, 2], [1, 5, 3], [1, 6, 4], [1, 6, 5], [1, 5, 5]], i;
+  for (i = 0; i < pts.length; i++) { vg.set(g, pts[i][0], pts[i][1], pts[i][2], i > 6 ? C.belly : C.tan); vg.set(g, pts[i][0] + 1, pts[i][1], pts[i][2], C.tanD); }
+  return g;
+}
+function leg(front) { var g = vg.createGrid(2, 8, 3); vg.box(g, 0, 1, 0, 1, 7, 1, C.tan); vg.box(g, 0, 0, 0, 1, 1, 2, C.belly); if (front) vg.box(g, 0, 5, 0, 1, 7, 1, C.tanL); return g; }
+
+function createDog() {
+  var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), root = new THREE.Group(), torso = new THREE.Group();
+  root.add(torso); torso.position.y = 0.3;
+  var B = mesh(body(), { x: 4.5, y: 4.5, z: 9 }, mat); torso.add(B);
+  var neck = new THREE.Group(); neck.position.set(0, 0.16, 0.3); torso.add(neck);
+  var H = mesh(head(), { x: 4, y: 4, z: 3 }, mat), headG = new THREE.Group(); headG.add(H); neck.add(headG); headG.position.set(0, 0.06, 0.06);
+  var T = mesh(tongue(), { x: 1, y: 0.5, z: 0 }, mat); T.position.set(0, -0.11, 0.26); T.visible = false; headG.add(T);
+  var tailG = new THREE.Group(); tailG.position.set(0, 0.12, -0.32); tailG.add(mesh(tail(), { x: 1.5, y: 0, z: 0.5 }, mat)); tailG.children[0].rotation.y = Math.PI; torso.add(tailG);
+  var legs = [[-0.09, 0.22, true], [0.09, 0.22, true], [-0.09, -0.24, false], [0.09, -0.24, false]].map(function (q) {
+    var gq = new THREE.Group(); gq.position.set(q[0], 0.02, q[1]); var m = mesh(leg(q[2]), { x: 1, y: 7.5, z: 1 }, mat); gq.add(m); torso.add(gq); return gq;
+  });
+  var shadow = new THREE.Mesh(new THREE.CircleGeometry(0.35, 16), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.28, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.01; shadow.scale.set(0.7, 1.4, 1); root.add(shadow);
+  return {
+    root: root, head: headG,
+    /* pose him: state 'stand' | 'walk' | 'sit' | 'lick' | 'bark' | 'sleep'; t seconds (drives the gait and the wag) */
+    pose: function (state, t) {
+      var walk = state === 'walk', sit = state === 'sit' || state === 'lick' || state === 'bark', sleep = state === 'sleep', i;
+      torso.position.y = sleep ? 0.12 : 0.3; torso.rotation.x = sit ? -0.45 : 0; torso.rotation.z = sleep ? 1.35 : 0;
+      for (i = 0; i < 4; i++) {
+        var front = i < 2, ph = (i === 0 || i === 3 ? 0 : Math.PI);
+        legs[i].rotation.x = walk ? Math.sin(t * 12 + ph) * 0.55 : (sit ? (front ? 0.45 : -1.2) : 0);
+        legs[i].position.y = sit && !front ? 0.06 : 0.02;
+      }
+      tailG.rotation.y = Math.sin(t * (state === 'stand' || walk ? 14 : 20)) * (sleep ? 0.05 : 0.5);
+      tailG.rotation.x = sleep ? 0.6 : 0;
+      headG.rotation.x = state === 'lick' ? 0.25 + Math.sin(t * 16) * 0.12 : (state === 'bark' ? -0.2 - Math.max(0, Math.sin(t * 9)) * 0.3 : (sit ? 0.35 : (sleep ? 0.2 : Math.sin(t * 2) * 0.05)));
+      headG.rotation.y = state === 'stand' ? Math.sin(t * 0.9) * 0.3 : 0;
+      T.visible = state === 'lick' || (state === 'walk' && Math.sin(t * 3) > 0.6) || state === 'bark';
+      T.position.z = state === 'lick' ? 0.27 + Math.max(0, Math.sin(t * 16)) * 0.04 : 0.26;
+      torso.position.y += walk ? Math.abs(Math.sin(t * 12)) * 0.02 : 0;
+    },
+    dispose: function () { root.traverse(function (m) { if (m.isMesh) m.geometry.dispose(); }); mat.dispose(); }
+  };
+}
+
+module.exports = { createDog: createDog };
+
+};
 defs["view/electric"]=function(module,exports,require){
 /* view: the electric-shock reveal for the opening: a picture (the studio badge) or a line of text flickers in through crackling
    lightning, RGB-split glitches and scanlines, holds with sparks running round it, then shorts out the same way. A full-screen 2D canvas. */
@@ -5902,6 +6162,86 @@ function createFightUi() {
 }
 
 module.exports = { createFightUi: createFightUi };
+
+};
+defs["view/fullmap"]=function(module,exports,require){
+/* view: the full city map, opened by tapping the mini-map. North up: the road grid, each gang's territory tinted in its colour, every
+   trouble spot (open, cleared, left for later, the current signal), Toofan's position, and a legend of the gangs with what is cleared.
+   Tapping an open place makes it the next signal. The ride waits while the map is open. */
+'use strict';
+
+var GANGS = require('../data/gangs');
+var R = require('../data/ride');
+
+function createFullMap() {
+  var el = null, cv = null, ride = null, onPick = null, raf = 0, hits = [];
+  function close() { if (!el) return; cancelAnimationFrame(raf); el.remove(); el = null; ride = null; }
+  function draw(t) {
+    if (!el || !ride) return;
+    var g = cv.getContext('2d'), dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth, H = cv.clientHeight;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    var r = ride, E = r.map.ext, side = Math.min(W, H) - 24, sc = side / (E * 2), ox = W / 2, oz = H / 2;
+    function X(x) { return ox + x * sc; } function Z(z) { return oz + z * sc; }
+    /* territory: each block takes the colour of the gang whose place is nearest to it */
+    r.map.blocks.forEach(function (b) {
+      var cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2, best = null, bd = 1e9;
+      r.map.targets.forEach(function (T) { var d = Math.hypot(T.x - cx, T.z - cz); if (d < bd) { bd = d; best = T; } });
+      var gk = best && GANGS.gangOf(best.key), col = gk ? GANGS.GANGS[gk].color : '#555';
+      g.fillStyle = col; g.globalAlpha = 0.28; g.fillRect(X(b.x0), Z(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc); g.globalAlpha = 1;
+      g.strokeStyle = 'rgba(255,255,255,.08)'; g.strokeRect(X(b.x0), Z(b.z0), (b.x1 - b.x0) * sc, (b.z1 - b.z0) * sc);
+    });
+    g.strokeStyle = 'rgba(230,236,240,.75)'; g.lineWidth = Math.max(3, R.HALF * 2 * sc * 0.6);
+    r.map.lines.forEach(function (l) { g.beginPath(); g.moveTo(X(-E), Z(l)); g.lineTo(X(E), Z(l)); g.stroke(); g.beginPath(); g.moveTo(X(l), Z(-E)); g.lineTo(X(l), Z(E)); g.stroke(); });
+    /* the places */
+    hits = [];
+    g.textAlign = 'center'; g.textBaseline = 'top'; g.font = "11px 'ToofanPx',monospace";
+    r.map.targets.forEach(function (T) {
+      var st = r.missions[T.key], gk = GANGS.gangOf(T.key), col = gk ? GANGS.GANGS[gk].color : '#fff', x = X(T.x), z = Z(T.z), cur = r.target === T, s = cur ? 11 : 8;
+      g.fillStyle = st === 'cleared' ? '#2a2f35' : col; g.strokeStyle = '#000'; g.lineWidth = 2;
+      g.fillRect(x - s, z - s, s * 2, s * 2); g.strokeRect(x - s, z - s, s * 2, s * 2);
+      g.fillStyle = '#fff'; g.font = "13px 'ToofanPx',monospace"; g.textBaseline = 'middle';
+      g.fillText(st === 'cleared' ? '✓' : (T.key === r.skipped ? '?' : '!'), x, z + 1);
+      if (cur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(x - s - 5, z - s - 5, (s + 5) * 2, (s + 5) * 2); }
+      g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = st === 'cleared' ? '#8a9199' : '#fff';
+      g.fillText(T.name.toUpperCase(), x, z + s + 4);
+      if (st === 'open') hits.push({ key: T.key, x: x, z: z, r: s + 14 });
+    });
+    /* Toofan */
+    var b = r.bike, px = X(b.x), pz = Z(b.z), a = b.h;
+    g.save(); g.translate(px, pz); g.rotate(-a + Math.PI); g.fillStyle = '#1f9bff'; g.strokeStyle = '#fff'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(0, 4); g.lineTo(-7, 8); g.closePath(); g.fill(); g.stroke(); g.restore();
+    raf = requestAnimationFrame(draw);
+  }
+  function legend(r) {
+    return GANGS.ORDER.map(function (k) {
+      var G = GANGS.GANGS[k], n = 0, c = 0; r.map.targets.forEach(function (T) { if (GANGS.gangOf(T.key) === k) { n++; if (r.missions[T.key] === 'cleared') c++; } });
+      return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:12px;height:12px;background:' + G.color + ';border:1px solid #000;display:inline-block"></span><span style="flex:1">' + G.name.toUpperCase() + '</span><span style="color:#9fd8aa">' + c + '/' + n + '</span></div>';
+    }).join('') + '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#ff5a5a"><span style="width:12px;text-align:center">?</span><span style="flex:1">THE MAN BEHIND THEM</span></div>';
+  }
+  return {
+    isOpen: function () { return !!el; },
+    open: function (r, pick) {
+      if (el) return; ride = r; onPick = pick;
+      el = document.createElement('div'); el.setAttribute('data-ok', '1');
+      el.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(6,10,14,.94);color:#fff;font-size:12px;letter-spacing:.06em;touch-action:manipulation';
+      el.innerHTML = '<canvas style="position:absolute;inset:0;width:100%;height:100%"></canvas>' +
+        '<div style="position:absolute;left:max(12px,env(safe-area-inset-left));top:max(56px,calc(env(safe-area-inset-top) + 48px));width:min(220px,46vw);padding:10px 12px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2)"><div style="color:#ffd21f;margin-bottom:6px">THE CITY</div>' + legend(r) + '<div style="margin-top:10px;color:#8a9199;font-size:10px">TAP A PLACE TO RIDE THERE</div></div>' +
+        '<button data-ok="1" style="position:absolute;right:max(14px,env(safe-area-inset-right));top:max(56px,calc(env(safe-area-inset-top) + 48px));padding:9px 14px;border-radius:4px;border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.6);color:#fff;font-size:12px;letter-spacing:.12em;cursor:pointer">[ CLOSE ]</button>';
+      cv = el.querySelector('canvas'); document.body.appendChild(el);
+      el.querySelector('button').addEventListener('click', function (e) { e.stopPropagation(); close(); });
+      cv.addEventListener('click', function (e) {
+        var rc = cv.getBoundingClientRect(), x = e.clientX - rc.left, z = e.clientY - rc.top, i;
+        for (i = 0; i < hits.length; i++) if (Math.hypot(hits[i].x - x, hits[i].z - z) < hits[i].r) { var k = hits[i].key; close(); if (onPick) onPick(k); return; }
+      });
+      draw(0);
+    },
+    close: close,
+    dispose: close
+  };
+}
+
+module.exports = { createFullMap: createFullMap };
 
 };
 defs["view/fx"]=function(module,exports,require){
@@ -6817,6 +7157,7 @@ function createIntro(renderer) {
       renderer.clearDepth(); paint(black); figs.forEach(function (f) { f.rig.root.scale.setScalar(1); }); bike.root.scale.setScalar(1); renderer.render(scene, cam);
       renderer.autoClear = ac;
     },
+    hide: function () { word.style.opacity = 0; },
     dispose: function () {
       word.remove(); bgMat.dispose(); [black.skin, black.plain, neon.skin, neon.plain].forEach(function (m) { m.dispose(); });
     }
@@ -8146,6 +8487,8 @@ function make() {
     },
     sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
     toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
+    /* Raka's bark: a quick rising yap, a growl of noise under it */
+    bark: function () { if (!on || !ctx()) return; thump(380, 620, 0.09, 0.35, 0); thump(560, 300, 0.12, 0.3, 0.07); burst(0.14, 0.12, 'bandpass', 1100, 700, 0.02, 2); },
     whoosh: function (power) { if (!on || !ctx()) return; burst(0.2, 0.14 + (power || 0.5) * 0.12, 'bandpass', 380, 1700, 0, 1.2); },
     hit: function (move, power) {
       if (!on || !ctx()) return; var p = 0.55 + (power || 0.5) * 0.6, k = KICKS[move];

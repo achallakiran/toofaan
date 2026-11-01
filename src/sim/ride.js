@@ -69,6 +69,13 @@ function pickTarget(r) {
   return best;
 }
 
+/* the player picked a place on the full map: it becomes the signal (if it is still open) */
+function chooseTarget(r, key) {
+  var T = r.map.targets.filter(function (t) { return t.key === key; })[0];
+  if (!T || r.missions[key] !== 'open' || r.state !== 'ride' || r.enc) return false;
+  r.target = T; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: T.key, name: T.name, chosen: true }); return true;
+}
+
 function stepTraffic(r) {
   var list = r.traffic, i, j, E = r.map.ext;
   for (i = 0; i < list.length; i++) {
@@ -205,4 +212,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };

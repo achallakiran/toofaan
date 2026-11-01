@@ -10,6 +10,8 @@ var rideview = require('../view/rideview');
 var sfxmod = require('../view/sfx');
 var cinecard = require('../view/cinecard');
 var musicMod = require('../view/music');
+var fullmap = require('../view/fullmap');
+var GANGS = require('../data/gangs');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -63,6 +65,10 @@ function createRide() {
       S.ui = { point: el.querySelector('#rPoint'), hearts: el.querySelector('#rHearts'), arrow: el.querySelector('#rArrow'), target: el.querySelector('#rTarget'), msg: el.querySelector('#rMsg'),
                word: el.querySelector('#rWord'), lines: lines, speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), flash: flashEl, red: red };
       S.flashT = 0; S.whiteT = 0; S.wordT = 0;
+      /* tapping the mini-map opens the full city map; tapping a place there makes it the next signal */
+      S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
+      S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
+      S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
       function boom(id, color, size) { var b = S.r.bike, p = id ? S.v.ev.worldOf(S.r, id, b.x, b.z) : null; if (p) S.v.ev.burst(p.x, 1.7, p.z, color, size); else S.v.ev.burst(b.x, 1.8, b.z, color, size); }
@@ -100,6 +106,7 @@ function createRide() {
     step: function (ctx, tick) {
       ctx.input.tick(tick);
       if (S.cut) return;                                                     /* the arrival cut shot: the ride waits */
+      if (S.map && S.map.isOpen()) return;                                  /* the full map is open: the ride waits */
       if (ctx.debug.freeze) return;                                          /* (test tools: hold the moment for a screenshot) */
       if (S.slow > 0) { S.slowAcc += 0.3; if (S.slowAcc < 1) return; S.slowAcc -= 1; }     /* slow motion: the sim steps less often */
       if (ctx.input.state.pressed.attack && S.r.state === 'ride') S.honk = true;
@@ -159,7 +166,7 @@ function createRide() {
         var C = S.cut; C.t += dt;
         var a2 = c.yaw + 2.2 + C.t * 0.7, rad = 5.2 - C.t * 0.6;
         mix({ x: x + Math.sin(a2) * rad, y: 1.4 + C.t * 0.3, z: z + Math.cos(a2) * rad, lx: x, ly: 1.5, lz: z, fov: 40 }, ease(C.t / 0.6));
-        if (C.t > 1.7 && !C.card) { C.card = true; cinecard.show({ title: C.name.toUpperCase(), sub: 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
+        if (C.t > 1.7 && !C.card) { C.card = true; var gk = GANGS.gangOf(C.key), gg = gk && GANGS.GANGS[gk]; cinecard.show({ title: C.name.toUpperCase(), sub: gg ? gg.name.toUpperCase() + ' KA ILAAKA' : 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
         if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('freeroam', { mission: { type: C.key, name: C.name } }); return; }
       }
       if (S.shake > 0) { var sh = S.shake * 0.25; shot.x += (Math.random() - 0.5) * sh; shot.y += (Math.random() - 0.5) * sh; S.shake = Math.max(0, S.shake - dt * 1.5); }

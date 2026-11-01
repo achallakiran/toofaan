@@ -4,10 +4,11 @@
 
 var D = require('../data/enemies');
 
-/* level: places cleared so far; rng: a seeded rng; returns a list of kinds, the toughest last (they arrive behind the others) */
-function lineup(level, rng) {
+/* level: places cleared so far; rng: a seeded rng; gangMix: the gang's favourite kinds (data/gangs); returns a list of kinds, the toughest last (they arrive behind the others) */
+function lineup(level, rng, gangMix) {
   var R = D.RAMP[Math.max(0, Math.min(D.RAMP.length - 1, level | 0))], pool = [], out = [], k, i;
   for (k in R.mix) for (i = 0; i < R.mix[k]; i++) pool.push(k);
+  if (gangMix) for (k in gangMix) if (R.mix[k]) for (i = 0; i < gangMix[k] * 2; i++) pool.push(k);   /* the gang's own kind of fighters, once the ramp has brought them in */
   if (pool.indexOf('stick') < 0) pool.push('stick');
   for (i = 0; i < R.n; i++) {
     if (i === 0) { out.push('stick'); continue; }                  /* the lathi man is always there */

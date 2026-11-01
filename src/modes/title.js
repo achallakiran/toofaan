@@ -100,17 +100,18 @@ function createTitle() {
         scope.add(function () { if (S.v) { S.v.dispose(); S.v = null; } });
         var el = S.el = document.createElement('div');
         el.style.cssText = 'position:fixed;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;align-items:center;padding:max(62px,calc(env(safe-area-inset-top) + 54px)) 16px max(26px,env(safe-area-inset-bottom));opacity:0;transition:opacity .6s';
-        var cont = hasSave(ctx);
+        var cont = hasSave(ctx), saved = ctx.save.get('ride.missions', null) || {}, cleared = Object.keys(saved).filter(function (k) { return saved[k] === 'cleared'; }).length;
         el.innerHTML =
           '<div style="text-align:center;transform:rotate(-4deg)"><div style="font:900 clamp(52px,min(15vw,20vh),150px)/.9 \'Arial Black\',Impact,system-ui,sans-serif;color:#ffd21f;-webkit-text-stroke:2px #000;text-shadow:5px 5px 0 #000,-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000;letter-spacing:.04em">TOOFAN</div>' +
-          '<div style="margin-top:6px;font:900 clamp(12px,3vw,18px) system-ui,sans-serif;letter-spacing:.35em;color:#fff;text-shadow:2px 2px 0 #000">AAYA AAYA AAYA RE</div></div>' +
+          '<div style="margin-top:6px;font:900 clamp(12px,3vw,18px) system-ui,sans-serif;letter-spacing:.35em;color:#fff;text-shadow:2px 2px 0 #000">AAYA AAYA AAYA RE</div>' +
+          (cont ? '<div style="margin-top:10px;font-size:12px;letter-spacing:.2em;color:#ffd21f;text-shadow:2px 2px 0 #000">CLEARED ' + cleared + ' / 10  \u00b7  TAKA: ?</div>' : '') + '</div>' +
           '<div style="pointer-events:auto">' +
           (cont ? '<button id="tCont" data-ok="1" style="' + BTN + ';background:#ffd21f;color:#000">CONTINUE</button>' : '') +
           '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
         setTimeout(function () { el.style.opacity = 1; }, 1600);
         var nb = el.querySelector('#tNew'), cb = el.querySelector('#tCont');
-        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('ride'); });
+        nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'ride' }); });
         if (cb) cb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('ride'); });
       }
     },

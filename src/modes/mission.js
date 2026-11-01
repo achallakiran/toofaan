@@ -17,6 +17,7 @@ var arenagen = require('../sim/arenagen');
 var arenaview = require('../view/arenaview');
 var musicMod = require('../view/music');
 var lineupMod = require('../sim/lineup');
+var GANGS = require('../data/gangs');
 var rngMod = require('../core/rng');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
@@ -45,7 +46,8 @@ function place(ctx, m) {
   /* who turns up: the more places cleared on the ride, the bigger and tougher the crowd */
   var level = 0; if (ctx.ride && ctx.ride.missions) Object.keys(ctx.ride.missions).forEach(function (k) { if (ctx.ride.missions[k] === 'cleared') level++; });
   if (m.level !== undefined) level = m.level;
-  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)));
+  var gang = GANGS.GANGS[GANGS.gangOf(best.type)];
+  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)), gang && gang.mix);
   m.lineup = w.combat.lineup.slice();
   w.locs.next = { key: best.key, type: best.type, name: LOC.LOCATIONS[best.type].name, x: best.cx * S, z: best.cz * S, dist: 15 };
   w.streaming.update(p.x, p.z);

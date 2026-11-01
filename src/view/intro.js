@@ -122,6 +122,7 @@ function createIntro(renderer) {
       renderer.clearDepth(); paint(black); figs.forEach(function (f) { f.rig.root.scale.setScalar(1); }); bike.root.scale.setScalar(1); renderer.render(scene, cam);
       renderer.autoClear = ac;
     },
+    hide: function () { word.style.opacity = 0; },
     dispose: function () {
       word.remove(); bgMat.dispose(); [black.skin, black.plain, neon.skin, neon.plain].forEach(function (m) { m.dispose(); });
     }

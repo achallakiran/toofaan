@@ -93,6 +93,8 @@ function make() {
     },
     sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
     toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
+    /* Raka's bark: a quick rising yap, a growl of noise under it */
+    bark: function () { if (!on || !ctx()) return; thump(380, 620, 0.09, 0.35, 0); thump(560, 300, 0.12, 0.3, 0.07); burst(0.14, 0.12, 'bandpass', 1100, 700, 0.02, 2); },
     whoosh: function (power) { if (!on || !ctx()) return; burst(0.2, 0.14 + (power || 0.5) * 0.12, 'bandpass', 380, 1700, 0, 1.2); },
     hit: function (move, power) {
       if (!on || !ctx()) return; var p = 0.55 + (power || 0.5) * 0.6, k = KICKS[move];

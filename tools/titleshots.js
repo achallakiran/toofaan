@@ -27,7 +27,9 @@ var out = path.resolve(__dirname, '..', 'dist');
     await page.waitForTimeout(3800); await page.screenshot({ path: path.join(out, 'title-4-menu-b-' + tag + '.png') });
     var btns = await page.evaluate(function () { return Array.prototype.map.call(document.querySelectorAll('button[id^=t]'), function (b) { return b.textContent; }); });
     await page.click('text=NEW GAME'); await page.waitForTimeout(1500);
-    var after = await page.evaluate(function () { return __game.modes.currentName(); });
+    var wakeMode = await page.evaluate(function () { return __game.modes.currentName(); });      /* New Game opens on the nightmare */
+    await page.click('text=SKIP'); await page.waitForTimeout(1200);
+    var after = await page.evaluate(function () { return __game.modes.currentName(); }) + (wakeMode === 'wake' ? '' : ' (no nightmare!)');
     /* drive a little, then reload: Continue should show and carry on from there */
     await page.keyboard.down('KeyW'); await page.waitForTimeout(4000); await page.keyboard.up('KeyW'); await page.waitForTimeout(3500);
     var pos = await page.evaluate(function () { var b = __game.ctx.ride.bike; return { x: b.x, z: b.z }; });

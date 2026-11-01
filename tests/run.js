@@ -733,5 +733,21 @@ test('ride: riding well away from the signal leaves it open for later and points
     assert(d > 3, 'thrower stayed close: ' + d.toFixed(2)); assert(hurt > 0, 'no bottle landed');
   });
 })();
+test('gangs: every kind of place belongs to exactly one gang, two places each', function () {
+  var G = req('data/gangs'), LOCD = req('data/locations'), count = {};
+  LOCD.ORDER.forEach(function (t) { var g = G.gangOf(t); assert(g, t + ' has no gang'); count[g] = (count[g] || 0) + 1; });
+  G.ORDER.forEach(function (g) { assert.strictEqual(count[g], 2, g + ' holds ' + count[g]); });
+});
+test('gangs: a gang\'s fights lean to its own kind of fighter once the ramp brings them in', function () {
+  var lineup = req('sim/lineup'), G = req('data/gangs'), heavies = 0, kicks = 0, i;
+  for (i = 0; i < 40; i++) { heavies += lineup.lineup(5, rngMod.createRng(i), G.GANGS.kalia.mix).filter(function (k) { return k === 'heavy'; }).length; kicks += lineup.lineup(5, rngMod.createRng(i), G.GANGS.bhairav.mix).filter(function (k) { return k === 'kicker'; }).length; }
+  var h0 = 0, k0 = 0; for (i = 0; i < 40; i++) { var l = lineup.lineup(5, rngMod.createRng(i)); h0 += l.filter(function (k) { return k === 'heavy'; }).length; k0 += l.filter(function (k) { return k === 'kicker'; }).length; }
+  assert(heavies > h0 && kicks > k0, 'heavies ' + heavies + ' vs ' + h0 + ', kickers ' + kicks + ' vs ' + k0);
+});
+test('map: picking an open place on the full map makes it the signal; a cleared one is refused', function () {
+  var rideMod2 = req('sim/ride'), r = rideMod2.createRide(4, null), other = r.map.targets.filter(function (t) { return t !== r.target; })[0];
+  assert(rideMod2.chooseTarget(r, other.key)); assert.strictEqual(r.target, other);
+  r.missions[r.map.targets[0].key] = 'cleared'; assert(!rideMod2.chooseTarget(r, r.map.targets[0].key) || r.map.targets[0] === other);
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
