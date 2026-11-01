@@ -11,15 +11,14 @@ var out = path.resolve(__dirname, '..', 'dist');
     await page.goto('file://' + path.join(out, 'toofan-brawler.html')); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(600);
     var mode = await page.evaluate(function () { return __game.modes.currentName(); });
     if (full) {
-      /* no tap: the opening is already running, silent with the sound chip until the first touch */
-      var open0 = await page.evaluate(function () { var c = Array.prototype.find.call(document.querySelectorAll('button'), function (b) { return /SOUND/.test(b.textContent); }); return { chip: c ? getComputedStyle(c).display : 'none' }; });
-      console.log(tag, 'opening without a tap:', JSON.stringify(open0));
-      await page.waitForTimeout(900); await page.screenshot({ path: path.join(out, 'title-1-logo-' + tag + '.png') });
-      await page.waitForTimeout(3300); await page.screenshot({ path: path.join(out, 'title-2-presents-' + tag + '.png') });
-      for (var k = 0; k < 6; k++) {
-        await page.waitForTimeout(k === 0 ? 2500 : 3600); await page.screenshot({ path: path.join(out, 'title-3-video' + k + '-' + tag + '.png') });
-        if (k === 1) { await page.mouse.click(vw / 2, vh / 2); await page.waitForTimeout(400); console.log(tag, 'after a touch mid-video, chip:', await page.evaluate(function () { var c = Array.prototype.find.call(document.querySelectorAll('button'), function (b) { return /SOUND/.test(b.textContent); }); return c ? getComputedStyle(c).display : 'gone'; })); }
-      }
+      /* the opening card, then a tap: the logo with sound, the video */
+      await page.waitForTimeout(1400); await page.screenshot({ path: path.join(out, 'title-0-card-' + tag + '.png') });
+      var card = await page.evaluate(function () { return /ADA STUDIOS/.test(document.body.innerText) && /TAP TO CONTINUE/.test(document.body.innerText); });
+      await page.mouse.click(vw / 2, vh / 2);
+      await page.waitForTimeout(1500); await page.screenshot({ path: path.join(out, 'title-1-logo-' + tag + '.png') });
+      var audio = await page.evaluate(function () { return __game.ctx.debug; });
+      for (var k = 0; k < 4; k++) { await page.waitForTimeout(k === 0 ? 3500 : 5000); await page.screenshot({ path: path.join(out, 'title-3-video' + k + '-' + tag + '.png') }); }
+      console.log(tag, 'card shown:', card);
       await page.click('text=SKIP');
     } else {
       await page.mouse.click(vw / 2, vh / 2); await page.waitForTimeout(500); await page.click('text=SKIP');

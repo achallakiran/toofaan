@@ -1,9 +1,8 @@
-/* modes: the title sequence. It opens straight on the ADA badge, which crackles in and shorts out,
-   "ADA STUDIOS PRESENTS" does the same, then the 30-second opening video plays in time with the theme (skippable), and the main
+/* modes: the title sequence. A quiet dark card, "ADA STUDIOS PRESENTS", with a small blinking "tap to continue"; the tap lets sound
+   start (browsers, phones above all, keep a page silent until it is touched). Then the ADA badge crackles in and shorts out with its
+   zaps, the 30-second opening video plays in time with the theme (skippable), and the main
    menu: a crane shot rising from low at Toofan's front right as he rides Bijli, the title, and New Game / Continue.
-   Browsers (phones above all) keep a page silent until it is touched, so the opening never waits for a tap: where sound is allowed it
-   plays from the start; elsewhere it runs silent with a small sound chip, and the first touch anywhere brings the music in on the beat.
-   The video keeps its own clock; the music follows it. On Android, New Game / Continue also go full screen and turn the phone sideways. */
+   The video keeps its own clock and the music follows it. On Android, New Game / Continue also go full screen and turn the phone sideways. */
 'use strict';
 
 var R = require('../data/ride');
@@ -63,18 +62,26 @@ function createTitle() {
       }
       S.toMenu = toMenu;
 
-      /* the sound chip: shown while the browser still holds the sound back; any touch or key anywhere unlocks it (the shared sfx listens) */
-      var chip = document.createElement('button'); chip.setAttribute('data-ok', '1'); chip.setAttribute('aria-label', 'Turn sound on');
-      chip.style.cssText = 'position:fixed;z-index:47;left:max(14px,env(safe-area-inset-left));top:max(14px,env(safe-area-inset-top));display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:20px;border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.55);color:#fff;font:800 12px system-ui,sans-serif;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
-      chip.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>TAP FOR SOUND';
-      chip.addEventListener('click', function (e) { e.stopPropagation(); S.sfx.wake(); });
-      document.body.appendChild(chip); scope.add(function () { chip.remove(); }); S.chip = chip;
-
-      /* returning from the game (args.menu) goes straight to the menu; otherwise the opening starts at once */
+      /* returning from the game (args.menu) goes straight to the menu */
       if (args && args.menu) { S.phase = 'start'; toMenu(); return; }
-      S.sfx.wake();                                                     /* sound from the first frame wherever the browser allows it */
-      S.phase = 'logo'; S.t = 0; skip.style.display = 'block';
-      S.fx.show({ img: S.img, dur: 3.6 });
+      /* the opening card: dark, minimal, the studio credit and a small blinking prompt; the tap starts sound and the show */
+      S.phase = 'card';
+      var card = document.createElement('div'); card.setAttribute('data-ok', '1');
+      card.style.cssText = 'position:fixed;inset:0;z-index:45;background:#050506;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none';
+      card.innerHTML = '<style>@keyframes tblink{0%,100%{opacity:.15}50%{opacity:.8}}@keyframes tin{from{opacity:0;letter-spacing:.6em}to{opacity:1;letter-spacing:.42em}}</style>' +
+        '<div style="font:700 clamp(15px,3.6vw,22px) system-ui,sans-serif;letter-spacing:.42em;color:#d8dde6;text-indent:.42em;animation:tin 1.6s ease-out both">ADA STUDIOS</div>' +
+        '<div style="margin-top:12px;font:500 clamp(10px,2.2vw,13px) system-ui,sans-serif;letter-spacing:.6em;text-indent:.6em;color:#7d8590;animation:tin 1.6s .3s ease-out both">PRESENTS</div>' +
+        '<div style="position:absolute;bottom:max(34px,calc(env(safe-area-inset-bottom) + 22px));font:500 11px system-ui,sans-serif;letter-spacing:.35em;text-indent:.35em;color:#9aa3ad;animation:tblink 1.8s ease-in-out 1.2s infinite both">TAP TO CONTINUE</div>';
+      document.body.appendChild(card); scope.add(function () { card.remove(); });
+      function begin() {
+        if (S.phase !== 'card') return;
+        S.sfx.wake(); card.remove();
+        S.phase = 'logo'; S.t = 0; skip.style.display = 'block';
+        S.fx.show({ img: S.img, dur: 3.6 });
+      }
+      card.addEventListener('click', begin);
+      var key = function (e) { if (e.key === 'Enter' || e.key === ' ') begin(); };
+      window.addEventListener('keydown', key); scope.add(function () { window.removeEventListener('keydown', key); });
 
       function buildMenu() {
         var view = ctx.view; view.setSky('#a9c7da', false);
@@ -104,14 +111,13 @@ function createTitle() {
     render: function (ctx) {
       var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
       var renderer = ctx.view.renderer;
-      var live = S.sfx.running(); S.chip.style.display = (!live && S.sfx.on && S.phase !== 'menu') ? 'flex' : 'none';
-      if (S.phase === 'logo' || S.phase === 'presents') {
+      var live = S.sfx.running();
+      if (S.phase === 'card') { renderer.setClearColor(0x050506, 1); renderer.clear(); return; }
+      if (S.phase === 'logo') {
         if (!S.fx.draw(dt)) {
-          if (S.phase === 'logo') { S.phase = 'presents'; S.fx.show({ lines: ['ADA STUDIOS', 'PRESENTS'], dur: 2.8 }); }
-          else {
-            S.phase = 'video'; S.t = 0; S.fx.dispose(); S.fx = null;
-            S.vid = intro.createIntro(renderer); S.vStart = now;
-          }
+          S.phase = 'video'; S.t = 0; S.fx.dispose(); S.fx = null;
+          S.vid = intro.createIntro(renderer); S.vStart = now;
+          if (live && S.music.play('intro')) S.vStart = now + 80;                               /* the tap has unlocked sound: the theme starts with the video */
         }
         return;
       }
