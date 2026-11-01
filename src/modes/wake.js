@@ -1,13 +1,13 @@
 /* modes: the New Game opening. Night, in Toofan's room. He is asleep and the nightmare comes: he tosses, the dream world flashes in
-   (the opening video's colours and silhouettes), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
-   awake and sits up. A card, and the game rides out into the city. Skippable. The room, the dog and the dream are built here and freed
+   (Maa calling, his father falling, a shadow with a "?" for a face), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
+   awake and sits up. The dream is its own world (view/dreamview), separate from the title video. A card, and the game rides out into the city. Skippable. The room, the dog and the dream are built here and freed
    on the way out. */
 'use strict';
 
 var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 var dogvox = require('../view/dogvox');
-var intro = require('../view/intro');
+var dreamview = require('../view/dreamview');
 var boxmesh = require('../view/boxmesh');
 var cinecard = require('../view/cinecard');
 var sfxmod = require('../view/sfx');
@@ -78,7 +78,7 @@ function createWake() {
       skip.addEventListener('click', function (e) { e.stopPropagation(); finish(); }); document.body.appendChild(skip);
       function finish() { if (S.done) return; S.done = true; ctx.go(S.next); }
       S.finish = finish;
-      S.dream = intro.createIntro(view.renderer);
+      S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         view.scene.remove(S.room); g.dispose(); S.roomMat.dispose(); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove();
@@ -120,12 +120,13 @@ function createWake() {
       else shot = { x: 0.9, y: 1.5, z: 1.5, lx: -0.5, ly: 0.9, lz: -0.8, fov: 48 };
       view.followCamera(0, 0, shot);
       /* ---- the dream breaking in: short cuts to the opening video's world ---- */
-      var dreamOn = t > 1.6 && t < 4.8 && (t * 10 % 7) < (t > 3.4 ? 2.4 : 1.2);
+      /* three dream shots between the room shots: Maa calling (1.6-2.6 s), the father and the shadow (3.0-3.9 s), the boy running (4.2-4.8 s) */
+      var dreamShot = t > 1.6 && t < 2.6 ? 0 : (t > 3.0 && t < 3.9 ? 1 : (t > 4.2 && t < 4.8 ? 2 : -1)), dreamOn = dreamShot >= 0;
       S.red.style.opacity = t > 4.8 && t < 6.2 ? 0.25 + 0.2 * Math.sin(t * 30) : (t > 9.5 && t < 9.7 ? 0 : 0);
       S.red.style.background = t > 9.5 && t < 9.75 ? '#fff' : '#b0102a';
       if (t > 9.5 && t < 9.75) S.red.style.opacity = 0.85;
       S.tint.style.opacity = dreamOn ? 0 : 1;
-      if (dreamOn) { S.dream.render(16 + (t * 7) % 40, t); } else { S.dream.hide(); view.render(); }
+      if (dreamOn) S.dream.render(dreamShot, t - [1.6, 3.0, 4.2][dreamShot]); else view.render();
       /* ---- the card, then out into the city ---- */
       if (t > 11.6 && !S.card) { S.card = true; cinecard.show({ title: 'UTH JA, TOOFAN', sub: 'SHEHAR SO RAHA HAI. GANG NAHI.', ms: 2600 }); }
       if (t > 13.9) S.finish();
