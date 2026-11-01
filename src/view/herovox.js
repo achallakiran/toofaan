@@ -16,6 +16,7 @@ var C = {
 };
 
 var TH = false;   /* true while building the thug variant: plain cropped hair, bare face, no guitar */
+var HOME = false; /* true while building Toofan at home: no costume, no goggles - a robe over loose pyjamas, bare eyes */
 
 function lerpAt(tbl, y) { return vg.interp(tbl, y); }
 
@@ -23,7 +24,7 @@ function lerpAt(tbl, y) { return vg.interp(tbl, y); }
 function buildHead() {
   var g = vg.createGrid(11, 18, 13), cx = 5.5;
   function headCol(x, y, z) {
-    if (y >= 11 && y <= 12) return C.blu;                                   /* headband */
+    if (y >= 11 && y <= 12) return HOME ? C.hair : C.blu;                   /* headband (none at home) */
     if (y >= 13) return C.hair;
     if (z <= 3 && y >= 4) return C.hair;                                    /* back of head */
     if (!TH && (x <= 1 || x >= 9) && z <= 9 && y >= 3) return C.hair;              /* long side locks */
@@ -48,6 +49,10 @@ function buildHead() {
     [3, 4, 5, 6, 7].forEach(function (x) { face(x, 2, 0, C.mouth); });
     for (var sy = 0; sy <= 3; sy++) for (var sx = 2; sx <= 8; sx++) if (vg.h3(sx, sy, 3, 5) < 0.45 && !(sy === 2)) face(sx, sy, 0, C.skinDD);
   } else {
+  if (HOME) {                                                                                          /* at home: his own eyes and brows, no glasses */
+    [2, 3, 4, 6, 7, 8].forEach(function (x) { face(x, 7, 1, C.white); face(x, 6, 1, C.skin); face(x, 8, 1, C.hair); face(x, 5, 0, C.skin); });
+    face(3, 7, 1, C.pupil); face(7, 7, 1, C.pupil); face(4, 7, 1, C.pupil); face(6, 7, 1, C.pupil); face(5, 7, 1, C.skin);
+  } else {
   /* aviator-style sunglasses: black frame, deep-blue lenses with a glint, temple arms to the ears */
   var LENS = h('#0d1b3a'), LENS2 = h('#16306b'), FRAME = h('#0b0b0d');
   [2, 3, 4, 6, 7, 8].forEach(function (x) { face(x, 8, 1, FRAME); face(x, 5, 0, C.skin); });             /* top rim */
@@ -55,6 +60,7 @@ function buildHead() {
   face(3, 7, 1, h('#5b8cff')); face(7, 7, 1, h('#5b8cff'));                                                          /* glint */
   face(5, 7, 1, FRAME); face(1, 7, 0, FRAME); face(9, 7, 0, FRAME);                                    /* bridge + temples */
   [2, 3, 4, 6, 7, 8].forEach(function (x) { face(x, 5, 1, FRAME); });                                  /* bottom rim */
+  }
   face(5, 6, 1, C.skin); face(5, 5, 2, C.skinL); face(4, 5, 1, C.skin); face(6, 5, 1, C.skin);        /* nose */
   face(5, 8, 0, C.skin);
   /* rugged beard and moustache: extruded, two tones, a few grey flecks, cheek line left ragged */
@@ -78,7 +84,7 @@ function buildHead() {
   for (var mx = 2; mx <= 8; mx++) { tuft(mx, 3, 2); if (Math.abs(mx - 5) >= 2) tuft(mx, 2, 1); if (Math.abs(mx - 5) >= 3) tuft(mx, 1, 1); }   /* thick moustache, drooping ends */
   face(5, 2, 0, C.mouth); face(4, 2, 0, C.mouth); face(6, 2, 0, C.mouth);                              /* lips just visible between moustache and beard */
   }
-  if (!TH) { face(5, 11, 1, C.yel); face(5, 12, 1, C.yel); face(4, 11, 0, C.yelD); face(6, 11, 0, C.yelD); }          /* headband stud */
+  if (!TH && !HOME) { face(5, 11, 1, C.yel); face(5, 12, 1, C.yel); face(4, 11, 0, C.yelD); face(6, 11, 0, C.yelD); }          /* headband stud */
   return { grid: g, pivot: { x: 5.5, y: 1.5, z: 5.0 } };
 }
 
@@ -344,7 +350,15 @@ var KIND_PAL = {
   blocker: { yel: h('#2a4a8c'), yelD: h('#1f386b'), blu: h('#2a4a8c'), bluD: h('#1f386b'), bluL: h('#3a5ca6'), pants: h('#3a3a3a'), pantsD: h('#2a2a2a'), pantsL: h('#4a4a4a') },
   thrower: { yel: h('#5a7a2a'), yelD: h('#45601f'), blu: h('#d8d0b8'), bluD: h('#bfb69c'), bluL: h('#ebe4cf'), skin: h('#c08458'), skinD: h('#a06c44'), skinL: h('#d29466') }
 };
+/* Toofan at home: a deep maroon robe with a pale tie and trim, loose dark pyjamas, bare hands, worn chappals */
+var HOME_PAL = { yel: h('#c9a46a'), yelD: h('#a8854c'), blu: h('#5a2328'), bluD: h('#41181c'), bluL: h('#6e2d33'),
+  pants: h('#2c2a33'), pantsD: h('#201f26'), pantsL: h('#38363f'), glove: h('#9a5f38'), gloveL: h('#b4733f'), shoe: h('#4a3424'), shoeL: h('#5e4430'), belt: h('#41181c'), buckle: h('#5a2328'), buckleD: h('#41181c') };
 function buildParts(variant) {
+  if (variant === 'home') {
+    var saveH = {}, kh; for (kh in HOME_PAL) { saveH[kh] = C[kh]; C[kh] = HOME_PAL[kh]; }
+    HOME = true;
+    try { return buildPartsRaw(); } finally { HOME = false; for (kh in saveH) C[kh] = saveH[kh]; }
+  }
   if (/^thug/.test(variant || '') || variant === 'cop') {
     var PAL = variant === 'cop' ? COP : THUG, kind = (variant || '').split(':')[1], save = {}, k;
     if (kind && KIND_PAL[kind]) { var P2 = {}; for (k in THUG) P2[k] = THUG[k]; for (k in KIND_PAL[kind]) P2[k] = KIND_PAL[kind][k]; PAL = P2; }

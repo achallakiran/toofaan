@@ -14,6 +14,7 @@ var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
 var kit = require('../sim/arenakit');
 var hideout = require('../sim/hideoutgen');
+var hideoutview = require('../view/hideoutview');
 var rngMod = require('../core/rng');
 var CONFIG = require('../data/config');
 
@@ -21,7 +22,6 @@ function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 /* the room is Toofan's hideout (sim/hideoutgen): the same layout the hideout hub uses, framed on his bed corner */
-function room() { return hideout.build(7).boxes; }
 
 function createWake() {
   var S = {};
@@ -33,12 +33,11 @@ function createWake() {
       S.t = 0; S.last = 0; S.done = false; S.next = (args && args.next) || 'ride'; S.flashes = 0; S.barked = 0; S.scream = false;
       S.sfx = sfxmod.createSfx(); S.music = musicMod.createMusic(S.sfx); S.music.setTrack('thappad'); ctx.debug.wake = S;
       /* the room */
-      var a = boxmesh.boxesToArrays(room(), CONFIG.PALETTE), g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
-      g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1));
-      S.roomMat = new THREE.MeshLambertMaterial({ vertexColors: true }); S.room = new THREE.Mesh(g, S.roomMat); view.scene.add(S.room);
+      S.hide = hideoutview.createHideout(view, hideout.build(7));           /* the hideout: dark, screens and blinking racks */
+      S.roomMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+      S.key = new THREE.PointLight(0xbfd0ff, 1.1, 4.5, 1.4); S.key.position.set(1.4, 2.0, 0.4); view.scene.add(S.key);   /* a soft cool key on the bed so we can see him */
       /* Toofan asleep: a holder turns his standing rig to lie on his back along the bed, head on the pillow */
-      S.rig = herorig.createHeroRig(); S.bed = new THREE.Group(); S.lie = new THREE.Group(); view.scene.add(S.bed); S.bed.add(S.lie); S.lie.add(S.rig.root);
+      S.rig = herorig.createHeroRig('home'); S.bed = new THREE.Group(); S.lie = new THREE.Group(); view.scene.add(S.bed); S.bed.add(S.lie); S.lie.add(S.rig.root);
       S.bed.rotation.y = Math.PI / 2; S.bed.position.set(0.75, 0, -1.1);
       S.rig.guitar.visible = false;                                         /* no guitar in bed */
       /* his blanket: a patterned quilt pulled up to his chest while he sleeps, bunched over his legs once he sits up */
@@ -62,7 +61,7 @@ function createWake() {
       /* Raka, asleep by the door at first */
       S.dog = dogvox.createDog(); view.scene.add(S.dog.root); S.dog.root.position.set(3.4, 0, 0.35); S.dog.root.rotation.y = -Math.PI / 2;
       /* moonlight and a night tint over everything (the text stays bright) */
-      var tint = document.createElement('div'); tint.style.cssText = 'position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 45% 35%,rgba(40,70,140,.28),rgba(4,8,22,.72));transition:background .4s';
+      var tint = document.createElement('div'); tint.style.cssText = 'position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 45% 40%,rgba(0,0,0,0) 35%,rgba(2,4,12,.6));transition:background .4s';
       document.body.appendChild(tint); S.tint = tint;
       var red = document.createElement('div'); red.style.cssText = 'position:fixed;inset:0;z-index:4;pointer-events:none;background:#000;opacity:0'; document.body.appendChild(red); S.red = red;
       var word = document.createElement('div'); word.className = 'comic';
@@ -76,7 +75,7 @@ function createWake() {
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         view.scene.remove(S.quiltLie); view.scene.remove(S.quiltSit); S.quiltLie.geometry.dispose(); S.quiltSit.geometry.dispose();
-        view.scene.remove(S.room); g.dispose(); S.roomMat.dispose(); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
+        S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove();
       });
     },
@@ -122,7 +121,7 @@ function createWake() {
       S.red.style.opacity = t > 4.8 && t < 6.2 ? 0.25 + 0.2 * Math.sin(t * 30) : (t > 9.5 && t < 9.7 ? 0 : 0);
       S.red.style.background = t > 9.5 && t < 9.75 ? '#fff' : '#b0102a';
       if (t > 9.5 && t < 9.75) S.red.style.opacity = 0.85;
-      S.tint.style.opacity = dreamOn ? 0 : 1;
+      S.tint.style.opacity = dreamOn ? 0 : 1; S.hide.update(t);
       if (dreamOn) S.dream.render(dreamShot, t - [1.6, 3.0, 4.2][dreamShot]); else view.render();
       /* ---- the card, then out into the city ---- */
       if (t > 11.6 && !S.card) { S.card = true; cinecard.show({ title: 'UTH JA, TOOFAN', sub: 'SHEHAR SO RAHA HAI. GANG NAHI.', ms: 2600 }); }

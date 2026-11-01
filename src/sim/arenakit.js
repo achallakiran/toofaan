@@ -20,7 +20,7 @@ var BRIGHT = [C.SAFFRON, C.MAGENTA, C.TEAL, C.LIME, C.BLUE, C.RED, C.YELLOW, C.P
 var SX = 0.84, SZ = 0.84;
 function squeeze(x, z) { return [x * SX, z < 0 ? z * SZ : z]; }
 function createBuilder(rng) {
-  var out = { boxes: [], tall: [], solids: [], signs: [], lights: [] }, group = null;
+  var out = { boxes: [], tall: [], solids: [], signs: [], lights: [], glows: [], leds: [], lamps: [] }, group = null;
   var fr = { x: 0, z: 0, r: 0 };                                   /* the current piece frame: origin and quarter turns */
   function tx(u, v) {                                              /* piece-local (u, v) to arena (x, z) */
     switch (fr.r & 3) { case 0: return [fr.x + u, fr.z + v]; case 1: return [fr.x + v, fr.z - u]; case 2: return [fr.x - u, fr.z - v]; default: return [fr.x - v, fr.z + u]; }
@@ -34,6 +34,12 @@ function createBuilder(rng) {
       if (q[2] - q[0] < 0.005 || q[3] - q[1] < 0.005 || y1 - y0 < 0.005) return;
       (group ? group.boxes : out.boxes).push({ x0: q[0], y0: y0, z0: q[1], x1: q[2], y1: y1, z1: q[3], c: c });
     },
+    /* a glowing box (screens, neon tubes): drawn unlit, in a raw colour */
+    g: function (u0, y0, v0, u1, y1, v1, hex) { var q = rect(Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)); out.glows.push({ x0: q[0], y0: y0, z0: q[1], x1: q[2], y1: y1, z1: q[3], color: hex }); },
+    /* a small blinking indicator light: colour, blink rate (per second), phase, and pattern ('blink' on/off, 'pulse' smooth, 'flicker' random) */
+    led: function (u, y, v, hex, rate, phase, pattern) { var p = tx(u, v); out.leds.push({ x: p[0], y: y, z: p[1], color: hex, rate: rate || 1, phase: phase || 0, pattern: pattern || 'blink' }); },
+    /* a coloured light that actually lights the room around it */
+    lamp: function (u, y, v, hex, intensity, dist, flicker) { var p = tx(u, v); out.lamps.push({ x: p[0], y: y, z: p[1], color: hex, intensity: intensity || 1, dist: dist || 6, flicker: !!flicker }); },
     /* a footprint nobody walks through (height for the camera checks) */
     s: function (u0, v0, u1, v1, h) { var q = rect(Math.min(u0, u1), Math.min(v0, v1), Math.max(u0, u1), Math.max(v0, v1)); out.solids.push({ x0: q[0], z0: q[1], x1: q[2], z1: q[3], y1: h || 1 }); },
     /* a painted sign (text drawn by the view): centre (u, y, v), size, facing the piece's front */

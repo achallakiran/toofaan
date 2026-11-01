@@ -31,7 +31,7 @@ function createView(canvas, tierName) {
 
   return {
     tier: tier, tierId: tierId,
-    scene: scene, camera: camera, renderer: renderer, canvas: canvas,
+    scene: scene, camera: camera, renderer: renderer, canvas: canvas, lights: { hemi: hemi, sun: sun },
     /* mode-specific look. fog:false for the studio */
     setSky: function (color, fog) {
       scene.background.set(color); scene.fog.color.set(color); scene.fog.near = fog ? 40 : 500; scene.fog.far = fog ? tier.fogFar : 900;
