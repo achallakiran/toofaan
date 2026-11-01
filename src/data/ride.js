@@ -23,12 +23,19 @@ var RIDE = {
   VIEW_R: 85,              /* vehicles are drawn within this distance */
   KINDS: {
     scooter: { len: 1.6, r: 0.45, speed: [8, 11] },
-    auto:    { len: 2.6, r: 0.75, speed: [7, 9.5] },
-    car:     { len: 3.8, r: 0.9,  speed: [9, 13] },
-    bus:     { len: 8.0, r: 1.3,  speed: [6.5, 8.5] },
-    truck:   { len: 6.0, r: 1.2,  speed: [6, 8] }
+    auto:    { len: 2.7, r: 0.75, speed: [7, 9.5] },
+    car:     { len: 3.8, r: 0.9,  speed: [9, 13] },      /* hatchback */
+    sedan:   { len: 4.5, r: 0.92, speed: [9, 13] },
+    suv:     { len: 4.7, r: 0.98, speed: [9, 12.5] },
+    taxi:    { len: 4.2, r: 0.88, speed: [8.5, 12] },
+    tempo:   { len: 3.9, r: 0.92, speed: [6.5, 9] },
+    pickup:  { len: 4.1, r: 0.88, speed: [7.5, 10.5] },
+    bus:     { len: 10.6, r: 1.3, speed: [6.5, 8.5] },
+    truck:   { len: 6.3, r: 1.2,  speed: [6, 8] },
+    tanker:  { len: 6.5, r: 1.15, speed: [6, 8] }
   },
-  WEIGHTS: [['auto', 5], ['car', 6], ['bus', 1], ['truck', 2]]      /* vehicles only: no riders or walkers on the ride roads */,
+  /* vehicles only: no riders or walkers on the ride roads */
+  WEIGHTS: [['auto', 5], ['car', 4], ['sedan', 3], ['suv', 2], ['taxi', 2], ['tempo', 2], ['pickup', 2], ['bus', 1], ['truck', 2], ['tanker', 1]],
 
   /* road fights (encounters): the view turns to the side, goons ride up beside Toofan; a car can be leapt onto with a timed block */
   ENC: {

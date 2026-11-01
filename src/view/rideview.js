@@ -7,6 +7,7 @@
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
 var ambient = require('./ambientvox');
+var ridevox = require('./ridevox');
 var bikevox = require('./bikevox');
 var herorig = require('./herorig');
 var posemath = require('./posemath');
@@ -237,7 +238,7 @@ function createRideView(scene) {
   var beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 30, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
   beam.position.y = 15; mark.add(beam); root.add(mark);
   var ev = encview.createEncView(root, rig, bike, blobUnder);
-  var cars = {}, wheel = 0, runPhase = 0, layOn = 0, map = null, blocks = {}, roads = null, wires = null, trees = [], treeGeos = null;
+  var traffic = ridevox.createRideTraffic(root), cars = {}, wheel = 0, runPhase = 0, layOn = 0, map = null, blocks = {}, roads = null, wires = null, trees = [], treeGeos = null;
 
   /* the blocks of the map plus a ring of blocks round its edge, so the city does not end in bare ground */
   function blockList() {
@@ -302,14 +303,13 @@ function createRideView(scene) {
       if (r.target && r.state !== 'arrived' && !r.enc) { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
       else mark.visible = false;
       /* traffic near the bike, each with a soft shadow */
-      var seen = {};
+      var draw = [];
       for (i = 0; i < r.traffic.length; i++) {
         var v = r.traffic[i]; if (r.enc || Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
-        seen[v.id] = 1; var m = cars[v.id];
-        if (!m) { m = cars[v.id] = ambient.createMesh({ kind: v.kind, look: v.look, id: v.id }); var K = R.KINDS[v.kind]; blobUnder(m, K.r * 2.4, K.len * 1.1); root.add(m); }
-        m.position.set(v.px + (v.x - v.px) * alpha, 0, v.pz + (v.z - v.pz) * alpha); m.rotation.y = v.h;
+        var K = R.KINDS[v.kind];
+        draw.push({ kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
       }
-      for (var id in cars) if (!seen[id]) { root.remove(cars[id]); delete cars[id]; }
+      traffic.draw(draw);
     },
     dispose: function () {
       ev.dispose(); scene.remove(root); scene.background = prevBg; scene.fog.color.copy(prevFog.c); scene.fog.near = prevFog.n; scene.fog.far = prevFog.f;
@@ -317,7 +317,7 @@ function createRideView(scene) {
       if (roads) roads.geometry.dispose(); if (wires) { wires.geometry.dispose(); wires.material.dispose(); }
       if (treeGeos) treeGeos.forEach(function (g) { g.dispose(); });
       sky.dispose(); signMat.map.dispose(); signMat.dispose(); shadowMat.dispose(); blob.dispose();
-      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); ambient.dispose(); cars = {};
+      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); ambient.dispose(); traffic.dispose(); cars = {};
     }
   };
 }
