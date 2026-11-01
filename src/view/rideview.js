@@ -309,7 +309,7 @@ function createRideView(scene) {
         var K = R.KINDS[v.kind];
         draw.push({ kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
       }
-      traffic.draw(draw);
+      traffic.draw(draw, b.x, b.z);
     },
     dispose: function () {
       ev.dispose(); scene.remove(root); scene.background = prevBg; scene.fog.color.copy(prevFog.c); scene.fog.near = prevFog.n; scene.fog.far = prevFog.f;

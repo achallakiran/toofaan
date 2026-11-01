@@ -8,6 +8,7 @@ var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
 var kit = require('../sim/arenakit');
 var rngMod = require('../core/rng');
+var vg = require('./voxgrid');
 var C = kit.C;
 
 /* wheels: a stepped disc seen from the side, with a hub */
@@ -96,6 +97,21 @@ var BUILD = {
     plate(K, 3.22, 0.7, true);
     [2.3, -1.5, -2.5].forEach(function (v) { wheel(K, -1.0, v, 0.46, 0.3); wheel(K, 1.0, v, 0.46, 0.3); });
   },
+  /* the gang's car: a black sedan with a red stripe, a bull bar, roof rails to hold on to and open side windows the crew lean out of */
+  gang: function (K) {
+    car(K, { len: 4.5, w: 1.8, roof: 1.42, hood: 1.2, boot: 0.95, col: C.BLACK, rails: true });
+    K.b(-0.92, 0.55, -2.25, 0.92, 0.62, 2.25, C.CRIMSON);                                      /* the stripe */
+    K.b(-0.86, 0.9, -1.05, -0.8, 1.32, 1.05, C.CHAR); K.b(0.8, 0.9, -1.05, 0.86, 1.32, 1.05, C.CHAR);   /* open window holes */
+    K.b(-0.85, 0.2, 2.28, 0.85, 0.75, 2.42, C.STEEL); for (var i = 0; i < 5; i++) K.b(-0.75 + i * 0.37, 0.25, 2.4, -0.68 + i * 0.37, 0.7, 2.46, C.STEEL);   /* bull bar */
+    K.b(-0.5, 0.86, 1.5, -0.1, 0.9, 1.9, C.CHAR); K.b(0.2, 0.86, 1.2, 0.6, 0.89, 1.5, C.CHAR);   /* dents on the bonnet */
+    K.b(-0.8, 0.95, -2.25, 0.8, 1.02, -2.05, C.CRIMSON); K.b(-0.75, 0.85, -2.2, -0.65, 0.95, -2.1, C.BLACK); K.b(0.65, 0.85, -2.2, 0.75, 0.95, -2.1, C.BLACK);   /* spoiler */
+  },
+  /* the police jeep-car: white with a blue band and POLICE lettering blocks */
+  police: function (K) {
+    car(K, { len: 4.3, w: 1.76, roof: 1.5, hood: 1.0, boot: 0.6, col: C.OFFWHITE, rails: false });
+    K.b(-0.9, 0.5, -2.15, 0.9, 0.66, 2.15, C.NAVY); K.b(-0.9, 0.66, -2.15, 0.9, 0.7, 2.15, C.CRIMSON);
+    for (var i = 0; i < 6; i++) { K.b(-0.91, 0.74, -0.9 + i * 0.32, -0.89, 0.84, -0.7 + i * 0.32, C.NAVY); K.b(0.89, 0.74, -0.9 + i * 0.32, 0.91, 0.84, -0.7 + i * 0.32, C.NAVY); }
+  },
   pickup: function (K, look) {                                                                 /* the mini truck (a "chhota hathi") */
     var col = [C.OFFWHITE, C.STEEL, C.CRIMSON, C.BLUE][look];
     K.b(-0.75, 0.35, 0.8, 0.75, 1.75, 1.95, col); K.b(-0.7, 1.1, 1.95, 0.7, 1.65, 1.99, C.SLATE); K.b(-0.76, 1.1, 0.95, -0.74, 1.6, 1.8, C.SLATE); K.b(0.74, 1.1, 0.95, 0.76, 1.6, 1.8, C.SLATE);
@@ -106,32 +122,63 @@ var BUILD = {
   }
 };
 var LOOKS = 4;
+var VS = 0.085;                         /* the voxel size of Bijli, so traffic and bike share one look */
+var SCALE = require('../data/ride').VEH_SCALE;
+var NEAR = 34, MAX_NEAR = 6;            /* the six nearest vehicles within this distance get the full voxel model, the rest the light box model */
+
+function boxesOf(kind, look) { var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0); (BUILD[kind] || BUILD.car)(K, look); return K.out.boxes; }
+function toGeo(a) {
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere(); return g;
+}
+/* the box drawing of a vehicle filled into a voxel grid (later boxes paint over earlier ones), then meshed with corner shading and colour grain */
+function voxelArrays(boxes, seed) {
+  var x0 = 1e9, y0 = 0, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9, i;
+  boxes.forEach(function (b) { x0 = Math.min(x0, b.x0); z0 = Math.min(z0, b.z0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); z1 = Math.max(z1, b.z1); });
+  var W = Math.ceil((x1 - x0) / VS) + 1, H = Math.ceil((y1 - y0) / VS) + 1, D = Math.ceil((z1 - z0) / VS) + 1, g = vg.createGrid(W, H, D), cache = {};
+  for (i = 0; i < boxes.length; i++) {
+    var b = boxes[i], col = cache[b.c] || (cache[b.c] = vg.hex(CONFIG.PALETTE[b.c % CONFIG.PALETTE.length]));
+    var ax = Math.round((b.x0 - x0) / VS), bx = Math.max(ax + 1, Math.round((b.x1 - x0) / VS)), ay = Math.round((b.y0 - y0) / VS), by = Math.max(ay + 1, Math.round((b.y1 - y0) / VS)), az = Math.round((b.z0 - z0) / VS), bz = Math.max(az + 1, Math.round((b.z1 - z0) / VS));
+    vg.box(g, ax, ay, az, bx - 1, by - 1, bz - 1, col);
+  }
+  return vg.meshGrid(g, { x: -x0 / VS, y: 0, z: -z0 / VS }, VS, { jitter: 0.05, seed: seed });
+}
+var cacheNear = {};
+/* one vehicle model as a single geometry (the gang car in the road fights uses this); real size, forward +z */
+function modelGeometry(kind, look) {
+  var key = kind + (look || 0);
+  if (!cacheNear[key]) cacheNear[key] = toGeo(voxelArrays(boxesOf(kind, look || 0), key.length * 13 + (look || 0)));
+  return cacheNear[key];
+}
+/* the model's roof height and half width (real metres), for anything that has to sit on it */
+function modelSize(kind, look) { var b = boxesOf(kind, look || 0), r = { roof: 0, half: 0, len: 0 }; b.forEach(function (q) { r.roof = Math.max(r.roof, q.y1); r.half = Math.max(r.half, Math.abs(q.x0), Math.abs(q.x1)); r.len = Math.max(r.len, Math.abs(q.z0), Math.abs(q.z1)); }); return r; }
 
 function createRideTraffic(parent) {
-  var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), sets = {}, geos = [];
+  var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), sets = {}, farGeos = [];
   var blobGeo = new THREE.CircleGeometry(0.5, 16); blobGeo.rotateX(-Math.PI / 2);
   var blobMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
   var blobs = new THREE.InstancedMesh(blobGeo, blobMat, 256); blobs.renderOrder = 2; blobs.frustumCulled = false; blobs.count = 0; parent.add(blobs);
   var M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), Sc = new THREE.Vector3(1, 1, 1), Y = new THREE.Vector3(0, 1, 0), tris = 0;
-  function set(kind, look) {
-    var key = kind + look, s = sets[key];
+  function set(kind, look, near) {
+    var key = kind + look + (near ? 'n' : 'f'), s = sets[key];
     if (s) return s;
-    var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0);
-    (BUILD[kind] || BUILD.car)(K, look);
-    var a = boxmesh.boxesToArrays(K.out.boxes, CONFIG.PALETTE), g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere(); geos.push(g);
-    var im = new THREE.InstancedMesh(g, mat, 48); im.count = 0; im.frustumCulled = false; parent.add(im);
-    s = sets[key] = { im: im, n: 0, tris: a.triangles }; return s;
+    var g, t;
+    if (near) { g = modelGeometry(kind, look); t = g.index.count / 3; }
+    else { var a = boxmesh.boxesToArrays(boxesOf(kind, look), CONFIG.PALETTE); g = toGeo(a); t = a.triangles; farGeos.push(g); }
+    var im = new THREE.InstancedMesh(g, mat, near ? 24 : 48); im.count = 0; im.frustumCulled = false; parent.add(im);
+    s = sets[key] = { im: im, n: 0, tris: t, cap: near ? 24 : 48 }; return s;
   }
   return {
-    LOOKS: LOOKS, kinds: Object.keys(BUILD),
-    /* draw this frame's vehicles: list of {kind, look, x, z, h, len, r} */
-    draw: function (list) {
-      var k, i, nb = 0; for (k in sets) sets[k].n = 0; tris = 0;
+    LOOKS: LOOKS, kinds: Object.keys(BUILD), SCALE: SCALE,
+    /* draw this frame's vehicles: list of {kind, look, x, z, h, len, r}; (fx, fz) is the focus, for the near/far choice */
+    draw: function (list, fx, fz) {
+      var k, i, nb = 0, nNear = 0; for (k in sets) sets[k].n = 0; tris = 0;
+      if (fx !== undefined) { list.forEach(function (v) { v.d = Math.hypot(v.x - fx, v.z - fz); }); list.sort(function (a, b) { return a.d - b.d; }); }
       for (i = 0; i < list.length; i++) {
-        var v = list[i], s = set(v.kind, v.look % LOOKS); if (s.n >= 48) continue;
-        Q.setFromAxisAngle(Y, v.h); P.set(v.x, 0, v.z); Sc.set(1, 1, 1); M.compose(P, Q, Sc); s.im.setMatrixAt(s.n++, M); tris += s.tris;
+        var v = list[i], near = fx === undefined || (v.d < NEAR && nNear < MAX_NEAR), s = set(v.kind, v.look % LOOKS, near); if (near) nNear++;
+        if (s.n >= s.cap) { s = set(v.kind, v.look % LOOKS, false); if (s.n >= s.cap) continue; }
+        Q.setFromAxisAngle(Y, v.h); P.set(v.x, 0, v.z); Sc.set(SCALE, SCALE, SCALE); M.compose(P, Q, Sc); s.im.setMatrixAt(s.n++, M); tris += s.tris;
         if (nb < 256) { P.set(v.x + 0.35, 0.05, v.z + 0.25); Sc.set(v.r * 2.6, 1, v.len * 1.1); M.compose(P, Q, Sc); blobs.setMatrixAt(nb++, M); }
       }
       for (k in sets) { sets[k].im.count = sets[k].n; sets[k].im.instanceMatrix.needsUpdate = true; }
@@ -140,9 +187,11 @@ function createRideTraffic(parent) {
     triangles: function () { return tris; },
     dispose: function () {
       for (var k in sets) parent.remove(sets[k].im); parent.remove(blobs);
-      geos.forEach(function (g) { g.dispose(); }); mat.dispose(); blobGeo.dispose(); blobMat.dispose(); sets = {};
+      farGeos.forEach(function (g) { g.dispose(); }); mat.dispose(); blobGeo.dispose(); blobMat.dispose(); sets = {};
     }
   };
 }
+/* the voxel models are shared between rides (built once, kept); this frees them when the game wants the memory back */
+function disposeModels() { for (var k in cacheNear) cacheNear[k].dispose(); cacheNear = {}; }
 
-module.exports = { createRideTraffic: createRideTraffic, BUILD: BUILD, LOOKS: LOOKS };
+module.exports = { createRideTraffic: createRideTraffic, modelGeometry: modelGeometry, modelSize: modelSize, disposeModels: disposeModels, BUILD: BUILD, LOOKS: LOOKS, VS: VS };

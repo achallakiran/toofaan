@@ -366,7 +366,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 59',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 60',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -915,6 +915,7 @@ var RIDE = {
 
   TRAFFIC: 170,            /* vehicles on the whole map */
   VIEW_R: 85,              /* vehicles are drawn within this distance */
+  VEH_SCALE: 1.25,         /* traffic is drawn (and sized) a quarter bigger than life, to sit beside the 1.4x hero and Bijli */
   KINDS: {
     scooter: { len: 1.6, r: 0.45, speed: [8, 11] },
     auto:    { len: 2.7, r: 0.75, speed: [7, 9.5] },
@@ -949,6 +950,9 @@ var RIDE = {
     MIN_RUN: 60          /* metres of straight road needed ahead to start one */
   }
 };
+
+/* vehicle sizes above are life size; the road uses them at the drawn scale */
+Object.keys(RIDE.KINDS).forEach(function (k) { RIDE.KINDS[k].len *= RIDE.VEH_SCALE; RIDE.KINDS[k].r *= RIDE.VEH_SCALE; });
 
 module.exports = RIDE;
 
@@ -1609,7 +1613,7 @@ function createRide() {
         if (F.police) {                                                      /* the police scene: a slow circling shot */
           var a = 0.85 * Math.sin(S.t * 0.22), dx = rx * Math.cos(a) + e.f.x * Math.sin(a), dz = rz * Math.cos(a) + e.f.z * Math.sin(a);
           side = { x: fx + dx * 8.0, y: 3.0, z: fz + dz * 8.0, lx: fx, ly: 1.2, lz: fz, fov: 46 };
-        } else if (F.roof) side = { x: fx + rx * 3.4 + e.f.x * 3.6, y: 6.6, z: fz + rz * 3.4 + e.f.z * 3.6, lx: fx, ly: 1.7, lz: fz, fov: 50 };     /* from above, so Toofan on the roof and the men at the windows both show */
+        } else if (F.roof) side = { x: fx + rx * 5.4 + e.f.x * 2.6, y: 3.4, z: fz + rz * 5.4 + e.f.z * 2.6, lx: fx - e.f.x * 0.4, ly: 2.0, lz: fz - e.f.z * 0.4, fov: 50 };     /* low at the side, Spider-Man style: Toofan flat on the roof against the sky, the men at the windows below him */
         else if (F.bikes) side = { x: fx + e.f.x * 6.6 * near + rx * 1.0, y: 4.6 * near + 0.6, z: fz + e.f.z * 6.6 * near + rz * 1.0, lx: fx - e.f.x * 0.6, ly: 0.95, lz: fz - e.f.z * 0.6, fov: 54 };   /* goons both sides: high in front, looking back at all three */
         else side = { x: fx + rx * 5.6 * near + e.f.x * 4.2, y: 3.9, z: fz + rz * 5.6 * near + e.f.z * 4.2, lx: fx - e.f.x * 0.3, ly: 1.15, lz: fz - e.f.z * 0.3, fov: 50 };
         mix(side, ease(S.sideW));
@@ -5334,7 +5338,8 @@ var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
 var ambient = require('./ambientvox');
 
-var ROOF_Y = 1.4, HALF_W = 0.95;                    /* the street car's roof height and half width, before scaling */
+var ridevox = require('./ridevox');
+var ROOF_Y = 1.42, HALF_W = 0.9;                    /* the gang car's roof height and half width, before scaling (from its model) */
 var GVS = 0.075;
 var h = vg.hex;
 
@@ -5434,7 +5439,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
   }
   function makeMan(variant) { var rig = herorig.createHeroRig(variant), mark = makeMark(0xffffff); rig.root.scale.setScalar(S); rig.head.add(mark); mark.position.y = 0.55; root.add(rig.root); return { rig: rig, mark: mark }; }
   function makeCar(look, lights) {
-    var m = ambient.createMesh({ kind: 'car', look: look, id: look }); m.scale.setScalar(S); blobUnder(m, 2.2, 4.2); root.add(m);
+    var m = new THREE.Mesh(ridevox.modelGeometry(lights ? 'police' : 'gang', 0), goonMat); m.scale.setScalar(S); blobUnder(m, 2.2, 4.6); root.add(m);
     var mark = makeMark(0xff3a2a); mark.position.y = ROOF_Y + 0.9; m.add(mark); mark.userData.base = 2.2 / S;
     var bar = null;
     if (lights) { bar = [new THREE.Mesh(lightGeo, lightR), new THREE.Mesh(lightGeo, lightB)]; bar[0].position.set(-0.2, ROOF_Y + 0.07, 0); bar[1].position.set(0.2, ROOF_Y + 0.07, 0); m.add(bar[0]); m.add(bar[1]); }
@@ -7584,7 +7589,7 @@ function createRideView(scene) {
         var K = R.KINDS[v.kind];
         draw.push({ kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
       }
-      traffic.draw(draw);
+      traffic.draw(draw, b.x, b.z);
     },
     dispose: function () {
       ev.dispose(); scene.remove(root); scene.background = prevBg; scene.fog.color.copy(prevFog.c); scene.fog.near = prevFog.n; scene.fog.far = prevFog.f;
@@ -7611,6 +7616,7 @@ var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
 var kit = require('../sim/arenakit');
 var rngMod = require('../core/rng');
+var vg = require('./voxgrid');
 var C = kit.C;
 
 /* wheels: a stepped disc seen from the side, with a hub */
@@ -7699,6 +7705,21 @@ var BUILD = {
     plate(K, 3.22, 0.7, true);
     [2.3, -1.5, -2.5].forEach(function (v) { wheel(K, -1.0, v, 0.46, 0.3); wheel(K, 1.0, v, 0.46, 0.3); });
   },
+  /* the gang's car: a black sedan with a red stripe, a bull bar, roof rails to hold on to and open side windows the crew lean out of */
+  gang: function (K) {
+    car(K, { len: 4.5, w: 1.8, roof: 1.42, hood: 1.2, boot: 0.95, col: C.BLACK, rails: true });
+    K.b(-0.92, 0.55, -2.25, 0.92, 0.62, 2.25, C.CRIMSON);                                      /* the stripe */
+    K.b(-0.86, 0.9, -1.05, -0.8, 1.32, 1.05, C.CHAR); K.b(0.8, 0.9, -1.05, 0.86, 1.32, 1.05, C.CHAR);   /* open window holes */
+    K.b(-0.85, 0.2, 2.28, 0.85, 0.75, 2.42, C.STEEL); for (var i = 0; i < 5; i++) K.b(-0.75 + i * 0.37, 0.25, 2.4, -0.68 + i * 0.37, 0.7, 2.46, C.STEEL);   /* bull bar */
+    K.b(-0.5, 0.86, 1.5, -0.1, 0.9, 1.9, C.CHAR); K.b(0.2, 0.86, 1.2, 0.6, 0.89, 1.5, C.CHAR);   /* dents on the bonnet */
+    K.b(-0.8, 0.95, -2.25, 0.8, 1.02, -2.05, C.CRIMSON); K.b(-0.75, 0.85, -2.2, -0.65, 0.95, -2.1, C.BLACK); K.b(0.65, 0.85, -2.2, 0.75, 0.95, -2.1, C.BLACK);   /* spoiler */
+  },
+  /* the police jeep-car: white with a blue band and POLICE lettering blocks */
+  police: function (K) {
+    car(K, { len: 4.3, w: 1.76, roof: 1.5, hood: 1.0, boot: 0.6, col: C.OFFWHITE, rails: false });
+    K.b(-0.9, 0.5, -2.15, 0.9, 0.66, 2.15, C.NAVY); K.b(-0.9, 0.66, -2.15, 0.9, 0.7, 2.15, C.CRIMSON);
+    for (var i = 0; i < 6; i++) { K.b(-0.91, 0.74, -0.9 + i * 0.32, -0.89, 0.84, -0.7 + i * 0.32, C.NAVY); K.b(0.89, 0.74, -0.9 + i * 0.32, 0.91, 0.84, -0.7 + i * 0.32, C.NAVY); }
+  },
   pickup: function (K, look) {                                                                 /* the mini truck (a "chhota hathi") */
     var col = [C.OFFWHITE, C.STEEL, C.CRIMSON, C.BLUE][look];
     K.b(-0.75, 0.35, 0.8, 0.75, 1.75, 1.95, col); K.b(-0.7, 1.1, 1.95, 0.7, 1.65, 1.99, C.SLATE); K.b(-0.76, 1.1, 0.95, -0.74, 1.6, 1.8, C.SLATE); K.b(0.74, 1.1, 0.95, 0.76, 1.6, 1.8, C.SLATE);
@@ -7709,32 +7730,63 @@ var BUILD = {
   }
 };
 var LOOKS = 4;
+var VS = 0.085;                         /* the voxel size of Bijli, so traffic and bike share one look */
+var SCALE = require('../data/ride').VEH_SCALE;
+var NEAR = 34, MAX_NEAR = 6;            /* the six nearest vehicles within this distance get the full voxel model, the rest the light box model */
+
+function boxesOf(kind, look) { var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0); (BUILD[kind] || BUILD.car)(K, look); return K.out.boxes; }
+function toGeo(a) {
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere(); return g;
+}
+/* the box drawing of a vehicle filled into a voxel grid (later boxes paint over earlier ones), then meshed with corner shading and colour grain */
+function voxelArrays(boxes, seed) {
+  var x0 = 1e9, y0 = 0, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9, i;
+  boxes.forEach(function (b) { x0 = Math.min(x0, b.x0); z0 = Math.min(z0, b.z0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); z1 = Math.max(z1, b.z1); });
+  var W = Math.ceil((x1 - x0) / VS) + 1, H = Math.ceil((y1 - y0) / VS) + 1, D = Math.ceil((z1 - z0) / VS) + 1, g = vg.createGrid(W, H, D), cache = {};
+  for (i = 0; i < boxes.length; i++) {
+    var b = boxes[i], col = cache[b.c] || (cache[b.c] = vg.hex(CONFIG.PALETTE[b.c % CONFIG.PALETTE.length]));
+    var ax = Math.round((b.x0 - x0) / VS), bx = Math.max(ax + 1, Math.round((b.x1 - x0) / VS)), ay = Math.round((b.y0 - y0) / VS), by = Math.max(ay + 1, Math.round((b.y1 - y0) / VS)), az = Math.round((b.z0 - z0) / VS), bz = Math.max(az + 1, Math.round((b.z1 - z0) / VS));
+    vg.box(g, ax, ay, az, bx - 1, by - 1, bz - 1, col);
+  }
+  return vg.meshGrid(g, { x: -x0 / VS, y: 0, z: -z0 / VS }, VS, { jitter: 0.05, seed: seed });
+}
+var cacheNear = {};
+/* one vehicle model as a single geometry (the gang car in the road fights uses this); real size, forward +z */
+function modelGeometry(kind, look) {
+  var key = kind + (look || 0);
+  if (!cacheNear[key]) cacheNear[key] = toGeo(voxelArrays(boxesOf(kind, look || 0), key.length * 13 + (look || 0)));
+  return cacheNear[key];
+}
+/* the model's roof height and half width (real metres), for anything that has to sit on it */
+function modelSize(kind, look) { var b = boxesOf(kind, look || 0), r = { roof: 0, half: 0, len: 0 }; b.forEach(function (q) { r.roof = Math.max(r.roof, q.y1); r.half = Math.max(r.half, Math.abs(q.x0), Math.abs(q.x1)); r.len = Math.max(r.len, Math.abs(q.z0), Math.abs(q.z1)); }); return r; }
 
 function createRideTraffic(parent) {
-  var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), sets = {}, geos = [];
+  var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), sets = {}, farGeos = [];
   var blobGeo = new THREE.CircleGeometry(0.5, 16); blobGeo.rotateX(-Math.PI / 2);
   var blobMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
   var blobs = new THREE.InstancedMesh(blobGeo, blobMat, 256); blobs.renderOrder = 2; blobs.frustumCulled = false; blobs.count = 0; parent.add(blobs);
   var M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), Sc = new THREE.Vector3(1, 1, 1), Y = new THREE.Vector3(0, 1, 0), tris = 0;
-  function set(kind, look) {
-    var key = kind + look, s = sets[key];
+  function set(kind, look, near) {
+    var key = kind + look + (near ? 'n' : 'f'), s = sets[key];
     if (s) return s;
-    var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0);
-    (BUILD[kind] || BUILD.car)(K, look);
-    var a = boxmesh.boxesToArrays(K.out.boxes, CONFIG.PALETTE), g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere(); geos.push(g);
-    var im = new THREE.InstancedMesh(g, mat, 48); im.count = 0; im.frustumCulled = false; parent.add(im);
-    s = sets[key] = { im: im, n: 0, tris: a.triangles }; return s;
+    var g, t;
+    if (near) { g = modelGeometry(kind, look); t = g.index.count / 3; }
+    else { var a = boxmesh.boxesToArrays(boxesOf(kind, look), CONFIG.PALETTE); g = toGeo(a); t = a.triangles; farGeos.push(g); }
+    var im = new THREE.InstancedMesh(g, mat, near ? 24 : 48); im.count = 0; im.frustumCulled = false; parent.add(im);
+    s = sets[key] = { im: im, n: 0, tris: t, cap: near ? 24 : 48 }; return s;
   }
   return {
-    LOOKS: LOOKS, kinds: Object.keys(BUILD),
-    /* draw this frame's vehicles: list of {kind, look, x, z, h, len, r} */
-    draw: function (list) {
-      var k, i, nb = 0; for (k in sets) sets[k].n = 0; tris = 0;
+    LOOKS: LOOKS, kinds: Object.keys(BUILD), SCALE: SCALE,
+    /* draw this frame's vehicles: list of {kind, look, x, z, h, len, r}; (fx, fz) is the focus, for the near/far choice */
+    draw: function (list, fx, fz) {
+      var k, i, nb = 0, nNear = 0; for (k in sets) sets[k].n = 0; tris = 0;
+      if (fx !== undefined) { list.forEach(function (v) { v.d = Math.hypot(v.x - fx, v.z - fz); }); list.sort(function (a, b) { return a.d - b.d; }); }
       for (i = 0; i < list.length; i++) {
-        var v = list[i], s = set(v.kind, v.look % LOOKS); if (s.n >= 48) continue;
-        Q.setFromAxisAngle(Y, v.h); P.set(v.x, 0, v.z); Sc.set(1, 1, 1); M.compose(P, Q, Sc); s.im.setMatrixAt(s.n++, M); tris += s.tris;
+        var v = list[i], near = fx === undefined || (v.d < NEAR && nNear < MAX_NEAR), s = set(v.kind, v.look % LOOKS, near); if (near) nNear++;
+        if (s.n >= s.cap) { s = set(v.kind, v.look % LOOKS, false); if (s.n >= s.cap) continue; }
+        Q.setFromAxisAngle(Y, v.h); P.set(v.x, 0, v.z); Sc.set(SCALE, SCALE, SCALE); M.compose(P, Q, Sc); s.im.setMatrixAt(s.n++, M); tris += s.tris;
         if (nb < 256) { P.set(v.x + 0.35, 0.05, v.z + 0.25); Sc.set(v.r * 2.6, 1, v.len * 1.1); M.compose(P, Q, Sc); blobs.setMatrixAt(nb++, M); }
       }
       for (k in sets) { sets[k].im.count = sets[k].n; sets[k].im.instanceMatrix.needsUpdate = true; }
@@ -7743,12 +7795,14 @@ function createRideTraffic(parent) {
     triangles: function () { return tris; },
     dispose: function () {
       for (var k in sets) parent.remove(sets[k].im); parent.remove(blobs);
-      geos.forEach(function (g) { g.dispose(); }); mat.dispose(); blobGeo.dispose(); blobMat.dispose(); sets = {};
+      farGeos.forEach(function (g) { g.dispose(); }); mat.dispose(); blobGeo.dispose(); blobMat.dispose(); sets = {};
     }
   };
 }
+/* the voxel models are shared between rides (built once, kept); this frees them when the game wants the memory back */
+function disposeModels() { for (var k in cacheNear) cacheNear[k].dispose(); cacheNear = {}; }
 
-module.exports = { createRideTraffic: createRideTraffic, BUILD: BUILD, LOOKS: LOOKS };
+module.exports = { createRideTraffic: createRideTraffic, modelGeometry: modelGeometry, modelSize: modelSize, disposeModels: disposeModels, BUILD: BUILD, LOOKS: LOOKS, VS: VS };
 
 };
 defs["view/sfx"]=function(module,exports,require){

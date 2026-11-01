@@ -22,6 +22,7 @@ var RIDE = {
 
   TRAFFIC: 170,            /* vehicles on the whole map */
   VIEW_R: 85,              /* vehicles are drawn within this distance */
+  VEH_SCALE: 1.25,         /* traffic is drawn (and sized) a quarter bigger than life, to sit beside the 1.4x hero and Bijli */
   KINDS: {
     scooter: { len: 1.6, r: 0.45, speed: [8, 11] },
     auto:    { len: 2.7, r: 0.75, speed: [7, 9.5] },
@@ -56,5 +57,8 @@ var RIDE = {
     MIN_RUN: 60          /* metres of straight road needed ahead to start one */
   }
 };
+
+/* vehicle sizes above are life size; the road uses them at the drawn scale */
+Object.keys(RIDE.KINDS).forEach(function (k) { RIDE.KINDS[k].len *= RIDE.VEH_SCALE; RIDE.KINDS[k].r *= RIDE.VEH_SCALE; });
 
 module.exports = RIDE;

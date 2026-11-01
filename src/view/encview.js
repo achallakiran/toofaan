@@ -10,7 +10,8 @@ var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
 var ambient = require('./ambientvox');
 
-var ROOF_Y = 1.4, HALF_W = 0.95;                    /* the street car's roof height and half width, before scaling */
+var ridevox = require('./ridevox');
+var ROOF_Y = 1.42, HALF_W = 0.9;                    /* the gang car's roof height and half width, before scaling (from its model) */
 var GVS = 0.075;
 var h = vg.hex;
 
@@ -110,7 +111,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
   }
   function makeMan(variant) { var rig = herorig.createHeroRig(variant), mark = makeMark(0xffffff); rig.root.scale.setScalar(S); rig.head.add(mark); mark.position.y = 0.55; root.add(rig.root); return { rig: rig, mark: mark }; }
   function makeCar(look, lights) {
-    var m = ambient.createMesh({ kind: 'car', look: look, id: look }); m.scale.setScalar(S); blobUnder(m, 2.2, 4.2); root.add(m);
+    var m = new THREE.Mesh(ridevox.modelGeometry(lights ? 'police' : 'gang', 0), goonMat); m.scale.setScalar(S); blobUnder(m, 2.2, 4.6); root.add(m);
     var mark = makeMark(0xff3a2a); mark.position.y = ROOF_Y + 0.9; m.add(mark); mark.userData.base = 2.2 / S;
     var bar = null;
     if (lights) { bar = [new THREE.Mesh(lightGeo, lightR), new THREE.Mesh(lightGeo, lightB)]; bar[0].position.set(-0.2, ROOF_Y + 0.07, 0); bar[1].position.set(0.2, ROOF_Y + 0.07, 0); m.add(bar[0]); m.add(bar[1]); }

@@ -127,7 +127,7 @@ function createRide() {
         if (F.police) {                                                      /* the police scene: a slow circling shot */
           var a = 0.85 * Math.sin(S.t * 0.22), dx = rx * Math.cos(a) + e.f.x * Math.sin(a), dz = rz * Math.cos(a) + e.f.z * Math.sin(a);
           side = { x: fx + dx * 8.0, y: 3.0, z: fz + dz * 8.0, lx: fx, ly: 1.2, lz: fz, fov: 46 };
-        } else if (F.roof) side = { x: fx + rx * 3.4 + e.f.x * 3.6, y: 6.6, z: fz + rz * 3.4 + e.f.z * 3.6, lx: fx, ly: 1.7, lz: fz, fov: 50 };     /* from above, so Toofan on the roof and the men at the windows both show */
+        } else if (F.roof) side = { x: fx + rx * 5.4 + e.f.x * 2.6, y: 3.4, z: fz + rz * 5.4 + e.f.z * 2.6, lx: fx - e.f.x * 0.4, ly: 2.0, lz: fz - e.f.z * 0.4, fov: 50 };     /* low at the side, Spider-Man style: Toofan flat on the roof against the sky, the men at the windows below him */
         else if (F.bikes) side = { x: fx + e.f.x * 6.6 * near + rx * 1.0, y: 4.6 * near + 0.6, z: fz + e.f.z * 6.6 * near + rz * 1.0, lx: fx - e.f.x * 0.6, ly: 0.95, lz: fz - e.f.z * 0.6, fov: 54 };   /* goons both sides: high in front, looking back at all three */
         else side = { x: fx + rx * 5.6 * near + e.f.x * 4.2, y: 3.9, z: fz + rz * 5.6 * near + e.f.z * 4.2, lx: fx - e.f.x * 0.3, ly: 1.15, lz: fz - e.f.z * 0.3, fov: 50 };
         mix(side, ease(S.sideW));
