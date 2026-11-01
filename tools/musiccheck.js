@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Checks the score plays in each stage (headless, with autoplay allowed): the vocal decodes, and the track follows the game. */
+/* Checks the score plays in each stage (headless, with autoplay allowed): the track follows the game, instrumental only. */
 'use strict';
 var path = require('path'), pw = require('playwright');
 (async function () {
@@ -14,6 +14,6 @@ var path = require('path'), pw = require('playwright');
   await p.evaluate(function () { __game.ctx.go('freeroam', { mission: { type: 'temple', name: 'x' } }); }); await p.waitForTimeout(4500); var arena = await st();
   await p.evaluate(function () { __game.ctx.go('studio'); }); await p.waitForTimeout(1500); var studio = await st();
   console.log(JSON.stringify({ ride: ride, road: road, arena: arena, studio: studio, errs: errs }));
-  var ok = ride.playing && ride.track === 'ride' && ride.vocal && road.track === 'road' && arena.track === 'arena' && !studio.playing && !errs.length;
+  var ok = ride.playing && ride.track === 'ride' && !ride.vocal && road.track === 'road' && arena.track === 'arena' && !studio.playing && !errs.length;
   console.log(ok ? 'MUSIC: PASS' : 'MUSIC: FAIL'); await b.close();
 })();

@@ -17,8 +17,10 @@ var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
 var musicMod = require('./view/music');
+var pixelfont = require('./view/pixelfont');
 
 function boot() {
+  pixelfont.install(); document.body.classList.add('px');               /* all interface text in the pixel code font */
   var storage = null;
   try { storage = window.localStorage; storage.setItem('toofan.probe', '1'); storage.removeItem('toofan.probe'); } catch (e) { storage = null; }
   var save = saveMod.createSave(storage);
@@ -43,18 +45,20 @@ function boot() {
     var ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>';
     var OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
     b.setAttribute('aria-label', 'Sound'); b.setAttribute('data-ok', '1');
-    b.style.cssText = 'position:fixed;z-index:20;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);display:grid;place-items:center;padding:0;cursor:pointer;touch-action:manipulation';
-    b.innerHTML = sfx.on ? ON : OFF;
-    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = on ? ON : OFF; });
+    var PILL = 'position:fixed;z-index:20;top:max(12px,env(safe-area-inset-top));height:34px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;padding:0 9px 0 7px;color:#fff;font-size:11px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
+    function lab(icon, t) { return icon.replace('width="22" height="22"', 'width="18" height="18"').replace('width="20" height="20"', 'width="16" height="16"') + '<span>' + t + '</span>'; }
+    b.style.cssText = PILL + ';left:max(12px,env(safe-area-inset-left))';
+    b.innerHTML = lab(sfx.on ? ON : OFF, 'SFX');
+    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = lab(on ? ON : OFF, 'SFX'); });
     document.body.appendChild(b);
     /* the music switch beside it: music off keeps the effects */
     var music = musicMod.createMusic(sfx), mb = document.createElement('button');
     var NOTE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="17.5" cy="16" r="2.5" fill="#fff"/></svg>';
     var NOTE_OFF = NOTE.replace('</svg>', '<path d="M3 3l18 18" stroke="#ff5a5a"/></svg>');
     mb.setAttribute('aria-label', 'Music'); mb.setAttribute('data-ok', '1');
-    mb.style.cssText = b.style.cssText.replace('left:max(12px,env(safe-area-inset-left))', 'left:calc(max(12px,env(safe-area-inset-left)) + 48px)');
-    mb.innerHTML = music.enabled ? NOTE : NOTE_OFF;
-    mb.addEventListener('click', function () { var on = music.toggle(); mb.innerHTML = on ? NOTE : NOTE_OFF; window.dispatchEvent(new Event('toofan:music')); });
+    mb.style.cssText = PILL + ';left:calc(max(12px,env(safe-area-inset-left)) + 76px)';
+    mb.innerHTML = lab(music.enabled ? NOTE : NOTE_OFF, 'MUSIC');
+    mb.addEventListener('click', function () { var on = music.toggle(); mb.innerHTML = lab(on ? NOTE : NOTE_OFF, 'MUSIC'); window.dispatchEvent(new Event('toofan:music')); });
     document.body.appendChild(mb);
   })();
 

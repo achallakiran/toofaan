@@ -46,8 +46,8 @@ function createTitle() {
       S.fx = electric.createElectric(function (p) { if (S.sfx.running()) S.sfx.zap(p); }); scope.add(function () { if (S.fx) S.fx.dispose(); });
       S.img = new Image(); S.img.src = LOGO.ADA;
       /* skip: jumps straight to the menu from anywhere in the opening */
-      var skip = document.createElement('button'); skip.textContent = 'SKIP ▸▸'; skip.setAttribute('data-ok', '1');
-      skip.style.cssText = 'position:fixed;z-index:46;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));padding:9px 16px;border-radius:20px;border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.5);color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.1em;cursor:pointer;display:none;touch-action:manipulation';
+      var skip = document.createElement('button'); skip.textContent = '[ SKIP ▸▸ ]'; skip.setAttribute('data-ok', '1');
+      skip.style.cssText = 'position:fixed;z-index:46;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));padding:9px 14px;border-radius:4px;border:1px solid rgba(140,255,156,.5);background:rgba(0,0,0,.6);color:#bdf5c6;font:13px system-ui,sans-serif;letter-spacing:.12em;cursor:pointer;display:none;touch-action:manipulation';
       skip.addEventListener('click', function (e) { e.stopPropagation(); toMenu(); });
       document.body.appendChild(skip); scope.add(function () { skip.remove(); }); S.skip = skip;
 
@@ -66,11 +66,19 @@ function createTitle() {
       /* the opening card: dark, minimal, the studio credit and a small blinking prompt; the tap starts sound and the show */
       S.phase = 'card';
       var card = document.createElement('div'); card.setAttribute('data-ok', '1');
-      card.style.cssText = 'position:fixed;inset:0;z-index:45;background:#050506;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none';
-      card.innerHTML = '<style>@keyframes tblink{0%,100%{opacity:.15}50%{opacity:.8}}@keyframes tin{from{opacity:0;letter-spacing:.6em}to{opacity:1;letter-spacing:.42em}}</style>' +
-        '<div style="font:700 clamp(15px,3.6vw,22px) system-ui,sans-serif;letter-spacing:.42em;color:#d8dde6;text-indent:.42em;animation:tin 1.6s ease-out both">ADA STUDIOS</div>' +
-        '<div style="margin-top:12px;font:500 clamp(10px,2.2vw,13px) system-ui,sans-serif;letter-spacing:.6em;text-indent:.6em;color:#7d8590;animation:tin 1.6s .3s ease-out both">PRESENTS</div>' +
-        '<div style="position:absolute;bottom:max(34px,calc(env(safe-area-inset-bottom) + 22px));font:500 11px system-ui,sans-serif;letter-spacing:.35em;text-indent:.35em;color:#9aa3ad;animation:tblink 1.8s ease-in-out 1.2s infinite both">TAP TO CONTINUE</div>';
+      card.style.cssText = 'position:fixed;inset:0;z-index:45;background:#030604;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none';
+      /* a terminal: "> ADA STUDIOS" types itself out, then "PRESENTS", a block cursor blinks, and a small prompt asks for the tap */
+      card.innerHTML = '<style>@keyframes tblink{0%,49%{opacity:1}50%,100%{opacity:0}}@keyframes tsoft{0%,100%{opacity:.25}50%{opacity:.9}}</style>' +
+        '<div style="text-align:left;font-size:clamp(20px,5.2vw,34px);line-height:1.6;color:#d8f5d0;text-shadow:0 0 8px rgba(120,255,140,.35);white-space:pre"><span id="tl1"></span><span id="tc1" style="display:inline-block;width:.6em;height:1em;vertical-align:-.12em;background:#8cff9c;animation:tblink 1s steps(1) infinite"></span>\n<span id="tl2" style="color:#7fa892"></span></div>' +
+        '<div style="position:absolute;bottom:max(34px,calc(env(safe-area-inset-bottom) + 22px));font-size:13px;letter-spacing:.2em;color:#9fd8aa;animation:tsoft 1.6s ease-in-out 1.8s infinite both">[ TAP TO CONTINUE ]</div>';
+      (function () {
+        var l1 = '> ADA STUDIOS', l2 = '  PRESENTS', k = 0, a = card.querySelector('#tl1'), b2 = card.querySelector('#tl2'), cur = card.querySelector('#tc1');
+        var tick = setInterval(function () {
+          k++; if (k <= l1.length) a.textContent = l1.slice(0, k); else if (k > l1.length + 3 && k <= l1.length + 3 + l2.length) { b2.textContent = l2.slice(0, k - l1.length - 3); b2.after(cur); }
+          else if (k > l1.length + 3 + l2.length) clearInterval(tick);
+        }, 85);
+        scope.add(function () { clearInterval(tick); });
+      })();
       document.body.appendChild(card); scope.add(function () { card.remove(); });
       function begin() {
         if (S.phase !== 'card') return;
@@ -91,10 +99,10 @@ function createTitle() {
         S.v = rideview.createRideView(view.scene); S.v.build(r.map); S.v.prime(r.bike.x, r.bike.z);
         scope.add(function () { if (S.v) { S.v.dispose(); S.v = null; } });
         var el = S.el = document.createElement('div');
-        el.style.cssText = 'position:fixed;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;align-items:center;padding:max(26px,env(safe-area-inset-top)) 16px max(26px,env(safe-area-inset-bottom));opacity:0;transition:opacity .6s';
+        el.style.cssText = 'position:fixed;inset:0;z-index:30;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;align-items:center;padding:max(62px,calc(env(safe-area-inset-top) + 54px)) 16px max(26px,env(safe-area-inset-bottom));opacity:0;transition:opacity .6s';
         var cont = hasSave(ctx);
         el.innerHTML =
-          '<div style="text-align:center;transform:rotate(-4deg)"><div style="font:900 clamp(52px,min(15vw,20vh),150px)/.9 \'Arial Black\',Impact,system-ui,sans-serif;color:#ffd21f;-webkit-text-stroke:3px #000;text-shadow:7px 7px 0 #000;letter-spacing:.02em">TOOFAN</div>' +
+          '<div style="text-align:center;transform:rotate(-4deg)"><div style="font:900 clamp(52px,min(15vw,20vh),150px)/.9 \'Arial Black\',Impact,system-ui,sans-serif;color:#ffd21f;-webkit-text-stroke:2px #000;text-shadow:5px 5px 0 #000,-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000;letter-spacing:.04em">TOOFAN</div>' +
           '<div style="margin-top:6px;font:900 clamp(12px,3vw,18px) system-ui,sans-serif;letter-spacing:.35em;color:#fff;text-shadow:2px 2px 0 #000">AAYA AAYA AAYA RE</div></div>' +
           '<div style="pointer-events:auto">' +
           (cont ? '<button id="tCont" data-ok="1" style="' + BTN + ';background:#ffd21f;color:#000">CONTINUE</button>' : '') +

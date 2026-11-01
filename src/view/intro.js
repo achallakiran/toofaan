@@ -79,7 +79,7 @@ function createIntro(renderer) {
   for (i = 0; i < 5; i++) { var rig = herorig.createHeroRig(), meshes = []; rig.root.traverse(function (m) { if (m.isMesh) meshes.push(m); }); scene.add(rig.root); figs.push({ rig: rig, meshes: meshes }); }
   var bike = bikevox.createBike(), bikeMeshes = []; bike.root.traverse(function (m) { if (m.isMesh) bikeMeshes.push(m); }); scene.add(bike.root);
   function paint(set) { figs.concat([{ meshes: bikeMeshes }]).forEach(function (f) { f.meshes.forEach(function (m) { m.material = m.isSkinnedMesh ? set.skin : set.plain; }); }); }
-  var word = document.createElement('div');
+  var word = document.createElement('div'); word.className = 'comic';
   word.style.cssText = 'position:fixed;left:0;right:0;top:12%;z-index:41;text-align:center;padding:0 18px;pointer-events:none;font:900 clamp(34px,8vw,92px)/1 "Arial Black",Impact,system-ui,sans-serif;color:#fff;-webkit-text-stroke:3px #000;text-shadow:6px 6px 0 #000;letter-spacing:.02em;opacity:0;transition:opacity .08s';
   document.body.appendChild(word);
   var lastShot = -1, lastBeat = -1;

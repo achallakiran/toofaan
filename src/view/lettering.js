@@ -28,7 +28,7 @@ var STYLES = [
 var STACK = '"Mukta","Hind","Noto Sans Devanagari","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN","Arial Black","Impact",system-ui,sans-serif';
 
 function createLettering() {
-  var layer = document.createElement('div');
+  var layer = document.createElement('div'); layer.className = 'comic';
   layer.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:3;pointer-events:none;overflow:hidden';
   var st = document.createElement('style');
   st.textContent = '@keyframes sfxTall{0%{transform:scale(.6,.35) rotate(var(--r));opacity:0}12%{transform:scale(1.05,1.15) rotate(var(--r));opacity:1}40%{transform:scale(1.1,1.65) rotate(var(--r));opacity:1}100%{transform:translateY(-30px) scale(1.2,2.8) rotate(var(--r));opacity:0}}@keyframes sfxRise{0%{transform:translateY(8px) scale(.45) rotate(var(--r));opacity:0}12%{transform:translateY(0) scale(1.18) rotate(var(--r));opacity:1}38%{transform:translateY(-14px) scale(1.22) rotate(var(--r));opacity:1}100%{transform:translateY(-82px) scale(1.7) rotate(var(--r));opacity:0}}' +
