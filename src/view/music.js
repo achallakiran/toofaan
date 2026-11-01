@@ -1,16 +1,18 @@
-/* view: Toofan's electro-grunge score, synthesised live (instrumental). 128 BPM, E minor.
+/* view: Toofan's electro-grunge score, synthesised live, with Ravi's own sung hook laid on the bar lines. 128 BPM, E minor.
    Drums follow the chant "dham sham dha dha da dham dham da da dha" (dham = deep kick, sham = snare and crash, dha = tom, da = rim tick).
-   Over them a fuzz-guitar power-chord riff (E5 G5 A5 D5), a growling bass and an electro lead ("ta-ra-ta-ra-ta-ra-ta-ta... taaan").
+   Over them a fuzz-guitar power-chord riff (E5 G5 A5 D5), a growling bass, an electro lead ("ta-ra-ta-ra-ta-ra-ta-ta... taaan") and the vocal.
    One shared player for the whole game: each stage asks for its track and the change lands on the next bar line, so the music never stops
    between stages. Tracks:
-     intro   - the 16-bar build under the opening video        menu    - the full band
-     ride    - lighter cruising groove                         road    - fast and heavy for the road fights
+     intro   - the 16-bar build under the opening video        menu    - full band with the vocal
+     ride    - lighter cruising groove, vocal every 16 bars    road    - fast and heavy for the road fights, vocal chops
      arena   - the heaviest riff for the fight areas            boss    - arena at full tilt with the lead and chops
-     hideout - laid-back clean guitar                           thappad - dreamy pad and bells
+     hideout - laid-back clean guitar                           thappad - dreamy pad, far-away vocal
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
 'use strict';
+
+var VOCAL = require('../data/vocal');
 
 var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;
 var CHANT = ['K', '', 'S', '', 'T', '', 'T', 't', 'K', '', 'K', 't', 't', '', 'S', ''];
@@ -27,38 +29,48 @@ function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 var TRACKS = {
   intro: function (n) {
     var m = n % 16;
-    if (m < 2) return { drums: m === 1 ? CHANT : null, hats: 8, bass: 'saw' };
-    if (m < 8) return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m === 2 };
-    if (m < 10) return { kickOnly: true, bass: 'saw', lead: true };
-    return { drums: CHANT, hats: 16, gtr: 'riff', bass: 'saw', lead: m % 2 === 1, fill: m === 15, crash: m === 10 };
+    if (m < 2) return { drums: m === 1 ? CHANT : null, hats: 8, bass: 'saw', vox: m === 0 ? null : null };
+    if (m < 8) return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m >= 4 && m % 2 === 1, fill: m === 7, vox: m === 2 ? 0 : m === 4 ? 1 : m === 6 ? 2 : null, crash: m === 2 };
+    if (m < 10) return { kickOnly: true, bass: 'saw', lead: true, vox: m === 8 ? 3 : null };
+    return { drums: CHANT, hats: 16, gtr: 'riff', bass: 'saw', lead: m % 2 === 1, fill: m === 15, vox: m === 12 ? 0 : m === 14 ? 1 : null, crash: m === 10 };
   },
-  menu: function (n) { var m = n % 16; return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m % 2 === 1, fill: m % 8 === 7, crash: m % 8 === 0 }; },
-  ride: function (n) { var m = n % 16; return { drums: m < 2 ? SOFT : CHANT, hats: 8, gtr: m >= 4 ? 'chug' : null, bass: 'saw', lead: m >= 12 && m % 2 === 1, fill: m === 15, vol: 0.85 }; },
-  road: function (n) { var m = n % 8; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
-  arena: function (n) { var m = n % 8; return { drums: m < 4 ? HALF : DOUBLE, hats: m < 4 ? 8 : 16, gtr: 'open', bass: 'dist', lead: m >= 6, fill: m === 7, crash: m === 0 || m === 4 }; },
-  boss: function (n) { var m = n % 4; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: true, fill: m === 3, crash: true }; },
-  hideout: function (n) { var m = n % 16; return { drums: m >= 4 ? SOFT : null, hats: m >= 8 ? 8 : 0, gtr: 'clean', bass: 'sub', vol: 0.7 }; },
-  thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vol: 0.8 }; },
+  menu: function (n) { var m = n % 16; return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m >= 8 && m % 2 === 1, fill: m % 8 === 7, vox: m < 8 && m % 2 === 0 ? m / 2 : null, crash: m % 8 === 0 }; },
+  ride: function (n) { var m = n % 16; return { drums: m < 2 ? SOFT : CHANT, hats: 8, gtr: m >= 4 ? 'chug' : null, bass: 'saw', lead: m >= 12 && m % 2 === 1, fill: m === 15, vox: m === 8 ? 0 : m === 10 ? 1 : null, vol: 0.85 }; },
+  road: function (n) { var m = n % 8; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0, chop: m % 2 === 0 ? (n >> 1) % 4 : null }; },
+  arena: function (n) { var m = n % 8; return { drums: m < 4 ? HALF : DOUBLE, hats: m < 4 ? 8 : 16, gtr: 'open', bass: 'dist', lead: m >= 6, fill: m === 7, crash: m === 0 || m === 4, vox: m === 4 ? (n >> 3) % 4 : null }; },
+  boss: function (n) { var m = n % 4; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: true, fill: m === 3, crash: true, chop: m % 2 === 0 ? n % 4 : null }; },
+  hideout: function (n) { var m = n % 16; return { drums: m >= 4 ? SOFT : null, hats: m >= 8 ? 8 : 0, gtr: 'clean', bass: 'sub', vol: 0.7, vox: m === 12 ? 1 : null, voxSoft: true }; },
+  thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   sting: function (n) { return { sting: n }; }
 };
 
 var shared = null;
 function createMusic(sfx) {
   if (shared) return shared;
-  var A = null, bus = null, room = null, timer = null, nextBar = 0, barNo = 0, t0 = 0, track = 'menu', after = null, playing = false, fuzz = null, nbuf = null;
+  var A = null, bus = null, room = null, timer = null, nextBar = 0, barNo = 0, t0 = 0, track = 'menu', after = null, playing = false, fuzz = null, nbuf = null, voxBuf = null, voxLoading = false;
   var enabled = true; try { enabled = localStorage.getItem('toofan.music') !== '0'; } catch (e) { }
   function graph() {
     var g = sfx.audio(); if (!g) return null;
     if (!A || A.ac !== g.ac) {
       A = g; bus = A.ac.createGain(); bus.gain.value = 0.6; bus.connect(A.out);
-      /* a small room for the snare, toms and clean guitar: a decaying noise impulse */
+      /* a small room for the snare, toms and vocal: a decaying noise impulse */
       room = A.ac.createConvolver(); var len = Math.floor(A.ac.sampleRate * 0.5), ir = A.ac.createBuffer(2, len, A.ac.sampleRate), c, i;
       for (c = 0; c < 2; c++) { var d0 = ir.getChannelData(c); for (i = 0; i < len; i++) d0[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
       room.buffer = ir; var rg = A.ac.createGain(); rg.gain.value = 0.32; room.connect(rg); rg.connect(bus);
       fuzz = new Float32Array(1024); for (i = 0; i < 1024; i++) { var x = i / 512 - 1; fuzz[i] = Math.tanh(x * 7) * 0.9; }
       nbuf = A.ac.createBuffer(1, A.ac.sampleRate, A.ac.sampleRate); var d = nbuf.getChannelData(0); for (i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      loadVocal();
     }
     return A;
+  }
+  /* Ravi's vocal: decoded once from the embedded file */
+  function loadVocal() {
+    if (voxBuf || voxLoading || !A) return; voxLoading = true;
+    try {
+      var b64 = VOCAL.M4A, bin = atob(b64), u8 = new Uint8Array(bin.length), i; for (i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      var ac = A.ac, done = function (buf) { voxBuf = buf; voxLoading = false; }, fail = function () { voxLoading = false; };
+      var p = ac.decodeAudioData(u8.buffer, done, fail); if (p && p.catch) p.catch(fail);
+    } catch (e) { voxLoading = false; }
   }
   function env(g, t, a, peak, dur) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); }
   function noise(t, dur, peak, type, f, q, wet) {
@@ -107,6 +119,14 @@ function createMusic(sfx) {
     [0, 7, 15, 19].forEach(function (iv) { [-12, 12].forEach(function (c) { var o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(root + 24 + iv); o.detune.value = c; o.connect(lp); o.start(t); o.stop(t + dur + 0.05); }); });
   }
   function bell(t, note) { tone(t, 'sine', hz(note), hz(note), 0.9, 0.06, null, true); tone(t, 'sine', hz(note) * 2.76, hz(note) * 2.76, 0.4, 0.02, null, true); }
+  /* the vocal: phrase k (0..3) starting on a bar line; `len` seconds of it (a chop) or the whole two-bar phrase */
+  function vox(t, k, len, soft) {
+    if (!voxBuf) return;
+    var ac = A.ac, s = ac.createBufferSource(), g = ac.createGain(), d = Math.min(len || VOCAL.SLOT, VOCAL.SLOT);
+    s.buffer = voxBuf; g.gain.setValueAtTime(soft ? 0.5 : 1.0, t); g.gain.setValueAtTime(soft ? 0.5 : 1.0, t + d - 0.05); g.gain.linearRampToValueAtTime(0.0001, t + d);
+    if (soft) { var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; s.connect(lp); lp.connect(g); g.connect(room); } else s.connect(g);
+    g.connect(bus); s.start(t, k * VOCAL.SLOT, d + 0.02);
+  }
   function scheduleBar(t, n) {
     var name = track, P = TRACKS[name](n - (startBar[name] || 0)), root = ROOTS[n % 4], i;
     if (P.sting !== undefined) {
@@ -132,6 +152,8 @@ function createMusic(sfx) {
     if (P.lead) lead(t + STEP * 8, LEAD_HOLD[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
     if (P.pad) pad(t, root, BAR);
+    if (P.vox !== null && P.vox !== undefined) vox(t, P.vox, VOCAL.SLOT, P.voxSoft);
+    if (P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
   }
   var startBar = {};
@@ -174,7 +196,7 @@ function createMusic(sfx) {
     /* the Music switch (the speaker switches everything) */
     get enabled() { return enabled; },
     toggle: function () { enabled = !enabled; try { localStorage.setItem('toofan.music', enabled ? '1' : '0'); } catch (e) { } if (!enabled) this.stop(0.3); return enabled; },
-    vocalReady: function () { return false; }   /* the score is instrumental */
+    vocalReady: function () { return !!voxBuf; }
   };
   return shared;
 }
