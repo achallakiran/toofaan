@@ -19,7 +19,7 @@ var PLAN = [['menu', 30], ['ride', 15], ['road', 15], ['arena', 15], ['boss', 8]
       return r;
     };
   });
-  await p.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '#studio'); await p.waitForSelector('html[data-ready="1"]');
+  await p.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '?dev=1#studio'); await p.waitForSelector('html[data-ready="1"]');
   await p.mouse.click(320, 200);
   await p.evaluate(function () { var m = __game.ctx.debug.music; m.setTrack('menu'); });
   await p.waitForFunction(function () { return !!window.__recStream && __game.ctx.debug.music.vocalReady(); }, null, { timeout: 15000 });

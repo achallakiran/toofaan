@@ -67,7 +67,7 @@ canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block}
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="tabs" role="tablist"><button id="tabStudio" aria-pressed="true">Hero studio</button><button id="tabStreet" aria-pressed="false">Street test</button><button id="tabRide" aria-pressed="false">Ride</button></div>
+<div id="tabs" role="tablist"><button id="tabStudio" aria-pressed="true">Hero studio</button><button id="tabStreet" aria-pressed="false">Fight test</button><button id="tabRide" aria-pressed="false">Ride</button></div>
 <div id="hud"></div>
 <div id="studio" hidden></div>
 <div id="touch"></div>
@@ -323,61 +323,21 @@ function createScope() {
 module.exports = { createScope: createScope };
 
 };
-defs["data/bike"]=function(module,exports,require){
-/* data layer: the Bijli, a heavy classic cruiser. One block of numbers so the handling can be tuned by feel. */
-'use strict';
-
-var BIKE = {
-  MAX_SPEED: 27,            /* m/s, about 97 km/h: a Bullet runs out of breath, it does not sprint */
-  BOOST_SPEED: 32,
-  ACCEL: 4.6,               /* m/s^2 at a standstill, tapering toward top speed */
-  GEAR_PULL: [1.0, 1.0, 0.8, 0.62, 0.5],  /* share of ACCEL available in each gear: heavy shove low down, long flat middle */
-  SHIFT_DIP: 0.35,          /* thrust left while the clutch is in */
-  BOOST_ACCEL: 6.5,
-  BRAKE: 9,
-  COAST: 0.9,               /* engine braking when the throttle is released */
-  DRAG: 0.0007,             /* speed squared drag */
-  REVERSE_MAX: 2.2,
-  TURN_R0: 4.4,             /* tightest turning radius, metres, at walking pace */
-  TURN_RV: 1.25,            /* extra radius per m/s: wide arcs at speed */
-  STEER_LAG: 3.4,           /* how quickly the bars follow the stick (per second): lazy on purpose */
-  DRIFT_BOOST: 1.35,        /* extra yaw while Block drifts */
-  DRIFT_BRAKE: 4,
-  RADIUS: 0.55,             /* collision circle, metres */
-  GRAVITY: 16,
-  BOOST_DRAIN: 0.4,         /* per second */
-  BOOST_REFILL: 0.1,
-  LEAN_MAX: 0.38,
-  BOOST_HOLD: 15,           /* ticks Attack must be held before it is a boost, not a tap */
-  MOUNT_REACH: 1.7,         /* metres from the bike's body (rear wheel to front wheel) within which Attack climbs on */
-  MOUNT_SHOW: 3.2,          /* the prompt appears a little earlier than the reach, so he can step in */
-  MOUNT_BLOCK: 2.2,         /* a man this close means Attack is for fighting */
-  HALF_LEN: 0.9,
-  SOLID_R: 0.78,            /* the parked bike keeps him this far from its three body discs */
-  PARK_SPEED: 0.7,          /* below this, Attack parks the bike and lets him step off */
-  GEARS: [0, 4.5, 9.5, 15, 21]  /* speed at which each gear starts, for the engine note */
-};
-
-module.exports = BIKE;
-
-};
 defs["data/config"]=function(module,exports,require){
 /* data layer: constants and tables only. No logic that touches the outside world. */
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 69',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 70',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
   /* real-world metres. Each asset class picks its own voxel size. */
   VOXEL: { hero: 0.025, enemy: 0.025, bike: 0.075, car: 0.075, building: 0.15, prop: 0.10 },
 
-  /* world streaming */
+  /* a fight arena's square (metres) and the per-scene budget */
   CHUNK_SIZE: 32,
-  STREAM_RADIUS: 2,          /* chunks kept loaded around the player: (2r+1)^2 */
-  CACHE_SPECS: 30,           /* generated chunk specs kept after unload (cheap data, no GPU memory) */
-  BUDGET: { maxLoadedChunks: 25, maxTriangles: 120000, maxDrawCalls: 80 },
+  BUDGET: { maxTriangles: 120000, maxDrawCalls: 80 },
 
   /* quality tiers: phones start on 'low', computers on 'high'. pr = pixel-ratio cap, lod = metres within which fine props show, fogFar = where the world fades out */
   TIERS: {
@@ -388,7 +348,7 @@ var CONFIG = {
 
   PLAYER: { walkSpeed: 4.0, radius: 0.35, height: 1.9 },
 
-  /* palette indices used by chunk specs, resolved to colours by the view */
+  /* palette indices used by the arenas, the hideout and the box meshes, resolved to colours by the view */
   PALETTE: [
     '#6b6f76', '#3a3d42', '#b9a98f', '#c76b4a', '#d9b24a', '#4f7fb0',
     '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a',
@@ -398,8 +358,7 @@ var CONFIG = {
     /* 36+: the fight arenas' kit (stone, wood, brass, marigold, brick, foliage, paint) */
     '#9b958b', '#80796f', '#5e5850', '#b07a45', '#7a4f2a', '#c9a227', '#ff9f1c', '#ffd166', '#e63946', '#2d6a4f', '#52b788', '#264653',
     '#a8854c', '#a89f8c', '#8a8a83', '#3d405b', '#f4f1de', '#1d3557', '#457b9d', '#bc6c25', '#8b3a1e', '#606c38', '#ffb4a2', '#6d597a'
-  ],
-  GROUND: { road: 1, sidewalk: 8, dirt: 2 }
+  ]
 };
 
 module.exports = CONFIG;
@@ -486,29 +445,25 @@ module.exports = { GANGS: GANGS, ORDER: ORDER, BOSS: BOSS, gangOf: gangOf };
 
 };
 defs["data/locations"]=function(module,exports,require){
-/* data layer: the places where trouble happens. Each location is a set piece on one road chunk (see sim/citylocs.js); entering its zone while it is
-   uncleared starts a fight there. `n` is how many men, `stick` how many of them carry a stick, `r` the trigger radius from the chunk centre. */
+/* data layer: the ten kinds of place where trouble happens. Each is a trouble spot on the ride's map (sim/ridemap) and a fight arena
+   (sim/arenas). `n` is how many men turn up when no lineup is given, `stick` how many of them carry a lathi. */
 'use strict';
 
 var LOCATIONS = {
-  market:       { name: 'Market lane',       n: 5, stick: 1, r: 15, side: true },
-  petrol:       { name: 'Petrol pump',       n: 4, stick: 1, r: 14, side: true },
-  busstand:     { name: 'Bus stand',         n: 5, stick: 1, r: 15, side: true },
-  construction: { name: 'Construction site', n: 6, stick: 2, r: 15, side: true },
-  temple:       { name: 'Temple square',     n: 5, stick: 1, r: 15, side: true },
-  warehouse:    { name: 'Warehouse yard',    n: 6, stick: 2, r: 15, side: true },
-  slum:         { name: 'Slum lane',         n: 5, stick: 1, r: 14, side: true },
-  railway:      { name: 'Railway crossing',  n: 4, stick: 1, r: 14, side: false },
-  toll:         { name: 'Toll plaza',        n: 6, stick: 2, r: 15, side: false },
-  flyover:      { name: 'Flyover underpass', n: 5, stick: 1, r: 15, side: false }
+  market:       { name: 'Market lane',       n: 5, stick: 1 },
+  petrol:       { name: 'Petrol pump',       n: 4, stick: 1 },
+  busstand:     { name: 'Bus stand',         n: 5, stick: 1 },
+  construction: { name: 'Construction site', n: 6, stick: 2 },
+  temple:       { name: 'Temple square',     n: 5, stick: 1 },
+  warehouse:    { name: 'Warehouse yard',    n: 6, stick: 2 },
+  slum:         { name: 'Slum lane',         n: 5, stick: 1 },
+  railway:      { name: 'Railway crossing',  n: 4, stick: 1 },
+  toll:         { name: 'Toll plaza',        n: 6, stick: 2 },
+  flyover:      { name: 'Flyover underpass', n: 5, stick: 1 }
 };
 var ORDER = ['market', 'petrol', 'busstand', 'construction', 'temple', 'warehouse', 'slum', 'railway', 'toll', 'flyover'];
 
-/* chunks near the start that always hold a location, so the first ride has somewhere to go */
-var FORCED = { '2,0': 'market', '-1,0': 'petrol', '3,0': 'busstand', '1,1': 'construction', '1,-1': 'temple', '-3,0': 'slum' };
-var CHANCE = 0.2;           /* any other straight road chunk */
-
-module.exports = { LOCATIONS: LOCATIONS, ORDER: ORDER, FORCED: FORCED, CHANCE: CHANCE };
+module.exports = { LOCATIONS: LOCATIONS, ORDER: ORDER };
 
 };
 defs["data/logo"]=function(module,exports,require){
@@ -1032,27 +987,6 @@ var SKEL = {
 module.exports = SKEL;
 
 };
-defs["data/traffic"]=function(module,exports,require){
-/* data layer: the life on the street. Sizes in metres; `speed` is the cruising speed in m/s; `r` the collision radius around the body line. */
-'use strict';
-
-var KINDS = {
-  auto:    { len: 2.6, r: 0.75, speed: 7.5, w: 5, kind: 'veh' },
-  bus:     { len: 8.0, r: 1.3,  speed: 6.0, w: 2, kind: 'veh' },
-  truck:   { len: 6.0, r: 1.2,  speed: 5.5, w: 2, kind: 'veh' },
-  car:     { len: 3.8, r: 0.9,  speed: 9.0, w: 4, kind: 'veh' },
-  scooter: { len: 1.6, r: 0.4,  speed: 8.0, w: 5, kind: 'veh' },
-  cow:     { len: 1.6, r: 0.55, speed: 0.0, w: 0, kind: 'animal' },
-  dog:     { len: 0.6, r: 0.25, speed: 2.4, w: 0, kind: 'animal' },
-  ped:     { len: 0.3, r: 0.3,  speed: 1.2, w: 0, kind: 'ped' }
-};
-var WEIGHTS = [['auto', 5], ['scooter', 5], ['car', 4], ['bus', 2], ['truck', 2]];
-var LIMITS = { veh: 7, ped: 6, animal: 2 };
-var SPAWN_MIN = 42, SPAWN_MAX = 70, DESPAWN = 96;          /* metres from the hero */
-
-module.exports = { KINDS: KINDS, WEIGHTS: WEIGHTS, LIMITS: LIMITS, SPAWN_MIN: SPAWN_MIN, SPAWN_MAX: SPAWN_MAX, DESPAWN: DESPAWN };
-
-};
 defs["data/vocal"]=function(module,exports,require){
 /* data: Ravi's sung hook for the Toofan theme, processed with plain audio effects (tools/audio/vocal.sh): four phrases, each laid on
    its own two-bar slot of 3.75 s at 128 BPM, phrase k starting at k * 3.75 s. AAC in an MP4 box, base64. */
@@ -1070,12 +1004,12 @@ var busMod = require('./core/events');
 var inputMod = require('./core/input');
 var saveMod = require('./core/save');
 var modesMod = require('./core/modes');
-var worldMod = require('./sim/world');
 var viewMod = require('./view/app');
 var hudMod = require('./view/hud');
 var controls = require('./view/controls');
 var sfxMod = require('./view/sfx');
-var freeroam = require('./modes/freeroam');
+var fight = require('./modes/fight');
+var fightworld = require('./sim/fightworld');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
@@ -1096,7 +1030,7 @@ function boot() {
 
   var bus = busMod.createBus();
   var input = inputMod.createInput();
-  var world = worldMod.createWorld(seed, bus);
+  var world = { seed: seed };                                            /* the game's seed: the ride's city and every fight grow from it */
   var tierName = params.get('tier');
   if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
   var view = viewMod.createView(document.getElementById('game'), tierName);
@@ -1131,27 +1065,33 @@ function boot() {
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };
   ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
   var modes = modesMod.createModes(ctx);
-  modes.register(freeroam.createFreeroam());
+  modes.register(fight.createFight());
   modes.register(studio.createStudio());
   modes.register(ride.createRide());
   modes.register(title.createTitle());
   modes.register(wake.createWake());
   modes.register(hideoutMode.createHideout());
-  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
+  /* the page address names only what a player can come back to: the ride (also during a fight: a reload goes back to the ride, the place
+     still open), the hideout, the nightmare. The developer views (#studio, #fight) open only with ?dev=1. */
+  var DEV = !!params.get('dev');
+  var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
+  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio' };
   function go(name, args) {
-    if (name === 'studio' || (name === 'freeroam' && !(args && args.mission))) musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer views are silent */
+    if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : name === 'wake' ? '#wake' : name === 'hideout' ? '#hideout' : '#studio')); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (HASH[name] || '')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
-  tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
+  tabs.fight.addEventListener('click', function () { go('fight', { type: 'market', level: 2 }); });
   tabs.ride.addEventListener('click', function () { go('ride'); });
-  /* one game: it opens on the ride; the studio and the bare street are developer views (?dev=1 shows their tabs, or #studio / #street) */
   ctx.go = go;
-  if (!params.get('dev')) document.getElementById('tabs').style.display = 'none';
-  var H = window.location.hash;
-  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
+  if (!DEV) document.getElementById('tabs').style.display = 'none';
+  /* #fight=type,level (developer): a practice fight at that kind of place */
+  var H = window.location.hash, HM = /^#fight(?:=(\w+)(?:,(\d+))?)?$/.exec(H);
+  if (HM && DEV) go('fight', { type: HM[1] || 'market', level: HM[2] !== undefined ? +HM[2] : 2 });
+  else if (H === '#studio' && DEV) go('studio');
+  else go(H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
@@ -1164,22 +1104,25 @@ function boot() {
   loop.start();
   document.addEventListener('visibilitychange', function () { input.reset(); });
 
-  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashWorld: function () { return worldMod.hash(world); } };
+  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
   document.documentElement.setAttribute('data-ready', '1');
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 
 };
-defs["modes/freeroam"]=function(module,exports,require){
-/* modes: Street test. Walk the streamed street with the real hero rig. Locomotion is time-based
-   until move clips arrive; attacks play the keyframed combo (jab, cross, knee, elbow, roundhouse); the rage finisher is a guitar whirl with a cinematic camera. */
+defs["modes/fight"]=function(module,exports,require){
+/* modes: a fight at a trouble spot. Arriving at a place on the ride opens this: the arena of that kind of place (sim/arenagen), that
+   gang's men (sim/lineup) and Toofan on foot. Nothing else: no bike, no city, no traffic, no waves. The fighting is the brawler's own,
+   unchanged: the move clips and combo, block and counter, the finisher whirl, the cinematic camera, hit-stop, comic hit words, sparks,
+   sweat and blood. Cleared: "POLICE AA GAYI!" and back to the ride, where the police take them away. Lost: back to the ride, the place
+   still open (Maa ka Thappad comes here later). With ?dev=1, #fight opens a practice fight (`type` / `level` in the hash args). */
 'use strict';
-var AIM_SIGN = 1;
 
-var worldMod = require('../sim/world');
-var ambient = require('../view/ambientvox');
-var trafficData = require('../data/traffic');
+var fightworld = require('../sim/fightworld');
+var lineupMod = require('../sim/lineup');
+var GANGS = require('../data/gangs');
+var rngMod = require('../core/rng');
 var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 var moveplayer = require('../view/moveplayer');
@@ -1190,76 +1133,53 @@ var enemyview = require('../view/enemyview');
 var fightui = require('../view/fightui');
 var lettering = require('../view/lettering');
 var sfxmod = require('../view/sfx');
-var bikevox = require('../view/bikevox');
-var ridecam = require('../view/ridecam');
-var BIKE = require('../data/bike');
-var mission = require('./mission');
+var musicMod = require('../view/music');
+var arenaview = require('../view/arenaview');
+var cinecard = require('../view/cinecard');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
-function groupCentre(world, hx, hz) {
-  var sx = 0, sz = 0, n = 0, list = world.combat.enemies;
+function groupCentre(fw, hx, hz) {
+  var sx = 0, sz = 0, n = 0, list = fw.combat.enemies;
   for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.dead || e.st === 'dead') continue; if (Math.hypot(e.x - hx, e.z - hz) < 7) { sx += e.x; sz += e.z; n++; } }
   return n ? { x: sx / n, z: sz / n } : null;
 }
 
-function createFreeroam() {
+/* how many places are cleared on the ride: the more, the bigger and tougher the crowd */
+function level(ctx) {
+  var n = 0, m = ctx.ride && ctx.ride.missions; if (m) Object.keys(m).forEach(function (k) { if (m[k] === 'cleared') n++; }); return n;
+}
+
+function createFight() {
   var S = {};
   return {
-    name: 'freeroam',
+    name: 'fight',
     enter: function (ctx, scope, args) {
-      var view = ctx.view;
-      if (args && args.mission) mission.place(ctx, args.mission);           /* sent here from the ride: stand at that trouble spot */
+      var view = ctx.view; args = args || {};
+      var type = args.type || 'market', lv = args.level !== undefined ? args.level : level(ctx), gang = GANGS.GANGS[GANGS.gangOf(type)];
+      var seed = (ctx.world.seed ^ 0x51f1) >>> 0;
+      var lineup = lineupMod.lineup(lv, rngMod.createRng(rngMod.hash32(seed, lv, type.length * 131 + type.charCodeAt(0))), gang && gang.mix);
+      var fw = S.fw = fightworld.create({ seed: ctx.world.seed, bus: ctx.bus, type: type, lineup: lineup });
+      ctx.fight = fw; ctx.debug.fight = S; S.done = false; S.type = type;
       view.setSky('#9fb6c9', true);
-      ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false;
-      scope.add(ctx.bus.on('chunk:load', function (e) { view.addChunk(e.spec); }));
-      scope.add(ctx.bus.on('chunk:unload', function (e) { view.removeChunk(e.key); }));
-      var pending = ctx.world.streaming.snapshotSpecs();
-      for (var i = 0; i < pending.length; i++) view.addChunk(pending[i]);
-      scope.add(function () { view.clearChunks(); });
+      ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
+      /* the arena: its ground and walls, and the tall pieces that fade when they come between the camera and the fight */
+      view.addChunk(fw.arena); scope.add(function () { view.clearChunks(); });
+      var av = arenaview.createArenaView(view.scene, fw.arena), hv = new THREE.Vector3(), hv2 = new THREE.Vector3(), fv = new THREE.Vector3();
+      var off = view.onFrame(function (camera, dt) {
+        var p = fw.player, t = [hv.set(p.x, 1.0, p.z), hv2.set(p.x, 1.7, p.z)], best = null, bd = 9, l = fw.combat.enemies, i;
+        for (i = 0; i < l.length; i++) { var e = l[i]; if (e.dead || e.st === 'dead') continue; var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
+        if (best) t.push(fv.set(best.x, 1.3, best.z));
+        av.fade(camera, t, dt);
+      });
+      ctx.debug.arena = av;
+      scope.add(function () { off(); av.dispose(); ctx.debug.arena = null; ctx.fight = null; });
       S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
       scope.add(function () { view.scene.remove(S.rig.root); });
-      S.bike = bikevox.createBike(); view.scene.add(S.bike.root); scope.add(function () { view.scene.remove(S.bike.root); });
-      S.amb = {}; scope.add(function () { Object.keys(S.amb).forEach(function (k) { view.scene.remove(S.amb[k]); }); S.amb = {}; ambient.dispose(); });
-      S.rc = ridecam.createRideCam(); S.mountW = ctx.world.mounted ? 1 : 0; S.wheelA = 0; S.bPrev = null; S.flash = null; S.flashT = 0; S.rideHint = '';
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
       scope.add(function () { S.txt.dispose(); });
-      /* small switches: speech bubbles / plain letters / no text, Hindi or English letters, sound */
-      (function () {
-        var bar = document.createElement('div'), bs = 'pointer-events:auto;margin:0 3px;padding:4px 9px;font:700 11px system-ui,sans-serif;letter-spacing:.06em;color:#fff;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.35);border-radius:12px;cursor:pointer';
-        bar.style.cssText = 'position:fixed;top:48px;left:50%;transform:translateX(-50%);z-index:6;pointer-events:none;white-space:nowrap';
-        function btn(fn) { var b = document.createElement('button'); b.style.cssText = bs; b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(); upd(); }); b.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); }); bar.appendChild(b); return b; }
-        var bt = btn(function () { S.txt.cycleMode(); }), bst = btn(function () { S.txt.nextStyle(); }), bl = btn(function () { S.txt.toggleScript(); }), bsn = btn(function () { S.sfx.toggle(); });
-        function upd() { bst.textContent = 'Style: ' + S.txt.styleName; bt.textContent = 'Text: ' + ({ bubble: 'bubble', plain: 'plain', off: 'off' })[S.txt.mode]; bl.textContent = S.txt.script === 'hi' ? 'हिंदी' : 'ABC'; bsn.textContent = 'Sound: ' + (S.sfx.on ? 'on' : 'off'); }
-        bst.textContent = 'Style: ' + S.txt.styleName; upd(); if (!/[?&]dev=1/.test(location.search)) bar.style.display = 'none'; document.body.appendChild(bar);       /* (text and style switches: developer view only) */ scope.add(function () { bar.remove(); });
-      })();
-
-      /* riding HUD: speed, boost, stunt score and the one hint that matters right now */
-      (function () {
-        var el = document.createElement('div');
-        el.style.cssText = 'position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:700 12px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000';
-        el.innerHTML = '<div id="rdFlash" style="font:900 30px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;height:36px;opacity:0;transition:opacity .25s"></div><div id="rdSpeed" style="font:900 26px system-ui,sans-serif;display:none"></div><div id="rdBoost" style="width:150px;height:6px;margin:4px auto;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;display:none"><div style="height:100%;width:100%;background:linear-gradient(90deg,#ffc21a,#ff6a3d)"></div></div><div id="rdHint" style="font-weight:600;opacity:.9"></div>';
-        document.body.appendChild(el); scope.add(function () { el.remove(); });
-        var tg = document.createElement('div');
-        tg.style.cssText = 'position:fixed;left:50%;top:max(96px,env(safe-area-inset-top));transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;font:800 13px system-ui,sans-serif;letter-spacing:.08em;color:#fff;text-shadow:0 1px 3px #000;display:none';
-        tg.innerHTML = '<span id="tgArrow" style="display:inline-block;font-size:20px;color:#ffc21a;margin-right:8px">&#9650;</span><span id="tgText"></span>';
-        document.body.appendChild(tg); scope.add(function () { tg.remove(); });
-        S.tg = { box: tg, arrow: tg.querySelector('#tgArrow'), text: tg.querySelector('#tgText') };
-        S.ui2 = { flash: el.querySelector('#rdFlash'), speed: el.querySelector('#rdSpeed'), boost: el.querySelector('#rdBoost'), boostFill: el.querySelector('#rdBoost > div'), hint: el.querySelector('#rdHint') };
-      })();
-      function flash(text) { S.ui2.flash.textContent = text; S.ui2.flash.style.opacity = 1; S.flashT = 1.4; }
-      scope.add(ctx.bus.on('npc:honk', function () { S.sfx.honk(); }));
-      scope.add(ctx.bus.on('npc:bump', function (e) { S.sfx.hit('jab', 0.4); S.cine.shake(0.04, 0.15); }));
-      scope.add(ctx.bus.on('ride:bump', function (e) { S.sfx.land(2 + e.power * 6); S.cine.shake(0.03 + 0.07 * e.power, 0.18); }));
-      scope.add(ctx.bus.on('ride:mount', function () { S.mp.cancel(); S.sfx.start(); }));
-      scope.add(ctx.bus.on('ride:park', function () { S.sfx.engineOff(); }));
-      scope.add(ctx.bus.on('ride:jump', function () { S.cine.shake(0.05, 0.2); }));
-      scope.add(ctx.bus.on('ride:land', function (e) { S.sfx.land(e.vy); S.cine.shake(Math.min(0.14, 0.02 + e.vy * 0.01), 0.25); if (e.vy > 6) S.txt.say('thud', { x: e.x, y: 1.0, z: e.z }, view.camera, false); }));
-      scope.add(ctx.bus.on('ride:crash', function (e) {
-        S.sfx.crash(!!e.hard); S.cine.shake(e.hard ? 0.25 : 0.1, 0.4); S.fx.spawn('blockspark', { x: e.x, y: 1.0, z: e.z }, e.hard ? 1.6 : 0.3);
-        S.txt.say(e.hard ? 'smash' : 'thud', { x: e.x, y: 1.4, z: e.z }, view.camera, !!e.hard); if (e.with === 'landing') flash('BAD LANDING');
-      }));
+      S.music = musicMod.createMusic(S.sfx); S.music.setTrack('arena');
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -1268,16 +1188,13 @@ function createFreeroam() {
         else if (kind === 'slam') { S.txt.say('smash', hp0, view.camera, true); S.sfx.smash(); }
         else if (kind === 'whirl' && S.t - S.whirlT > 1.2) { S.whirlT = S.t; S.txt.say('whirl', hp0, view.camera, false); S.sfx.swirl(); }
         if (kind === 'slam') S.cine.shake(0.28, 0.7); else if (kind === 'boom') S.cine.shake(0.2, 0.7);
-      }); S.last = ctx.now(); S.hudT = 0; S.t = 0; S.spin = 0; S.face = 0;
-      ctx.debug.street = S;
-      S.ev = enemyview.createEnemyView(view.scene); S.ui = fightui.createFightUi(); S.hurtW = 0; S.downW = 0; S.counterIdx = 0;
-      scope.add(function () { S.ev.dispose(); S.ui.dispose(); ctx.world.combat.enabled = false; ctx.world.combat.enemies.length = 0; });
-      worldMod.startFight(ctx.world);
-      if (args && args.mission) mission.watch(ctx, scope, args.mission);
-      S.mp.onHit(function (move, idx, last) { ctx.world.pendingStrikes.push({ move: move, last: last }); });       /* the sim decides who was hit, on the next tick */
-      function heroPoint(y) { var p = ctx.world.player; return { x: p.x + Math.sin(S.face) * 0.8, y: y, z: p.z + Math.cos(S.face) * 0.8 }; }
+      }); S.last = ctx.now(); S.hudT = 0; S.t = 0; S.face = fw.player.face;
+      S.ev = enemyview.createEnemyView(view.scene); S.ui = fightui.createFightUi(); S.hurtW = 0; S.downW = 0;
+      scope.add(function () { S.ev.dispose(); S.ui.dispose(); });
+      S.mp.onHit(function (move, idx, last) { fw.pendingStrikes.push({ move: move, last: last }); });       /* the sim decides who was hit, on the next tick */
+      function heroPoint(y) { var p = fw.player; return { x: p.x + Math.sin(S.face) * 0.8, y: y, z: p.z + Math.cos(S.face) * 0.8 }; }
       scope.add(ctx.bus.on('hit', function (e) {
-        var p = ctx.world.player, dx = e.x - p.x, dz = e.z - p.z, dl = Math.hypot(dx, dz) || 1, ux = dx / dl, uz = dz / dl, hy = e.high ? 1.6 : 1.2;
+        var p = fw.player, dx = e.x - p.x, dz = e.z - p.z, dl = Math.hypot(dx, dz) || 1, ux = dx / dl, uz = dz / dl, hy = e.high ? 1.6 : 1.2;
         S.fx.spawn('spark', { x: e.x - ux * 0.25, y: hy, z: e.z - uz * 0.25 }, 0); S.cine.shake(0.05 + e.power * 0.12, 0.2); S.freeze = 0.04 + e.power * 0.05; S.ev.shove(e.id, ux, uz, 0.12 + e.power * 0.22 + (e.down ? 0.1 : 0));   /* hit-stop: the blow lands with a beat of stillness */
         S.fx.droplets('sweat', { x: e.x, y: 1.65, z: e.z }, ux, uz, 5 + Math.round(e.power * 5), e.power);
         S.fx.droplets('blood', { x: e.x - ux * 0.2, y: hy, z: e.z - uz * 0.2 }, ux, uz, (e.killed || e.down ? 12 : 4) + Math.round(e.power * 4), e.power);
@@ -1300,7 +1217,6 @@ function createFreeroam() {
       scope.add(ctx.bus.on('counter', function (e) {
         /* a timed block earns a direct hit that cannot be guarded; two men at once earn the guitar whirl (double takedown);
            a half-full rage bar can be spent on a guitar counter instead */
-        if (ctx.world.mounted) { var sd = ctx.world.rideSide > 0 ? 'L' : 'R'; S.mp.play(e.kind === 'bkDouble' ? 'bkDouble' : (e.kind === 'bkSweep' ? 'bkSweep' + sd : 'bkCElbow' + sd)); return; }
         S.mp.play(e.kind === 'double' ? 'counterWhirl' : (e.kind === 'special' ? ['counterBoom', 'counterSmash'][S.counterIdx++ % 2] : 'counterCross'));
       }));
       scope.add(ctx.bus.on('lastKo', function (e) {                                  /* the last man of the huddle goes down: slow motion and a finishing shot */
@@ -1310,36 +1226,38 @@ function createFreeroam() {
       scope.add(ctx.bus.on('playerHurt', function (e) {
         S.mp.cancel(); S.hurtW = 1; S.cine.shake(0.1, 0.25); S.freeze = 0.1; S.txt.say('hurt', heroPoint(1.8), view.camera, true); S.sfx.hit('cross', 0.8);
         S.fx.spawn('spark', heroPoint(1.4), 0.6);
-        var pl = ctx.world.player; S.fx.droplets('sweat', { x: pl.x, y: 1.7, z: pl.z }, -Math.sin(S.face), -Math.cos(S.face), 7, 0.6); S.fx.droplets('blood', { x: pl.x, y: 1.5, z: pl.z }, -Math.sin(S.face), -Math.cos(S.face), 3, 0.4);
+        var pl = fw.player; S.fx.droplets('sweat', { x: pl.x, y: 1.7, z: pl.z }, -Math.sin(S.face), -Math.cos(S.face), 7, 0.6); S.fx.droplets('blood', { x: pl.x, y: 1.5, z: pl.z }, -Math.sin(S.face), -Math.cos(S.face), 3, 0.4);
       }));
       scope.add(ctx.bus.on('guardbreak', function () { S.mp.cancel(); S.hurtW = 1; S.cine.shake(0.12, 0.3); S.fx.spawn('spark', heroPoint(1.3), 1); }));
       scope.add(ctx.bus.on('action', function (e) {
-        if (e.type === 'attack' && ctx.world.mounted) {          /* from the saddle: a random punch, elbow or kick on the side the man stands */
-          if (ctx.input.state.held.block || ctx.world.player.stun > 0 || ctx.world.player.down) return;
-          var cur = S.mp.current(), cmv = cur && moveData.MOVES[cur];
-          if (cmv && S.mp.time() < cmv.cancel * 0.75) return;
-          var sd2 = ctx.world.rideSide > 0 ? 'L' : 'R', r = Math.random(), nm = r < 0.22 ? 'Jab' : (r < 0.42 ? 'Cross' : (r < 0.58 ? 'Hook' : (r < 0.72 ? 'Elbow' : 'Kick')));
-          S.mp.play('bk' + nm + sd2); return;
-        }
-        if (e.type === 'attack' && !ctx.input.state.held.block && ctx.world.player.stun <= 0 && !ctx.world.player.down) S.mp.press();
-        if (e.type === 'finisher') { S.mp.play(moveData.FINISHER); S.txt.say('finisher', { x: ctx.world.player.x, y: 2.3, z: ctx.world.player.z }, view.camera, true); S.sfx.mega(); }
+        if (e.type === 'attack' && !ctx.input.state.held.block && fw.player.stun <= 0 && !fw.player.down) S.mp.press();
+        if (e.type === 'finisher') { S.mp.play(moveData.FINISHER); S.txt.say('finisher', { x: fw.player.x, y: 2.3, z: fw.player.z }, view.camera, true); S.sfx.mega(); }
+      }));
+      /* the end of the fight */
+      var timers = []; scope.add(function () { timers.forEach(clearTimeout); });
+      scope.add(ctx.bus.on('fight:clear', function (e) {
+        S.music.setTrack('sting');
+        timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));
+        timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride', { after: 'arrest', key: S.type }); } }, 2100));
+      }));
+      scope.add(ctx.bus.on('fight:lost', function () {
+        timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride'); } }, 400));
       }));
     },
     step: function (ctx, tick) {
-      var cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
-      ctx.world.attackLock = S.mp.active();            /* no walking while a move plays; the sim itself stops movement while Block is held */
-      ctx.world.invuln = !!(mv0 && mv0.counter) || cm0 === 'counterCross';         /* counters and the finisher cannot be interrupted */
-      var bk = ctx.world.bike; S.bPrev = { x: bk.x, y: bk.y, z: bk.z, h: bk.h };
+      var fw = S.fw, cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
+      fw.attackLock = S.mp.active();            /* no walking while a move plays; the sim itself stops movement while Block is held */
+      fw.invuln = !!(mv0 && mv0.counter) || cm0 === 'counterCross';         /* counters and the finisher cannot be interrupted */
       ctx.input.tick(tick);
-      worldMod.step(ctx.world, ctx.input);
+      fightworld.step(fw, ctx.input);
     },
     render: function (ctx, alpha) {
-      var now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; var real = dt;
+      var fw = S.fw, now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; var real = dt;
       /* the broken-guard sequence plays in gentle slow motion while the camera closes on his face; it lingers to follow the throw */
-      var cb = ctx.world.combat, seqNow = cb.seqId; if (seqNow) { S.seqLast = seqNow; S.seqLinger = 1.0; } else if (S.seqLinger > 0) S.seqLinger -= real;
+      var cb = fw.combat, seqNow = cb.seqId; if (seqNow) { S.seqLast = seqNow; S.seqLinger = 1.0; } else if (S.seqLinger > 0) S.seqLinger -= real;
       var seqOn = !!seqNow || S.seqLinger > 0; S.seqW += ((seqOn ? 1 : 0) - S.seqW) * (1 - Math.exp(-(seqOn ? 8 : 5) * real));
       if (S.freeze > 0) { S.freeze -= real; dt *= 0.05; } else if (S.slow > 0) { S.slow -= real; dt *= 0.3; } else dt *= 1 - 0.14 * S.seqW; if (S.focusT > 0) S.focusT -= real; S.t += dt;
-      var p = ctx.world.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha;
+      var p = fw.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha;
       var speed = Math.hypot(p.x - p.px, p.z - p.pz) * 60;
       var target;
       if (p.moving) { S.phase += speed * dt / 1.9; target = posemath.walkPose(S.phase, 1 + Math.min(0.2, speed / 20)); }
@@ -1356,46 +1274,15 @@ function createFreeroam() {
       if (S.blockW > 0.01) { var bw = posemath.smooth(S.blockW); pose = posemath.layer(pose, posemath.named('block'), bw * 0.85, bw); }
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
-      /* the bike: interpolated between ticks, wheels turning, bars following the stick */
-      var bk = ctx.world.bike, bp = S.bPrev || bk, mounted = ctx.world.mounted;
-      var bx = bp.x + (bk.x - bp.x) * alpha, by = bp.y + (bk.y - bp.y) * alpha, bz = bp.z + (bk.z - bp.z) * alpha, bh = bp.h + Math.atan2(Math.sin(bk.h - bp.h), Math.cos(bk.h - bp.h)) * alpha;
-      S.mountW += ((mounted ? 1 : 0) - S.mountW) * (1 - Math.exp(-(mounted ? 7 : 6) * dt));
-      var B3 = S.bike; B3.root.position.set(bx, by + bk.jolt * Math.sin(S.t * 34) * 0.045, bz); B3.root.rotation.y = bh;
-      B3.lean.rotation.z = bk.lean + bk.slip * 0.5;
-      B3.pitch.rotation.x = -bk.pitch + bk.jolt * Math.sin(S.t * 29) * 0.07 - (bk.air ? Math.atan2(bk.vy, Math.max(6, bk.speed)) * 0.7 : 0);
-      B3.fork.rotation.y = -bk.steer * 0.45; S.wheelA += bk.speed * dt / B3.wheelR; B3.front.rotation.x = S.wheelA; B3.rear.rotation.x = S.wheelA;
-      var rideP = null;
-      if (S.mountW > 0.02) { rideP = ridecam.ridePose(bk, S.t); var rw = posemath.smooth(S.mountW); pose = posemath.layer(pose, rideP, rw, rw, rw, rw); }
-      if (S.mountW > 0.5) {                     /* in the saddle he turns shoulders and head to the nearest man; blows and guard are layered on, legs stay on the pegs */
-        var fw = posemath.smooth(Math.min(1, (S.mountW - 0.5) * 2)), en2 = ctx.world.combat.enemies, nd = 7, nb = 0, qi;
-        for (qi = 0; qi < en2.length; qi++) { var ee = en2[qi]; if (ee.dead || ee.st === 'dead') continue; var dd2 = Math.hypot(ee.x - bk.x, ee.z - bk.z); if (dd2 < nd) { nd = dd2; nb = Math.atan2(ee.x - bk.x, ee.z - bk.z) - bk.h; nb = Math.atan2(Math.sin(nb), Math.cos(nb)); } }
-        S.nearRel = nd < 7 ? nb : 0; var aimT = nd < 7 ? Math.max(-1.9, Math.min(1.9, nb)) * 57.3 * AIM_SIGN : 0;
-        S.aim = (S.aim || 0) + (aimT - (S.aim || 0)) * (1 - Math.exp(-10 * dt));
-        var tw = {}; tw['spine.ry'] = S.aim * 0.5; tw['neck.ry'] = S.aim * 0.2; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1;
-        if (mo) {
-          var mv2 = mo.move && moveData.MOVES[mo.move], mp2 = {}, k3, legK = mv2 && mv2.legs;
-          for (k3 in mo.pose) { if (/^hip\./.test(k3)) continue; if (/^leg/.test(k3) && !(legK && k3.indexOf(legK) === 0)) continue; mp2[k3] = mo.pose[k3]; }
-          var hands = !(legK), lw = legK ? mo.wLower * fw : 0;
-          pose = posemath.layer(pose, mp2, lw, mo.wUpper * fw * (legK ? 0.5 : 1), hands ? mo.wArmA * fw : 0, hands ? mo.wArmB * fw : 0);
-        }
-        else if (S.blockW > 0.01) { var bw2 = posemath.smooth(S.blockW) * fw, gl = (S.nearRel || 0) >= 0; pose = posemath.layer(pose, posemath.named('block'), 0, 0, gl ? bw2 : 0, gl ? 0 : bw2); }          /* elbow guard on the side the man is on */          /* one forearm up across the head, the other hand stays on the bar */
-        tw['spine.ry'] += pose['spine.ry'] || 0; tw['neck.ry'] += pose['neck.ry'] || 0; tw['head.ry'] = (pose['head.ry'] || 0) + S.aim * 0.3; tw['hip.ry'] = (pose['hip.ry'] || 0) + S.aim * 0.1; pose = posemath.layer(pose, tw, 1, fw, 0, 0);
-      }
-      S.ev.sync(ctx.world.combat.enemies, alpha, dt, ctx.world.combat.target, ctx.world.combat.seqId); S.ui.update(p, ctx.world.combat); S.ui.show(true);
+      S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(true);
       S.fx.update(dt);
-      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-(mounted ? 30 : 14) * dt));
-      if (S.mountW > 0.02) {
-        /* hop onto the seat: the hero's walking spot blends to the seat, with a little jump on the way */
-        var rw2 = posemath.smooth(S.mountW), sv = S.sv || (S.sv = new THREE.Vector3()), sq = S.sq || (S.sq = new THREE.Quaternion());
-        B3.root.updateMatrixWorld(true); sv.set(B3.seat.x, B3.seat.y + 0.08 - 0.85, B3.seat.z); B3.pitch.localToWorld(sv); B3.pitch.getWorldQuaternion(sq);
-        S.rig.root.position.set(x + (sv.x - x) * rw2, (sv.y) * rw2 + Math.sin(Math.PI * rw2) * 0.35, z + (sv.z - z) * rw2);
-        S.rig.root.rotation.y = S.face; if (rw2 > 0.999) S.rig.root.quaternion.copy(sq); else { var q0 = S.q0 || (S.q0 = new THREE.Quaternion()); q0.setFromAxisAngle(S.up || (S.up = new THREE.Vector3(0, 1, 0)), S.face); S.rig.root.quaternion.copy(q0).slerp(sq, rw2); }
-      } else { S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face; }
-      S.rig.applyPose(pose, { plant: S.mountW < 0.5 }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
+      var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
+      S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face;
+      S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
       S.cine.update(dt, cm, ct, cm ? Math.min(ct / 0.55, (cl - ct) / 0.7, 1) : 0);
-      var focus = S.focusT > 0 ? S.focusPt : groupCentre(ctx.world, x, z);
+      var focus = S.focusT > 0 ? S.focusPt : groupCentre(fw, x, z);
       var shot = S.cine.weight > 0.001 || S.cine.shakeT > 0 ? S.cine.resolve(x, z, S.face, focus) : null;
       var fp = S.seqW > 0.01 ? S.ev.facePoint(S.seqLast) : null;
       if (fp) {
@@ -1415,52 +1302,14 @@ function createFreeroam() {
         if (S.cine.shakeT > 0) { var sk = S.cine.shakeT / (S.cine.dur || 1), amp = S.cine.shakeA * sk * sk * 0.6; o.x += Math.sin(S.t * 83) * amp; o.y += Math.sin(S.t * 97 + 1) * amp; }
         shot = o;
       } else if (S.seqW <= 0.01) S.seqCam = null;
-      if (S.mountW > 0.01) {
-        /* the riding camera takes over as he climbs on, and hands back when he steps off */
-        var rs = S.rc.update(dt, bk, bx, by, bz, bh, ctx.world.streaming), b1 = shot || { x: x, y: 6.4, z: z + 6.6, lx: x, ly: 1.0, lz: z - 2.2, fov: 46 }, rw3 = posemath.smooth(S.mountW), o2 = {}, f3;
-        for (f3 in rs) o2[f3] = b1[f3] + (rs[f3] - b1[f3]) * rw3;
-        if (S.cine.shakeT > 0) { var sk2 = S.cine.shakeT / (S.cine.dur || 1), amp2 = S.cine.shakeA * sk2 * sk2 * 0.6; o2.x += Math.sin(S.t * 83) * amp2; o2.y += Math.sin(S.t * 97 + 1) * amp2; }
-        shot = o2;
-      } else S.rc.state.init = false;
-      /* engine note and riding HUD */
-      var bd = mounted ? 99 : worldMod.bikeDistance(ctx.world), near = bd < BIKE.MOUNT_SHOW, can = !mounted && worldMod.canMount(ctx.world);
-      if (mounted) S.sfx.engine(real, { rpm: bk.rpm, thr: bk.thr, speed: Math.abs(bk.speed), drifting: bk.drifting, braking: ctx.input.state.held.block || ctx.input.state.my < -0.3, air: bk.air });
-      if (bk.shiftT > 0.15 && bk.shiftT <= 0.18 && mounted) S.sfx.shift();
-      var u2 = S.ui2, hint = mounted ? (Math.abs(bk.speed) < BIKE.PARK_SPEED ? (ctx.world.combat.enemies.length ? 'ATTACK: punch   BLOCK: guard / counter' : 'BLOCK: park and get off') : 'Stick: ride   Attack: punch / hold to boost   Block: guard / counter') : (can ? 'ATTACK: get on the Bijli' : (near ? 'Men too close to climb on' : ''));
-      if (hint !== S.rideHint) { S.rideHint = hint; u2.hint.textContent = hint; }
-      u2.speed.style.display = mounted ? 'block' : 'none'; u2.boost.style.display = mounted ? 'block' : 'none';
-      if (mounted) { u2.speed.textContent = Math.round(Math.abs(bk.speed) * 3.6) + ' km/h'; u2.boostFill.style.width = Math.round(bk.boost * 100) + '%'; }
-      if (S.flashT > 0) { S.flashT -= real; if (S.flashT <= 0) u2.flash.style.opacity = 0; }
-      /* the street's people and vehicles: meshes follow the sim's list, interpolated */
-      var tl = ctx.world.traffic.list, seen = {}, ti;
-      for (ti = 0; ti < tl.length; ti++) {
-        var te = tl[ti], tm = S.amb[te.id]; seen[te.id] = 1;
-        if (!tm) { tm = S.amb[te.id] = ambient.createMesh(te); ctx.view.scene.add(tm); }
-        var tk = trafficData.KINDS[te.kind], tdh = Math.atan2(Math.sin(te.h - te.ph), Math.cos(te.h - te.ph)), bob = 0, sway = 0;
-        if (te.kind === 'ped') { bob = Math.abs(Math.sin(te.phase)) * 0.05; sway = Math.sin(te.phase) * 0.06; } else if (te.kind === 'dog') bob = Math.abs(Math.sin(te.phase)) * 0.04; else if (tk.kind === 'veh' && te.v > 0.5) bob = Math.sin(S.t * 22 + te.id) * 0.008;
-        tm.position.set(te.px + (te.x - te.px) * alpha, bob, te.pz + (te.z - te.pz) * alpha); tm.rotation.y = te.ph + tdh * alpha;
-        tm.rotation.z = te.state === 'down' ? 1.45 : sway; tm.position.y += te.state === 'down' ? 0.25 : 0;
-      }
-      for (var tid in S.amb) if (!seen[tid]) { ctx.view.scene.remove(S.amb[tid]); delete S.amb[tid]; }
-      /* where the next fight is */
-      var nx = ctx.world.locs.next, tg = S.tg;
-      if (nx && !ctx.world.locs.active) {
-        var tdx = nx.x - p.x, tdz = nx.z - p.z, td = Math.hypot(tdx, tdz), rel = Math.atan2(tdx, tdz) - (mounted ? bh : S.camYaw || Math.PI);
-        tg.box.style.display = td > 12 ? 'block' : 'none'; tg.text.textContent = nx.name.toUpperCase() + '  ' + Math.round(td) + ' m';
-        tg.arrow.style.transform = 'rotate(' + (-rel * 57.3) + 'deg)';
-      } else tg.box.style.display = 'none';
       ctx.view.updateLod(x, z, ctx.view.tier.lod);
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
       if (S.hudT <= 0) {
         S.hudT = 0.25;
-        var vs = ctx.view.stats(), st = ctx.world.streaming;
-        ctx.hud.update({
-          mode: 'street test', tick: ctx.world.tick, chunks: st.loadedCount(), maxChunks: ctx.config.BUDGET.maxLoadedChunks,
-          triangles: vs.triangles, calls: vs.calls, bytes: vs.bytes, loads: st.stats.loads, unloads: st.stats.unloads,
-          saveOk: ctx.save.persistent(), rage: p.rage, ms: vs.ms, tier: vs.tier
-        });
+        var vs = ctx.view.stats();
+        ctx.hud.update({ mode: 'fight: ' + fw.name, tick: fw.tick, chunks: 1, maxChunks: 1, triangles: vs.triangles, calls: vs.calls, bytes: vs.bytes, loads: 0, unloads: 0, saveOk: ctx.save.persistent(), rage: p.rage, ms: vs.ms, tier: vs.tier });
         ctx.touch.setFinisherVisible(p.rage >= 100);
       }
     },
@@ -1468,7 +1317,7 @@ function createFreeroam() {
   };
 }
 
-module.exports = { createFreeroam: createFreeroam };
+module.exports = { createFight: createFight };
 
 };
 defs["modes/hideout"]=function(module,exports,require){
@@ -1630,108 +1479,9 @@ function createHideoutMode() {
 module.exports = { createHideout: createHideoutMode };
 
 };
-defs["modes/mission"]=function(module,exports,require){
-/* modes: the link between the ride and a fight area (Phase 4, M4). Arriving at a trouble spot on the ride opens the brawler (Street) with
-   Toofan walking into that kind of place; when the area is clear the game goes back to the ride, where the police take the goons away.
-   The brawler itself is not changed: this only places the hero before the fight and listens for the area to be cleared.
-   For the kinds of place that have one, the fight is held in a closed arena (sim/arenagen): for the length of the fight the world's
-   streaming is swapped for one that builds only that arena, passing traffic is switched off, and the hero and the men are kept inside
-   its walls. The open city comes back the moment the fight is over. */
-'use strict';
-
-var CONFIG = require('../data/config');
-var LOC = require('../data/locations');
-var locsMod = require('../sim/citylocs');
-var cinecard = require('../view/cinecard');
-var combatMod = require('../sim/combat');
-var sfxmod = require('../view/sfx');
-var streamingMod = require('../sim/streaming');
-var arenagen = require('../sim/arenagen');
-var arenaview = require('../view/arenaview');
-var musicMod = require('../view/music');
-var lineupMod = require('../sim/lineup');
-var GANGS = require('../data/gangs');
-var rngMod = require('../core/rng');
-
-function mod3(n) { return ((n % 3) + 3) % 3; }
-
-/* find the nearest uncleared place of this kind in the brawler's city and stand Toofan on the road just short of it, on foot */
-function place(ctx, m) {
-  var w = ctx.world, S = CONFIG.CHUNK_SIZE, best = null, bd = 1e9, cx, cz;
-  for (cx = -14; cx <= 14; cx++) for (cz = -14; cz <= 14; cz++) {
-    var t = locsMod.typeAt(w.seed, cx, cz); if (!t) continue; var key = cx + ',' + cz;
-    var d = Math.hypot(cx, cz) + (t === m.type ? 0 : 1000) + (w.locs.cleared[key] ? 500 : 0);
-    if (d < bd) { bd = d; best = { cx: cx, cz: cz, key: key, type: t }; }
-  }
-  if (!best) return null;
-  var ew = mod3(best.cz) === 0, p = w.player;
-  if (arenagen.has(best.type)) {                                       /* the closed arena: swap the ground for the fight */
-    m.city = w.streaming;
-    w.streaming = streamingMod.createStreaming(w.seed, ctx.bus, arenagen.createGen(best.type, best.cx, best.cz));
-    var spec = arenagen.build(w.seed, best.type, best.cx, best.cz);
-    w.bounds = spec.bounds; w.traffic.off = true; w.traffic.list.length = 0;
-    p.x = spec.start.x; p.z = spec.start.z; p.face = Math.PI;
-  } else { p.x = best.cx * S - (ew ? 9 : 0); p.z = best.cz * S - (ew ? 0 : 9); p.face = ew ? Math.PI / 2 : 0; }
-  p.px = p.x; p.pz = p.z;
-  p.hp = p.maxHp; p.down = false; p.stun = 0;
-  w.mounted = false; w.bike.x = p.x + 4000; w.bike.z = p.z; w.bike.speed = 0;               /* Bijli is left on the road: not reachable during the fight */
-  w.locs.cleared[best.key] = false; w.locs.active = null;
-  /* who turns up: the more places cleared on the ride, the bigger and tougher the crowd */
-  var level = 0; if (ctx.ride && ctx.ride.missions) Object.keys(ctx.ride.missions).forEach(function (k) { if (ctx.ride.missions[k] === 'cleared') level++; });
-  if (m.level !== undefined) level = m.level;
-  var gang = GANGS.GANGS[GANGS.gangOf(best.type)];
-  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)), gang && gang.mix);
-  m.lineup = w.combat.lineup.slice();
-  w.locs.next = { key: best.key, type: best.type, name: LOC.LOCATIONS[best.type].name, x: best.cx * S, z: best.cz * S, dist: 15 };
-  w.streaming.update(p.x, p.z);
-  m.brawlKey = best.key;
-  return best;
-}
-
-/* after the brawler has started: no opening wave, just this place's fight; when it is cleared, back to the ride */
-function watch(ctx, scope, m) {
-  var w = ctx.world, timers = [];
-  w.combat.enemies.length = 0; w.combat.auto = false;
-  var music = musicMod.createMusic(sfxmod.createSfx()); music.setTrack('arena');
-  scope.add(function () { timers.forEach(clearTimeout); sfxmod.createSfx().engineOff(); });
-  if (m.city) {
-    /* the arena's tall pieces and signs, faded whenever one stands between the camera and the fight */
-    var spec = w.streaming.specAt(w.player.x, w.player.z - 6) || w.streaming.specAt(w.player.x, w.player.z), av = spec && spec.kind === 'arena' && ctx.view && ctx.view.scene ? arenaview.createArenaView(ctx.view.scene, spec) : null;
-    var hero = av && new THREE.Vector3(), hero2 = av && new THREE.Vector3(), foe = av && new THREE.Vector3();
-    var off = av ? ctx.view.onFrame(function (camera, dt) {
-      var p = w.player, t = [hero.set(p.x, 1.0, p.z), hero2.set(p.x, 1.7, p.z)], best = null, bd = 9, i, l = w.combat.enemies;
-      for (i = 0; i < l.length; i++) { var e = l[i]; if (e.dead || e.st === 'dead') continue; var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
-      if (best) t.push(foe.set(best.x, 1.3, best.z));
-      av.fade(camera, t, dt);
-    }) : null;
-    ctx.debug.arena = av;
-    scope.add(function () {
-      if (off) off(); if (av) av.dispose(); ctx.debug.arena = null;
-      w.streaming = m.city; m.city = null; w.bounds = null; w.traffic.off = false;     /* the open city again */
-    });
-  }
-  /* if the place's fight has not begun a moment after arriving (the street may still be loading), start it here */
-  timers.push(setTimeout(function () {
-    var L = w.locs, c = w.combat; if (L.active || c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) return;
-    var sp = w.streaming.specAt(L.next ? L.next.x : w.player.x, L.next ? L.next.z : w.player.z), D = LOC.LOCATIONS[m.type] || LOC.LOCATIONS.market, p = w.player, pts, i;
-    if (sp && sp.loc) { pts = sp.loc.spawns; L.active = { key: m.brawlKey, name: sp.loc.name, x: sp.loc.x, z: sp.loc.z }; }
-    else { pts = []; for (i = 0; i < 6; i++) pts.push({ x: p.x + Math.cos(i) * 8, z: p.z + Math.sin(i) * 8 }); L.active = { key: m.brawlKey, name: D.name, x: p.x, z: p.z }; }
-    combatMod.startLocation(w, L.active.name, pts, D.n, D.stick); ctx.bus.emit('location:start', { key: m.brawlKey, name: L.active.name });
-  }, 1500));
-  scope.add(ctx.bus.on('location:clear', function (e) {
-    if (e.key !== m.brawlKey) return;
-    music.setTrack('sting');
-    timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));
-    timers.push(setTimeout(function () { ctx.go('ride', { after: 'arrest', key: m.type }); }, 2100));
-  }));
-}
-
-module.exports = { place: place, watch: watch };
-
-};
 defs["modes/ride"]=function(module,exports,require){
 /* modes: Ride, the heart of the game (Phase 4). Toofan rides Bijli across the city to the next trouble spot. On the way the bike goons
-   attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into the fight area (the brawler, Street mode).
+   attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into that place's fight (modes/fight).
    When the area is clear it comes back here: the police take the goons away and Toofan rides on to the next signal.
    Big moments in the road fights (counters, knockouts, the leap) slow time and pull the camera back wide, with speed lines, bursts and a flash. */
 'use strict';
@@ -1905,7 +1655,7 @@ function createRide() {
         var a2 = c.yaw + 2.2 + C.t * 0.7, rad = 5.2 - C.t * 0.6;
         mix({ x: x + Math.sin(a2) * rad, y: 1.4 + C.t * 0.3, z: z + Math.cos(a2) * rad, lx: x, ly: 1.5, lz: z, fov: 40 }, ease(C.t / 0.6));
         if (C.t > 1.7 && !C.card) { C.card = true; var gk = GANGS.gangOf(C.key), gg = gk && GANGS.GANGS[gk]; cinecard.show({ title: C.name.toUpperCase(), sub: gg ? gg.name.toUpperCase() + ' KA ILAAKA' : 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
-        if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('freeroam', { mission: { type: C.key, name: C.name } }); return; }
+        if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('fight', { type: C.key }); return; }
       }
       if (S.shake > 0) { var sh = S.shake * 0.25; shot.x += (Math.random() - 0.5) * sh; shot.y += (Math.random() - 0.5) * sh; S.shake = Math.max(0, S.shake - dt * 1.5); }
       ctx.view.followCamera(0, 0, shot);
@@ -2386,15 +2136,13 @@ module.exports = { createWake: createWake };
 
 };
 defs["sim/arenagen"]=function(module,exports,require){
-/* sim: fight arenas as chunk specs. When the ride brings Toofan to a trouble spot, the fight is held in a closed arena built for that
-   kind of place instead of the open city: the arena is one spec at the location's chunk (same world position, so keys and clears line
-   up), and every chunk round it is bare ground the camera never sees past the backdrop. The spec has the usual fields (boxes, solids,
-   ramps, hazards, loc) plus `tall` (fadeable groups), `signs` (painted text for the view) and `bounds` (where the fight can go). */
+/* sim: fight arenas. When the ride brings Toofan to a trouble spot, the fight (sim/fightworld) is held in a closed arena built for that kind
+   of place. The spec has the arena's boxes and solid footprints, `tall` (fadeable groups), `signs` (painted text for the view), `bounds`
+   (where the fight can go), the start point and the place (`loc`) with its spawn points. */
 'use strict';
 
 var CONFIG = require('../data/config');
 var rngMod = require('../core/rng');
-var gen = require('./chunkgen');
 var kit = require('./arenakit');
 var arenas = require('./arenas');
 var D = require('../data/locations');
@@ -2413,25 +2161,16 @@ function build(seed, type, cx, cz) {
   });
   var B = arenas.BOUNDS;
   return {
-    key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: ox, oz: oz, kind: 'arena', arena: type,
-    boxes: o.boxes, tall: o.tall, signs: o.signs, solids: o.solids, ramps: [], hazards: [],
+    key: cx + ',' + cz, cx: cx, cz: cz, ox: ox, oz: oz, kind: 'arena', arena: type,
+    boxes: o.boxes, tall: o.tall, signs: o.signs, solids: o.solids,
     bounds: { x0: ox + B.x0, z0: oz + B.z0, x1: ox + B.x1, z1: oz + B.z1 },
     start: { x: ox + arenas.START.x, z: oz + arenas.START.z },
-    loc: { type: type, name: def.name, n: def.n, stick: def.stick, r: def.r, x: ox, z: oz, side: 0, axis: 'x',
+    loc: { type: type, name: def.name, n: def.n, stick: def.stick, x: ox, z: oz,
            spawns: info.spawns.map(function (s) { var q = kit.squeeze(s[0], s[1]); return { x: ox + q[0], z: oz + q[1] }; }) }
   };
 }
 
-/* a chunk generator for the streaming system: the arena at (cx, cz), bare ground elsewhere */
-function createGen(type, acx, acz) {
-  return function (seed, cx, cz) {
-    if (cx === acx && cz === acz) return build(seed, type, cx, cz);
-    var S = CONFIG.CHUNK_SIZE;
-    return { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, kind: 'void', boxes: [], solids: [], ramps: [], hazards: [], loc: null };
-  };
-}
-
-module.exports = { has: has, build: build, createGen: createGen };
+module.exports = { has: has, build: build };
 
 };
 defs["sim/arenakit"]=function(module,exports,require){
@@ -3149,600 +2888,8 @@ A.flyover = function (K) {
 module.exports = { A: A, BOUNDS: BOUNDS, START: START, southBarrier: southBarrier, backdrop: backdrop, cornerTrees: cornerTrees };
 
 };
-defs["sim/bike"]=function(module,exports,require){
-/* sim: the Bijli. A kinematic cruiser: it follows the ground (ramps), leaves it when the ground falls away, collides with
-   building footprints, and Forward is (sin h, cos h), the same convention as the hero's facing. No graphics. */
-'use strict';
-
-var B = require('../data/bike');
-var TAU = Math.PI * 2;
-
-function createBike(x, z, h) {
-  return { x: x, y: 0, z: z, h: h || 0, speed: 0, vy: 0, air: false, airT: 0, 
-           steer: 0, lean: 0, pitch: 0, slip: 0, boost: 1, boosting: false, drifting: false, crash: 0, rpm: 0.2, thr: 0, gear: 1, lastY: 0, vyGround: 0, shiftT: 0, jolt: 0, hzF: null, hzR: null };
-}
-
-function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
-
-/* ctrl: {throttle 0..1, brake 0..1, steer -1..1 (right +), boost bool, drift bool, stunt bool (edge)}
-   env: {groundAt(x,z), solidsNear(x,z,r,out)}   bus: event bus or null */
-function step(b, ctrl, env, dt, bus) {
-  var thr = b.crash > 0 ? 0 : ctrl.throttle, brk = ctrl.brake, v = b.speed, i;
-  if (b.crash > 0) b.crash = Math.max(0, b.crash - dt);
-  b.thr += (thr - b.thr) * Math.min(1, 6 * dt);
-
-  /* speed along the heading */
-  var boosting = !!ctrl.boost && b.boost > 0.02 && !b.air && v > 1 && b.crash <= 0;
-  b.boosting = boosting;
-  var top = boosting ? B.BOOST_SPEED : B.MAX_SPEED;
-  if (!b.air) {
-    var a = 0;
-    if (thr > 0.05 && v >= -0.1) a += (boosting ? B.BOOST_ACCEL : B.ACCEL * (B.GEAR_PULL[b.gear] || 0.5)) * (b.shiftT > 0 ? B.SHIFT_DIP : 1) * thr * clamp(1 - Math.pow(Math.max(0, v) / top, 2.4), 0, 1) * (v < 0 ? 1.5 : 1);
-    else if (thr <= 0.05 && v > 0) a -= B.COAST;
-    if (brk > 0.05) { if (v > 0.3) a -= B.BRAKE * brk; else if (ctrl.reverse) { if (v > -B.REVERSE_MAX) a -= 3 * brk; } else { v = 0; a = 0; } }
-    else if (thr <= 0.05 && v < 0) a += B.COAST;
-    a -= B.DRAG * v * Math.abs(v);
-    b.drifting = !!ctrl.drift && v > 7 && Math.abs(ctrl.steer) > 0.2;
-    if (b.drifting) a -= B.DRIFT_BRAKE;
-    v += a * dt;
-    if (thr <= 0.05 && brk <= 0.05 && Math.abs(v) < 0.25) v = 0;
-    if (v > top) v = Math.max(top, v - 6 * dt);
-    b.speed = v;
-    if (boosting) b.boost = Math.max(0, b.boost - B.BOOST_DRAIN * dt); else b.boost = Math.min(1, b.boost + B.BOOST_REFILL * dt);
-  } else b.drifting = false;
-
-  /* steering: lazy bars, wide arcs at speed */
-  var airSteer = b.air ? 0.25 : 1;
-  b.steer += (ctrl.steer * airSteer - b.steer) * (1 - Math.exp(-B.STEER_LAG * dt));
-  var R = B.TURN_R0 + B.TURN_RV * Math.abs(b.speed), yaw = (b.speed / R) * b.steer * (b.drifting ? B.DRIFT_BOOST : 1);
-  b.h -= yaw * dt;
-  b.slip += ((b.drifting ? -b.steer * 0.4 : 0) - b.slip) * Math.min(1, 8 * dt);
-  var leanT = clamp(Math.atan2(b.speed * yaw, 9.8), -B.LEAN_MAX, B.LEAN_MAX) * (b.air ? 0.3 : 1);
-  b.lean += (leanT - b.lean) * (1 - Math.exp(-6 * dt));
-  /* fork dip under braking, rear squat under throttle */
-  var pitchT = (brk > 0.05 && v > 1 ? -0.1 * brk : 0) + (thr > 0.3 && v < 14 ? 0.035 * thr : 0);
-  b.pitch += (pitchT - b.pitch) * (1 - Math.exp(-7 * dt));
-
-  /* move */
-  var fx = Math.sin(b.h), fz = Math.cos(b.h);
-  b.lastY = b.y;
-  b.x += fx * b.speed * dt; b.z += fz * b.speed * dt;
-
-  /* walls: a circle against building footprints */
-  var near = env.solidsNear(b.x, b.z, B.RADIUS + 1, []);
-  for (i = 0; i < near.length; i++) {
-    var q = near[i]; if (b.y > q.y1 - 0.25) continue;
-    var cx = clamp(b.x, q.x0, q.x1), cz = clamp(b.z, q.z0, q.z1), dx = b.x - cx, dz = b.z - cz, d2 = dx * dx + dz * dz;
-    if (d2 >= B.RADIUS * B.RADIUS) continue;
-    var d = Math.sqrt(d2), nx, nz;
-    if (d < 1e-6) { var l = b.x - q.x0, r = q.x1 - b.x, t = b.z - q.z0, u = q.z1 - b.z, m = Math.min(l, r, t, u); nx = m === l ? -1 : m === r ? 1 : 0; nz = m === t ? -1 : m === u ? 1 : 0; d = 0; }
-    else { nx = dx / d; nz = dz / d; }
-    b.x += nx * (B.RADIUS - d); b.z += nz * (B.RADIUS - d);
-    var into = -(fx * nx + fz * nz) * b.speed;                    /* speed driven into the wall */
-    if (into > 1.5) {
-      var hard = into > 9;
-      b.speed *= hard ? 0.1 : (1 - 0.55 * Math.min(1, into / 9));
-      if (hard) b.crash = 0.9; else if (into > 4) b.crash = 0.3;
-      if (bus && into > 3) bus.emit('ride:crash', { x: b.x, z: b.z, speed: into, hard: hard, with: 'wall' });
-    }
-  }
-
-  /* bad road: each wheel that drops into a pothole or climbs a speed breaker jars the bike; the faster, the harder */
-  if (env.hazardAt && !b.air) {
-    var wf = env.hazardAt(b.x + fx * B.HALF_LEN, b.z + fz * B.HALF_LEN), wr = env.hazardAt(b.x - fx * B.HALF_LEN, b.z - fz * B.HALF_LEN), sp = Math.abs(b.speed);
-    [[wf, 'hzF', 1], [wr, 'hzR', 0.6]].forEach(function (q) {
-      if (q[0] && q[0] !== b[q[1]] && sp > 4) {
-        var hardness = q[0] === 'brk' ? clamp((sp - 5) / 16, 0.1, 1) : clamp(sp / 22, 0.15, 0.85);
-        b.jolt = Math.min(1, b.jolt + hardness * q[2]);
-        b.speed *= 1 - (q[0] === 'brk' ? 0.22 : 0.1) * hardness * q[2];
-        b.h += Math.sin(b.x * 7.3 + b.z * 3.1) * 0.03 * hardness;             /* the bars kick */
-        if (bus) bus.emit('ride:bump', { x: b.x, z: b.z, kind: q[0], power: hardness * q[2] });
-      }
-      b[q[1]] = q[0];
-    });
-  } else if (b.air) { b.hzF = null; b.hzR = null; }
-  b.jolt = Math.max(0, b.jolt - 4.5 * dt);
-
-  /* ground, jumping, landing */
-  var gy = env.groundAt(b.x, b.z);
-  if (!b.air) {
-    if (gy < b.y - 0.06 && b.vyGround > 1.2) { b.air = true; b.vy = b.vyGround; b.airT = 0; b.y += b.vy * dt; if (bus) bus.emit('ride:jump', { x: b.x, z: b.z, vy: b.vy }); }
-    else if (gy < b.y - 0.06) { b.air = true; b.vy = 0; b.airT = 0; }
-    else { b.y = gy; b.vyGround = (b.y - b.lastY) / dt; }
-  } else {
-    b.airT += dt; b.vy -= B.GRAVITY * dt; b.y += b.vy * dt;
-    if (b.y <= gy && b.vy <= 0) {
-      var vyIn = -b.vy; b.y = gy; b.air = false; b.vyGround = 0;
-      if (vyIn > 8) b.speed *= 0.85;
-      if (bus) bus.emit('ride:land', { x: b.x, z: b.z, vy: vyIn, airT: b.airT });
-      b.vy = 0;
-    }
-  }
-
-  /* engine note inputs: gear from speed, rpm climbs inside each gear */
-  var g = 0; for (i = 0; i < B.GEARS.length; i++) if (Math.abs(b.speed) >= B.GEARS[i]) g = i;
-  if (g !== b.gear) { b.gear = g; b.shiftT = 0.18; } if (b.shiftT > 0) b.shiftT -= dt;
-  var lo = B.GEARS[g], hi = g + 1 < B.GEARS.length ? B.GEARS[g + 1] : B.BOOST_SPEED + 1, fr = clamp((Math.abs(b.speed) - lo) / (hi - lo), 0, 1);
-  var rpmT = 0.18 + 0.62 * fr + 0.2 * b.thr - (b.shiftT > 0 ? 0.18 : 0);
-  b.rpm += (rpmT - b.rpm) * Math.min(1, 9 * dt);
-}
-
-module.exports = { createBike: createBike, step: step };
-
-};
-defs["sim/chunkgen"]=function(module,exports,require){
-/* sim: deterministic chunk specs. A spec is plain data (boxes in chunk-local metres),
-   so the same seed always rebuilds the same chunk and nothing needs to be stored. */
-'use strict';
-
-var rngMod = require('../core/rng');
-var CONFIG = require('../data/config');
-
-/* the original pastel wall colours, mapped to a livelier set: saffron, rose, turquoise, lime, blue, cream, ochre, orchid */
-var WALLS = { 2: 28, 3: 29, 4: 30, 5: 31, 6: 32, 7: 33, 8: 34, 9: 35, 10: 28, 11: 30 };
-function chunkKey(cx, cz) { return cx + ',' + cz; }
-
-function generateChunk(seed, cx, cz, opts) {
-  var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND;
-  var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
-  var boxes = [], solids = [], ramps = [];
-  function box(x0, y0, z0, x1, y1, z1, c) { boxes.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
-
-  var onRoad = opts && opts.road != null ? !!opts.road : (cz === 0);
-  box(-H, -0.3, -H, H, 0, H, onRoad ? G.sidewalk : G.dirt);          /* base ground */
-  if (onRoad) {
-    box(-H, -0.28, -6, H, 0.02, 6, G.road);                            /* main road along x */
-    for (var m = -H + 2; m < H; m += 6) box(m, 0.02, -0.15, m + 3, 0.04, 0.15, 8); /* centre line dashes */
-  }
-
-  /* building rows on both sides of the road, or a denser block away from it */
-  var rows = onRoad ? [{ z0: 8.5, z1: 15.5 }, { z0: -15.5, z1: -8.5 }] : [{ z0: -14, z1: -2 }, { z0: 2, z1: 14 }];
-  for (var r = 0; r < rows.length; r++) {
-    var x = -H + rng.range(0.5, 2);
-    while (x < H - 5) {
-      var w = rng.range(5, 10), maxX = H - 0.5;
-      if (x + w > maxX) w = maxX - x;
-      if (w < 3.5) break;
-      var hgt = rng.range(5, 22);
-      var shopH = 2.7;
-      var c = rng.int(2, 11);
-      box(x, 0, rows[r].z0, x + w, hgt, rows[r].z1, WALLS[c] === undefined ? c : WALLS[c]);
-      solids.push({ x0: x, z0: rows[r].z0, x1: x + w, z1: rows[r].z1, y1: hgt });
-      if (onRoad) {                                                   /* shopfront band raised to a hero-sized doorway */
-        var zf = rows[r].z0 < 0 ? rows[r].z1 : rows[r].z0, dz = rows[r].z0 < 0 ? 0.12 : -0.12;
-        box(x + 0.4, 0, Math.min(zf, zf + dz), x + w - 0.4, shopH, Math.max(zf, zf + dz), 1);
-      }
-      x += w + rng.range(0.8, 2.5);
-    }
-  }
-  /* lamp posts along the pavement */
-  if (onRoad) for (var p = -H + 4; p < H; p += 10) {
-    box(p, 0, 7.4, p + 0.18, 4.2, 7.58, 1); box(p - 0.4, 4.0, 7.4, p + 0.58, 4.2, 7.58, 1);
-    box(p, 0, -7.58, p + 0.18, 4.2, -7.4, 1); box(p - 0.4, 4.0, -7.58, p + 0.58, 4.2, -7.4, 1);
-    solids.push({ x0: p, z0: 7.4, x1: p + 0.18, z1: 7.58, y1: 4.2 }, { x0: p, z0: -7.58, x1: p + 0.18, z1: -7.4, y1: 4.2 });
-  }
-  /* a jump ramp in one lane (drawn last so the buildings above are the same as before): stair boxes for the eye, slope data for the bike */
-  if (onRoad && !(opts && opts.noRamp) && !(cx === 0 && cz === 0) && rng.chance(0.5)) {
-    var rx0 = rng.range(-12, -4), rlen = 8, rh = 3.0, rw = 4.4, rz0 = (rng.chance(0.5) ? 3 : -3) - rw / 2, n = 16, k;
-    for (k = 0; k < n; k++) box(rx0 + rlen * k / n, 0.02, rz0, rx0 + rlen * (k + 1) / n, 0.04 + rh * (k + 0.5) / n, rz0 + rw, k % 4 < 2 ? 3 : 4);
-    ramps.push({ x0: rx0, z0: rz0, x1: rx0 + rlen, z1: rz0 + rw, axis: 'x', dir: 1, h: rh });
-  }
-  return { key: chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: ramps };
-}
-
-module.exports = { generateChunk: generateChunk, chunkKey: chunkKey };
-
-};
-defs["sim/citydetail"]=function(module,exports,require){
-/* sim: the character of the city. Takes a finished chunk spec and adds, deterministically from (seed, cx, cz): broken road (potholes, patches,
-   cracks, speed breakers, manholes), shopfronts with shutters, signboards, awnings, balconies, laundry, water tanks, hoardings, electric poles with
-   wires, vendor stalls and rubble. Everything is plain boxes in chunk-local metres, plus `hazards` the bike can feel (potholes, speed breakers).
-   Works in a road-aligned frame (u along the road, v across it) and maps back to x,z, so east-west and north-south roads share the code. */
-'use strict';
-
-var rngMod = require('../core/rng');
-
-/* palette indices (see data/config.js) */
-var P = { ROAD: 1, DARK_PATCH: 12, GREY_PATCH: 13, YELLOW: 14, BLACK: 15, SAFFRON: 16, MAGENTA: 17, TEAL: 18, LIME: 19, BLUE: 20, RED: 21, CREAM: 22, PURPLE: 23,
-          DIRT: 24, WHITE: 25, RUST: 26, PINK: 27, GREY: 0, CONCRETE: 8 };
-var BRIGHT = [P.SAFFRON, P.MAGENTA, P.TEAL, P.LIME, P.BLUE, P.RED, P.YELLOW, P.PURPLE, P.PINK];
-var SHUTTERS = [P.SAFFRON, P.BLUE, P.TEAL, P.RED, P.LIME, P.CREAM, P.MAGENTA, P.GREY];
-var GOODS = [P.RED, P.SAFFRON, P.LIME, P.YELLOW, P.MAGENTA, P.TEAL];
-
-var LIM = require('../data/config').CHUNK_SIZE / 2;
-function pick(rng, a) { return a[Math.floor(rng.next() * a.length) % a.length]; }
-
-function frame(spec, axis) {                                  /* axis 'x': road runs along x (u = x, v = z); 'z': u = z, v = x */
-  function B(u0, y0, v0, u1, y1, v1, c) {
-    var a = Math.max(-LIM, Math.min(u0, u1)), b = Math.min(LIM, Math.max(u0, u1)), d = Math.max(-LIM, Math.min(v0, v1)), e = Math.min(LIM, Math.max(v0, v1));
-    if (b - a < 0.02 || e - d < 0.02) return;
-    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c, d: 1 } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c, d: 1 });
-  }
-  function S(u0, v0, u1, v1, y1) {                              /* a solid footprint */
-    var a = Math.min(u0, u1), b = Math.max(u0, u1), d = Math.min(v0, v1), e = Math.max(v0, v1);
-    spec.solids.push(axis === 'x' ? { x0: a, z0: d, x1: b, z1: e, y1: y1 } : { x0: d, z0: a, x1: e, z1: b, y1: y1 });
-  }
-  function H(k, u0, v0, u1, v1) {
-    var a = Math.min(u0, u1), b = Math.max(u0, u1), d = Math.min(v0, v1), e = Math.max(v0, v1);
-    spec.hazards.push(axis === 'x' ? { k: k, x0: a, z0: d, x1: b, z1: e } : { k: k, x0: d, z0: a, x1: e, z1: b });
-  }
-  return { B: B, S: S, H: H };
-}
-
-/* the road surface: the part that makes it feel like a road in India and not a test track */
-function roughRoad(f, rng, half, len, withBreaker) {
-  var i, n, u, v, w, d;
-  n = rng.int(2, 4);                                           /* potholes: dark hollows with a ragged lip of broken tar */
-  for (i = 0; i < n; i++) {
-    u = rng.range(-len, len); v = rng.range(-half + 1, half - 1); w = rng.range(0.9, 1.9); d = rng.range(0.8, 1.6);
-    f.B(u - w / 2 - 0.18, 0.02, v - d / 2 - 0.18, u + w / 2 + 0.18, 0.045, v + d / 2 + 0.18, P.GREY_PATCH);
-    f.B(u - w / 2, 0.045, v - d / 2, u + w / 2, 0.055, v + d / 2, P.DARK_PATCH);
-    if (rng.chance(0.6)) f.B(u + w / 2 + 0.2, 0.02, v - 0.1, u + w / 2 + 0.45, 0.1, v + 0.15, P.GREY_PATCH);          /* a lump of tar thrown out */
-    f.H('pot', u - w / 2, v - d / 2, u + w / 2, v + d / 2);
-  }
-  n = rng.int(1, 3);                                           /* patches: newer tar laid over old */
-  for (i = 0; i < n; i++) {
-    u = rng.range(-len, len); v = rng.range(-half + 1.5, half - 1.5); w = rng.range(2, 5); d = rng.range(1.2, 2.6);
-    f.B(u - w / 2, 0.02, v - d / 2, u + w / 2, 0.034, v + d / 2, rng.chance(0.5) ? P.DARK_PATCH : P.GREY_PATCH);
-  }
-  n = rng.int(3, 5);                                           /* cracks */
-  for (i = 0; i < n; i++) { u = rng.range(-len, len); v = rng.range(-half + 0.5, half - 0.5); w = rng.range(1.5, 4.5); f.B(u, 0.02, v, u + w, 0.03, v + 0.07, P.BLACK); }
-  if (rng.chance(0.7)) { u = rng.range(-len, len); v = rng.range(-half + 1, half - 1); f.B(u - 0.4, 0.02, v - 0.4, u + 0.4, 0.05, v + 0.4, P.GREY); f.B(u - 0.25, 0.05, v - 0.25, u + 0.25, 0.058, v + 0.25, P.RUST); }   /* manhole */
-  if (withBreaker && rng.chance(0.55)) {                       /* a speed breaker across the whole road, striped */
-    u = rng.range(-len + 4, len - 4);
-    f.B(u - 0.4, 0.02, -half, u + 0.4, 0.14, half, P.GREY_PATCH);
-    for (i = -half; i < half; i += 1.2) f.B(u - 0.4, 0.14, i, u + 0.4, 0.155, i + 0.6, P.YELLOW);
-    f.H('brk', u - 0.4, -half, u + 0.4, half);
-  }
-}
-
-function signboard(f, rng, u0, u1, y0, fv, out, thick) {
-  var c = pick(rng, BRIGHT), w = u1 - u0, k, x = u0 + 0.3;
-  f.B(u0, y0, fv, u1, y0 + 0.9, fv + out * thick, c);
-  for (k = 0; k < 4 && x < u1 - 0.9; k++) { var lw = rng.range(0.35, 0.9); f.B(x, y0 + 0.2, fv + out * thick, x + lw, y0 + 0.7, fv + out * (thick + 0.04), c === P.CREAM || c === P.YELLOW ? P.BLACK : P.CREAM); x += lw + 0.25; }
-}
-
-/* one building's face toward the street (or alley) */
-function facade(f, rng, b, side, shops) {
-  var out = -side, fv = side > 0 ? b.v0 : b.v1, w = b.u1 - b.u0, h = b.h, k, n, u, y;
-  if (w < 3.5) return;
-  if (shops) {
-    n = Math.max(1, Math.floor(w / 2.8)); var bw = (w - 0.8) / n;
-    for (k = 0; k < n; k++) {
-      var a = b.u0 + 0.4 + k * bw + 0.1, e = a + bw - 0.2;
-      if (rng.chance(0.65)) f.B(a, 0, fv, e, 2.5, fv + out * 0.14, pick(rng, SHUTTERS));
-      else { f.B(a, 0, fv, e, 2.5, fv + out * 0.12, P.BLACK); f.B(a + 0.2, 0.8, fv + out * 0.12, e - 0.2, 1.3, fv + out * 0.5, pick(rng, GOODS)); }
-    }
-    signboard(f, rng, b.u0 + 0.3, b.u1 - 0.3, 2.65, fv, out, 0.22);
-    if (rng.chance(0.55)) { var c1 = pick(rng, BRIGHT), c2 = pick(rng, BRIGHT); f.B(b.u0 + 0.5, 2.3, fv, b.u0 + 0.5 + (w - 1) / 2, 2.45, fv + out * 1.15, c1); f.B(b.u0 + 0.5 + (w - 1) / 2, 2.3, fv, b.u1 - 0.5, 2.45, fv + out * 1.15, c2); }
-  }
-  f.B(b.u0 - 0.1, h, fv - out * 0.05, b.u1 + 0.1, h + 0.55, fv + out * 0.3, P.CONCRETE);                                                  /* parapet */
-  f.B(b.u0 - 0.05, shops ? 3.7 : 2.6, fv, b.u1 + 0.05, shops ? 3.95 : 2.85, fv + out * 0.12, pick(rng, BRIGHT));                              /* a painted band above the shops */
-  var rows = 0; y = shops ? 4.2 : 3.0;
-  while (y + 2 < h && rows < 3) {
-    n = Math.min(3, Math.floor(w / 2.6));
-    for (k = 0; k < n; k++) {
-      u = b.u0 + (k + 0.5) * w / n;
-      f.B(u - 0.5, y, fv, u + 0.5, y + 1.3, fv + out * 0.07, P.BLACK);
-      if (rng.chance(0.3)) f.B(u - 0.6, y - 0.1, fv, u + 0.6, y, fv + out * 0.22, P.CREAM);
-    }
-    if (rng.chance(0.45)) {                                                 /* balcony with railing, sometimes a line of washing */
-      u = b.u0 + rng.range(1, w - 1); f.B(u - 0.8, y - 0.15, fv, u + 0.8, y, fv + out * 0.9, P.CONCRETE); f.B(u - 0.8, y + 0.9, fv + out * 0.85, u + 0.8, y + 1.0, fv + out * 0.9, P.BLACK);
-      if (rng.chance(0.5)) f.B(u - 0.5, y + 0.35, fv + out * 0.8, u + 0.5, y + 0.9, fv + out * 0.84, pick(rng, BRIGHT));
-    }
-    if (rng.chance(0.25)) { u = b.u0 + rng.range(0.6, w - 0.6); f.B(u - 0.3, y + 0.2, fv, u + 0.3, y + 0.7, fv + out * 0.45, P.GREY_PATCH); }   /* AC unit */
-    y += 3.2; rows++;
-  }
-  if (rng.chance(0.6)) { u = b.u0 + rng.range(0.8, Math.max(1, w - 2.2)); f.B(u, h, b.vm - 0.6, u + 1.2, h + 1.2, b.vm + 0.6, P.BLACK); }                /* water tank */
-  if (rng.chance(0.28) && h > 7) {                                                                                                                          /* rooftop hoarding */
-    var c = pick(rng, BRIGHT), hw = Math.min(w - 0.6, 6);
-    f.B(b.u0 + 0.3, h, fv + out * 0.1, b.u0 + 0.3 + hw, h + 2.6, fv + out * 0.34, c); f.B(b.u0 + 0.7, h + 0.5, fv + out * 0.34, b.u0 + 0.3 + hw - 0.4, h + 2.0, fv + out * 0.38, pick(rng, [P.CREAM, P.WHITE, P.YELLOW]));
-  }
-  if (rng.chance(0.3)) { u = b.u0 + rng.range(0.5, w - 0.5); f.B(u, h, b.vm, u + 0.08, h + 2.2, b.vm + 0.08, P.BLACK); }                                  /* antenna */
-}
-
-/* trees, roadside shrines and strings of bunting: the life between the buildings */
-function trees(f, rng, half, len) {
-  var u, side, k;
-  for (side = -1; side <= 1; side += 2) for (u = -len + rng.range(1, 5); u < len; u += rng.range(9, 15)) {
-    if (rng.chance(0.35)) continue;
-    var v = side * (half + 1.55), h = rng.range(2.4, 3.4), g = pick(rng, [6, 36, 37, 6]);
-    f.B(u - 0.14, 0, v - 0.14, u + 0.14, h, v + 0.14, 7); f.S(u - 0.14, v - 0.14, u + 0.14, v + 0.14, h);
-    f.B(u - 1.3, h, v - 1.3, u + 1.3, h + 1.0, v + 1.3, g); f.B(u - 1.0, h + 1.0, v - 1.0, u + 1.0, h + 1.8, v + 1.0, g); f.B(u - 0.55, h + 1.8, v - 0.55, u + 0.55, h + 2.3, v + 0.55, g);
-    f.B(u - 0.4, 0, v - 0.4, u + 0.4, 0.25, v + 0.4, P.CONCRETE);
-  }
-  if (rng.chance(0.55)) {
-    var us = rng.range(-len + 3, len - 3), sv = rng.chance(0.5) ? 1 : -1, vs = sv * (half + 2.0);
-    f.B(us - 0.6, 0, vs - 0.6, us + 0.6, 0.5, vs + 0.6, P.CONCRETE); f.B(us - 0.45, 0.5, vs - 0.45, us + 0.45, 1.5, vs + 0.45, P.SAFFRON); f.B(us - 0.55, 1.5, vs - 0.55, us + 0.55, 1.7, vs + 0.55, P.RED);
-    f.B(us - 0.25, 1.7, vs - 0.25, us + 0.25, 2.2, vs + 0.25, P.SAFFRON); f.B(us - 0.05, 2.2, vs - 0.05, us + 0.05, 2.9, vs + 0.05, P.BLACK); f.B(us + 0.05, 2.5, vs - 0.03, us + 0.55, 2.9, vs + 0.03, P.RED);
-    f.B(us - 0.4, 0.5, vs + sv * -0.5, us + 0.4, 0.62, vs - sv * 0.45, 29); f.S(us - 0.6, vs - 0.6, us + 0.6, vs + 0.6, 2.9);
-  }
-}
-function bunting(f, rng, half) {
-  var n = rng.int(1, 2), i, k;
-  for (i = 0; i < n; i++) {
-    var u = rng.range(-12, 12), cols = [P.SAFFRON, P.MAGENTA, P.TEAL, P.LIME, P.YELLOW, P.RED];
-    f.B(u, 5.4, -half - 1.7, u + 0.05, 5.45, half + 1.9, P.BLACK);
-    for (k = -half - 1; k < half + 1; k += 0.8) { var sag = 0.25 * Math.abs(Math.sin((k + half) * 0.26)); f.B(u - 0.12, 5.4 - 0.4 - sag, k, u + 0.17, 5.4 - sag, k + 0.4, cols[Math.floor((k + 20) / 0.8) % 6]); }
-  }
-}
-
-function poles(f, rng, half, len) {
-  var u, side;
-  for (u = -len + rng.range(2, 6); u < len; u += rng.range(16, 22)) {
-    for (side = -1; side <= 1; side += 2) {
-      var v = side * (half + 1.7);
-      f.B(u, 0, v, u + 0.22, 6.2, v + 0.22, P.GREY); f.B(u - 0.6, 5.9, v - 0.02, u + 0.82, 6.05, v + 0.24, P.BLACK);
-      f.S(u, v, u + 0.22, v + 0.22, 6.2);
-    }
-    f.B(u + 0.04, 5.55, -half - 1.7, u + 0.1, 5.62, half + 1.9, P.BLACK);                          /* the cable across the road */
-    f.B(u + 0.08, 5.85, -half - 1.7, u + 0.14, 5.9, half + 1.9, P.BLACK);
-  }
-}
-
-function stalls(f, rng, half, len) {
-  var n = rng.int(1, 3), i;
-  for (i = 0; i < n; i++) {
-    var u = rng.range(-len + 2, len - 2), side = rng.chance(0.5) ? 1 : -1, v = side * (half + 2.0), c = pick(rng, BRIGHT);
-    f.B(u - 0.8, 0, v - 0.5, u + 0.8, 0.9, v + 0.5, P.RUST);
-    f.B(u - 0.7, 0.9, v - 0.4, u + 0.7, 1.2, v + 0.4, pick(rng, GOODS)); f.B(u - 0.2, 1.2, v - 0.15, u + 0.2, 1.5, v + 0.15, pick(rng, GOODS));
-    f.B(u - 0.04, 1.2, v + side * 0.45, u + 0.04, 2.2, v + side * 0.5, P.BLACK);
-    f.B(u - 1.1, 2.2, v - 0.9, u + 1.1, 2.35, v + 0.9, c);
-    f.S(u - 0.8, v - 0.5, u + 0.8, v + 0.5, 1.2);
-  }
-  if (rng.chance(0.6)) { var uu = rng.range(-len + 2, len - 2), sv = rng.chance(0.5) ? 1 : -1, vv = sv * (half + 0.8); f.B(uu - 0.9, 0, vv - 0.6, uu + 0.9, 0.5, vv + 0.6, P.DIRT); f.B(uu - 0.5, 0.5, vv - 0.35, uu + 0.5, 0.85, vv + 0.35, P.DIRT); }     /* sand, rubble */
-}
-
-/* roadAxis: 'x' or 'z'; solids of the finished spec give the buildings */
-function decorate(spec, seed, cx, cz, kind) {
-  var rng = rngMod.createRng(rngMod.hash32(seed ^ 0x6a09e667, cx, cz)), axis = kind === 'roadV' ? 'z' : 'x', f = frame(spec, axis), half = 6, len = 14;
-  spec.hazards = spec.hazards || [];
-  if (kind === 'block') {                                       /* dense blocks: the alley between the two rows */
-    var fb = frame(spec, 'x'), sol = spec.solids.slice(0), i;
-    for (i = 0; i < sol.length; i++) { var q = sol[i], side = q.z0 > 0 ? 1 : -1; if (Math.abs(side > 0 ? q.z0 : q.z1) > 3) continue; facade(fb, rng, { u0: q.x0, u1: q.x1, v0: q.z0, v1: q.z1, vm: (q.z0 + q.z1) / 2, h: q.y1 }, side, false); }
-    return spec;
-  }
-  var bl = spec.solids.filter(function (q) { return (axis === 'x' ? Math.min(Math.abs(q.z0), Math.abs(q.z1)) : Math.min(Math.abs(q.x0), Math.abs(q.x1))) >= 8 && q.y1 > 3; }), j;
-  roughRoad(f, rng, half, len, kind !== 'cross');
-  for (j = 0; j < bl.length; j++) {
-    var s = bl[j], u0 = axis === 'x' ? s.x0 : s.z0, u1 = axis === 'x' ? s.x1 : s.z1, v0 = axis === 'x' ? s.z0 : s.x0, v1 = axis === 'x' ? s.z1 : s.x1;
-    facade(f, rng, { u0: u0, u1: u1, v0: v0, v1: v1, vm: (v0 + v1) / 2, h: s.y1 }, v0 > 0 ? 1 : -1, true);
-  }
-  poles(f, rng, half, len); stalls(f, rng, half, len); trees(f, rng, half, len); bunting(f, rng, half);
-  return spec;
-}
-
-/* an intersection: worn crossings, signal heads on the corner posts */
-function decorateCross(spec, seed, cx, cz) {
-  var rng = rngMod.createRng(rngMod.hash32(seed ^ 0x3c6ef372, cx, cz)), f = frame(spec, 'x');
-  spec.hazards = spec.hazards || [];
-  roughRoad(f, rng, 5.5, 5, false);
-  [[-7.5, -7.5], [7.5, -7.5], [-7.5, 7.5], [7.5, 7.5]].forEach(function (q) {
-    f.B(q[0] - 0.12, 4.2, q[1] - 0.05, q[0] + 0.3, 5.5, q[1] + 0.23, P.BLACK);
-    f.B(q[0] - 0.05, 5.0, q[1] + 0.23, q[0] + 0.23, 5.28, q[1] + 0.27, P.RED); f.B(q[0] - 0.05, 4.6, q[1] + 0.23, q[0] + 0.23, 4.88, q[1] + 0.27, P.LIME);
-  });
-  return spec;
-}
-
-module.exports = { decorate: decorate, decorateCross: decorateCross, P: P };
-
-};
-defs["sim/citygen"]=function(module,exports,require){
-/* sim: the city. Chunk rows 0,3,6.. are east-west roads; chunk columns 1,4,7.. are north-south roads; where they cross is an
-   intersection; everything else is a building block. Pure data from (seed, cx, cz), like every chunk spec. Each spec also lists
-   `solids` (footprints the bike cannot enter) and `ramps` (slopes it can jump from), in chunk-local metres. */
-'use strict';
-
-var CONFIG = require('../data/config');
-var gen = require('./chunkgen');
-var detail = require('./citydetail');
-var locs = require('./citylocs');
-var rngMod = require('../core/rng');
-
-var PERIOD = 3;
-function mod(a, n) { return ((a % n) + n) % n; }
-function roadH(cz) { return mod(cz, PERIOD) === 0; }
-function roadV(cx) { return mod(cx, PERIOD) === 1; }
-function kindOf(cx, cz) { var h = roadH(cz), v = roadV(cx); return h && v ? 'cross' : (h ? 'roadH' : (v ? 'roadV' : 'block')); }
-
-function swapXZ(spec) {                                   /* turn an east-west road chunk into a north-south one */
-  function sw(b) { var o = {}, k; for (k in b) o[k] = b[k]; o.x0 = b.z0; o.x1 = b.z1; o.z0 = b.x0; o.z1 = b.x1; return o; }
-  spec.boxes = spec.boxes.map(sw); spec.solids = spec.solids.map(sw);
-  spec.ramps = spec.ramps.map(function (r) { var o = sw(r); o.axis = 'z'; return o; });
-  return spec;
-}
-
-function generate(seed, cx, cz) {
-  var S = CONFIG.CHUNK_SIZE, H = S / 2, G = CONFIG.GROUND, kind = kindOf(cx, cz), spec;
-  /* the old street keeps its look: the road chunks come straight from the street generator, a hash-salted copy per chunk */
-  var salt = (cx * 31 + cz * 17) | 0;
-  if (kind === 'roadH') spec = gen.generateChunk(seed ^ (cz === 0 ? 0 : 0x5bd1e995), cx, cz === 0 ? 0 : (cz + salt) | 0, { road: true, noRamp: true });
-  else if (kind === 'roadV') spec = swapXZ(gen.generateChunk(seed ^ 0x2c1b3c6d, cz, (cx + salt) | 0, { road: true, noRamp: true }));
-  else if (kind === 'block') spec = gen.generateChunk(seed ^ 0x1f3d5b79, cx, cz, { road: false });
-  else {
-    var boxes = [], solids = [], k, p;
-    function box(x0, y0, z0, x1, y1, z1, c) { boxes.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
-    box(-H, -0.3, -H, H, 0, H, G.sidewalk);
-    box(-H, -0.28, -6, H, 0.02, 6, G.road); box(-6, -0.28, -H, 6, 0.02, H, G.road);
-    for (k = -H + 2; k < H; k += 6) { if (Math.abs(k + 1.5) > 7) { box(k, 0.02, -0.15, k + 3, 0.04, 0.15, 8); box(-0.15, 0.02, k, 0.15, 0.04, k + 3, 8); } }
-    for (k = -5; k <= 5; k += 1.4) { box(k, 0.02, 6.4, k + 0.7, 0.04, 8.4, 8); box(k, 0.02, -8.4, k + 0.7, 0.04, -6.4, 8); box(6.4, 0.02, k, 8.4, 0.04, k + 0.7, 8); box(-8.4, 0.02, k, -6.4, 0.04, k + 0.7, 8); }
-    [[-7.5, -7.5], [7.5, -7.5], [-7.5, 7.5], [7.5, 7.5]].forEach(function (q) {
-      box(q[0], 0, q[1], q[0] + 0.18, 4.2, q[1] + 0.18, 1); box(q[0] - 0.3, 4.0, q[1], q[0] + 0.5, 4.2, q[1] + 0.18, 1);
-      solids.push({ x0: q[0], z0: q[1], x1: q[0] + 0.18, z1: q[1] + 0.18, y1: 4.2 });
-    });
-    p = [[-H, -H, -9, -9], [9, -H, H, -9], [-H, 9, -9, H], [9, 9, H, H]];                   /* corner buildings, set back from the junction */
-    var rng = rngMod.createRng(rngMod.hash32(seed, cx, cz));
-    p.forEach(function (q) {
-      var x0 = q[0] === -H ? q[0] + 0.4 : q[0], x1 = q[2] === H ? q[2] - 0.4 : q[2], z0 = q[1] === -H ? q[1] + 0.4 : q[1], z1 = q[3] === H ? q[3] - 0.4 : q[3], hgt = rng.range(7, 20);
-      box(x0, 0, z0, x1, hgt, z1, [28, 29, 30, 31, 32, 33, 34, 35][rng.int(2, 11) % 8]); solids.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: hgt });
-    });
-    spec = { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, boxes: boxes, solids: solids, ramps: [] };
-  }
-  spec.hazards = spec.hazards || [];
-  spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;    /* before the location is placed: its spawn points are made from ox, oz */
-  var loc = locs.place(spec, seed, cx, cz, kind);
-  if (kind === 'cross') detail.decorateCross(spec, seed, cx, cz); else detail.decorate(spec, seed, cx, cz, kind);
-  spec.loc = loc;
-  spec.key = gen.chunkKey(cx, cz); spec.cx = cx; spec.cz = cz; spec.ox = cx * S; spec.oz = cz * S; spec.kind = kind;
-  return spec;
-}
-
-module.exports = { generate: generate, kindOf: kindOf, roadH: roadH, roadV: roadV, PERIOD: PERIOD };
-
-};
-defs["sim/citylocs"]=function(module,exports,require){
-/* sim: fight locations. A location is a set piece built onto a straight road chunk: the row of buildings on one side is cleared for a yard
-   (market lane, petrol pump, bus stand, construction site, temple square, warehouse yard, slum lane) or the road itself is dressed (railway
-   crossing, toll plaza, flyover underpass). `typeAt` is a pure hash, so the world can look for the nearest location without building chunks. */
-'use strict';
-
-var rngMod = require('../core/rng');
-var D = require('../data/locations');
-var CONFIG = require('../data/config');
-var LIM = CONFIG.CHUNK_SIZE / 2;
-var P = { GREY: 0, ROAD: 1, CONCRETE: 8, YELLOW: 14, BLACK: 15, SAFFRON: 16, MAGENTA: 17, TEAL: 18, LIME: 19, BLUE: 20, RED: 21, CREAM: 22, PURPLE: 23, DIRT: 24, WHITE: 25, RUST: 26, PINK: 27, GREYP: 13 };
-var BRIGHT = [P.SAFFRON, P.MAGENTA, P.TEAL, P.LIME, P.BLUE, P.RED, P.YELLOW, P.PURPLE, P.PINK];
-
-function typeAt(seed, cx, cz, kind) {
-  var key = cx + ',' + cz;
-  if (D.FORCED[key]) return D.FORCED[key];
-  if (cx === 0 && cz === 0) return null;
-  var m3x = ((cx % 3) + 3) % 3, m3z = ((cz % 3) + 3) % 3, isH = m3z === 0 && m3x !== 1, isV = m3x === 1 && m3z !== 0;
-  if (!isH && !isV) return null;
-  var r = rngMod.createRng(rngMod.hash32(seed ^ 0x1b873593, cx, cz));
-  if (r.next() >= D.CHANCE) return null;
-  return D.ORDER[r.int(0, D.ORDER.length - 1)];
-}
-
-function frame(spec, axis, side) {                    /* (u along the road, w = distance into the yard on `side`) */
-  function clampv(a) { return Math.max(-LIM, Math.min(LIM, a)); }
-  function B(u0, y0, w0, u1, y1, w1, c) {
-    var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
-    if (d > e) { t = d; d = e; e = t; }
-    if (b - a < 0.02 || e - d < 0.02) return;
-    spec.boxes.push(axis === 'x' ? { x0: a, y0: y0, z0: d, x1: b, y1: y1, z1: e, c: c, d: 1 } : { x0: d, y0: y0, z0: a, x1: e, y1: y1, z1: b, c: c, d: 1 });
-  }
-  function S(u0, w0, u1, w1, y1) {
-    var a = clampv(Math.min(u0, u1)), b = clampv(Math.max(u0, u1)), d = clampv(Math.min(w0, w1) * side), e = clampv(Math.max(w0, w1) * side), t;
-    if (d > e) { t = d; d = e; e = t; }
-    spec.solids.push(axis === 'x' ? { x0: a, z0: d, x1: b, z1: e, y1: y1 } : { x0: d, z0: a, x1: e, z1: b, y1: y1 });
-  }
-  return { B: B, S: S };
-}
-function pick(r, a) { return a[Math.floor(r.next() * a.length) % a.length]; }
-
-/* remove the buildings on one side of the road (everything out past the lamp posts) */
-function clearSide(spec, axis, side) {
-  function out(b) { var v0 = axis === 'x' ? b.z0 : b.x0, v1 = axis === 'x' ? b.z1 : b.x1; return side > 0 ? v0 >= 7.9 : v1 <= -7.9; }
-  spec.boxes = spec.boxes.filter(function (b) { return !out(b); });
-  spec.solids = spec.solids.filter(function (q) { return !out(q); });
-}
-
-var PIECES = {
-  market: function (f, r) {
-    var u, k;
-    for (u = -13; u < 12; u += 4.4) {
-      var c = pick(r, BRIGHT), c2 = pick(r, BRIGHT);
-      f.B(u, 0, 8.4, u + 3.2, 0.9, 9.8, P.RUST); f.B(u + 0.1, 0.9, 8.5, u + 3.1, 1.25, 9.7, pick(r, [P.RED, P.SAFFRON, P.LIME, P.YELLOW, P.MAGENTA]));
-      for (k = 0; k < 4; k++) f.B(u + 0.3 + k * 0.7, 1.25, 8.8, u + 0.7 + k * 0.7, 1.55, 9.2, pick(r, [P.RED, P.LIME, P.SAFFRON, P.YELLOW]));
-      f.B(u, 2.3, 8.2, u + 3.2, 2.45, 10.2, k % 2 ? c : c2); f.B(u, 0, 10.1, u + 0.1, 2.3, 10.2, P.BLACK); f.B(u + 3.1, 0, 10.1, u + 3.2, 2.3, 10.2, P.BLACK);
-      f.S(u, 8.4, u + 3.2, 9.8, 1.6);
-    }
-    f.B(-16, 0, 11, 16, 6.5, 16, pick(r, [P.CREAM, P.SAFFRON, P.TEAL])); f.S(-16, 11, 16, 16, 6.5);
-    for (u = -15; u < 14; u += 5) f.B(u, 2.7, 10.8, u + 3.5, 3.5, 11.0, pick(r, BRIGHT));
-  },
-  petrol: function (f, r) {
-    f.B(-9, 4.6, 8.5, 9, 5.0, 15.5, P.WHITE); f.B(-9, 5.0, 8.5, 9, 5.5, 15.5, P.RED); f.B(-9, 5.5, 8.5, 9, 5.65, 15.5, P.YELLOW);
-    [[-8.5, 9], [8.2, 9], [-8.5, 15], [8.2, 15]].forEach(function (q) { f.B(q[0], 0, q[1], q[0] + 0.4, 4.6, q[1] + 0.4, P.GREYP); f.S(q[0], q[1], q[0] + 0.4, q[1] + 0.4, 4.6); });
-    [-4, 4].forEach(function (u) { f.B(u - 0.4, 0, 11.6, u + 0.4, 1.6, 12.4, P.RED); f.B(u - 0.35, 1.0, 11.55, u + 0.35, 1.4, 11.6, P.BLACK); f.B(u - 0.5, 0, 11.4, u + 0.5, 0.15, 12.6, P.CONCRETE); f.S(u - 0.5, 11.4, u + 0.5, 12.6, 1.6); });
-    f.B(10.5, 0, 9.5, 15.5, 3.2, 15.5, P.CREAM); f.B(10.5, 3.2, 9.4, 15.5, 3.6, 15.6, P.RED); f.S(10.5, 9.5, 15.5, 15.5, 3.6);
-    f.B(-13.6, 0, 9, -13.2, 7.5, 9.4, P.GREYP); f.B(-15, 7.5, 8.8, -11.8, 9.5, 9.6, P.YELLOW); f.B(-14.7, 7.8, 8.7, -12.1, 9.2, 8.8, P.RED); f.S(-13.6, 9, -13.2, 9.4, 9.5);
-  },
-  busstand: function (f, r) {
-    f.B(-6, 0, 8.4, 6, 0.3, 11.5, P.CONCRETE); f.B(-6, 2.9, 8.4, 6, 3.2, 11.5, P.TEAL);
-    [-5.8, 5.5].forEach(function (u) { f.B(u, 0, 8.5, u + 0.3, 2.9, 8.8, P.GREYP); });
-    f.B(-5.8, 0.3, 11.2, 5.8, 2.9, 11.5, P.BLUE); f.B(-4, 0.3, 11.0, 4, 0.8, 11.2, P.RUST); f.B(-4, 0.8, 11.2, 4, 1.0, 11.5, P.RUST);
-    f.B(-5, 1.0, 11.45, 5, 2.4, 11.5, P.CREAM); f.B(-4.6, 1.4, 11.5, -1.6, 2.1, 11.55, P.RED); f.B(0.4, 1.4, 11.5, 4.4, 2.1, 11.55, P.SAFFRON);
-    f.B(8, 0, 9, 8.2, 4.2, 9.2, P.GREYP); f.B(7.2, 4.2, 8.9, 9.4, 5.2, 9.3, P.BLUE); f.S(-6, 8.4, 6, 11.5, 3.2);
-    f.B(-16, 0, 12.5, 16, 7.5, 16, pick(r, [P.SAFFRON, P.CREAM, P.PINK])); f.S(-16, 12.5, 16, 16, 7.5);
-  },
-  construction: function (f, r) {
-    var u, y, k;
-    for (u = -15; u < 15; u += 1.6) f.B(u, 0, 8.2, u + 1.3, 1.3, 8.35, P.SAFFRON);                            /* the orange mesh fence */
-    for (u = -15; u <= 15; u += 3.2) f.B(u, 0, 8.1, u + 0.12, 1.5, 8.22, P.GREYP);
-    for (y = 0; y < 3; y++) for (u = -6; u <= 6; u += 4) { f.B(u, y * 3, 11, u + 0.18, y * 3 + 3.1, 11.18, P.RUST); f.B(u, y * 3, 14, u + 0.18, y * 3 + 3.1, 14.18, P.RUST); }
-    for (y = 1; y <= 3; y++) { f.B(-6, y * 3 - 0.15, 11, 6.18, y * 3, 14.18, y % 2 ? P.GREYP : P.CONCRETE); }
-    f.S(-6, 11, 6.2, 14.2, 9.2);
-    f.B(8, 0, 9, 11.5, 1.6, 12, P.DIRT); f.B(9, 1.6, 9.8, 10.5, 2.2, 11.2, P.DIRT); f.S(8, 9, 11.5, 12, 2.2);
-    for (k = 0; k < 3; k++) { f.B(-14 + k * 2.4, 0, 12.5, -12.4 + k * 2.4, 1.2, 13.6, P.RED); f.S(-14 + k * 2.4, 12.5, -12.4 + k * 2.4, 13.6, 1.2); }
-    f.B(11, 0, 14, 12.6, 7, 15.6, P.YELLOW); f.B(8, 7, 14.2, 15, 7.5, 15.4, P.YELLOW); f.S(11, 14, 12.6, 15.6, 7.5);
-  },
-  temple: function (f, r) {
-    f.B(-8, 0, 8.4, 8, 0.5, 16, P.CREAM); f.B(-7, 0.5, 8.9, 7, 0.9, 16, P.CREAM); f.B(-6, 0.9, 9.4, 6, 1.3, 16, P.CREAM);
-    f.B(-3.2, 1.3, 11.6, 3.2, 4.6, 15.6, P.SAFFRON); f.B(-2.6, 4.6, 12.1, 2.6, 6.0, 15.1, P.SAFFRON); f.B(-2.0, 6.0, 12.6, 2.0, 7.2, 14.6, P.RED); f.B(-1.3, 7.2, 13.0, 1.3, 8.2, 14.2, P.SAFFRON); f.B(-0.5, 8.2, 13.4, 0.5, 9.2, 13.8, P.YELLOW);
-    f.B(-1.2, 1.3, 11.4, 1.2, 3.0, 11.6, P.BLACK);
-    f.S(-3.2, 11.6, 3.2, 15.6, 9.2);
-    f.B(6, 0.5, 9.6, 6.25, 6.5, 9.85, P.GREYP); f.B(6.25, 5.8, 9.65, 8.6, 6.4, 9.8, P.RED); f.B(6.25, 6.4, 9.65, 8.1, 6.8, 9.8, P.SAFFRON); f.S(6, 9.6, 6.25, 9.85, 6.5);
-    f.B(-5.2, 0.9, 9.8, -4.6, 2.2, 10.4, P.GREYP); f.B(-5.2, 2.2, 9.8, -4.6, 2.5, 10.4, P.YELLOW); f.S(-5.2, 9.8, -4.6, 10.4, 2.5);
-    f.B(-16, 0, 13.5, -9, 6, 16, pick(r, [P.TEAL, P.PINK])); f.B(9, 0, 13.5, 16, 6, 16, pick(r, [P.CREAM, P.LIME])); f.S(-16, 13.5, -9, 16, 6); f.S(9, 13.5, 16, 16, 6);
-  },
-  warehouse: function (f, r) {
-    var cols = [P.RED, P.BLUE, P.TEAL, P.SAFFRON, P.GREYP], u, k;
-    for (k = 0; k < 4; k++) { u = -14 + k * 7.4; var c = pick(r, cols); f.B(u, 0, 9, u + 6, 2.6, 11.4, c); f.S(u, 9, u + 6, 11.4, 2.6); if (k % 2 === 0) { f.B(u + 0.4, 2.6, 9.2, u + 5.6, 5.2, 11.2, pick(r, cols)); f.S(u + 0.4, 9.2, u + 5.6, 11.2, 5.2); } }
-    for (k = 0; k < 5; k++) { u = -13 + k * 5.5; f.B(u, 0, 12.6, u + 1.3, 1.2, 13.9, P.RUST); f.B(u + 0.1, 1.2, 12.7, u + 1.2, 2.2, 13.8, P.RUST); f.S(u, 12.6, u + 1.3, 13.9, 2.2); }
-    f.B(-16, 0, 14.6, 16, 6.5, 16, P.GREYP); f.S(-16, 14.6, 16, 16, 6.5);
-  },
-  slum: function (f, r) {
-    var u = -15, k = 0;
-    while (u < 13) {
-      var w = r.range(3.2, 5.2), h = r.range(2.3, 3.2), c = pick(r, [P.BLUE, P.RUST, P.WHITE, P.TEAL, P.SAFFRON, P.GREYP]), d = r.range(8.6, 10.4);
-      f.B(u, 0, d, u + w, h, d + r.range(3.2, 4.4), c); f.B(u - 0.2, h, d - 0.2, u + w + 0.2, h + 0.18, d + 4.6, pick(r, [P.GREYP, P.RUST, P.BLUE]));
-      f.B(u + 0.5, 0, d - 0.04, u + 1.3, 1.9, d, P.BLACK); f.B(u + w - 1.4, 1.6, d - 0.3, u + w - 0.4, 2.0, d, pick(r, BRIGHT));
-      f.S(u, d, u + w, d + 3.6, h + 0.2); u += w + r.range(0.4, 1.0); k++;
-    }
-  },
-  railway: function (f, r) {
-    var y;
-    for (var v = -16; v < 16; v += 1.1) f.B(-1.7, 0.02, v, 1.7, 0.1, v + 0.45, P.DIRT);
-    f.B(-0.95, 0.1, -16, -0.8, 0.2, 16, P.GREYP); f.B(0.8, 0.1, -16, 0.95, 0.2, 16, P.GREYP);
-    [-7.5, 7.5].forEach(function (v) { f.B(-0.1, 0, v, 0.1, 2.4, v + 0.2, P.WHITE); for (var k = 0; k < 8; k++) f.B(-0.1, 2.4 + (k % 2) * 0.01, v - 3.2 + k * 0.8 - (v < 0 ? -3.2 : 0) + 3.2, 0.1, 2.5, v + 0.2 + (v > 0 ? -1 : 0), k % 2 ? P.RED : P.WHITE); });
-    f.B(-0.6, 0, 8.6, 0.6, 1.6, 9.6, P.RED);
-  },
-  toll: function (f, r) {
-    var v;
-    f.B(-3, 5.2, -9, 3, 5.8, 9, P.YELLOW); f.B(-3, 5.8, -9, 3, 6.4, 9, P.BLUE);
-    [-8.4, -3.6, 0, 3.6, 8.4].forEach(function (v) { f.B(-1.4, 0, v - 0.6, 1.4, 5.2, v + 0.6, v === -8.4 || v === 8.4 ? P.GREYP : P.CREAM); f.S(-1.4, v - 0.6, 1.4, v + 0.6, 5.2); });
-    [-4.8, -1.8, 1.8, 4.8].forEach(function (v) { f.B(-0.05, 0.9, v - 0.05, 0.05, 1.0, v + 0.05, P.RED); f.B(-2.6, 0, v - 0.05, -0.4, 0.15, v + 0.05, P.WHITE); });
-    f.B(-1.5, 3.2, -3.5, 1.5, 4.4, -3.6, P.TEAL);
-  },
-  flyover: function (f, r) {
-    f.B(-6, 5.6, -16, 6, 6.8, 16, P.CONCRETE); f.B(-6, 6.8, -16, 6, 7.2, 16, P.GREYP); f.B(-6.2, 5.4, -16, -6, 7.4, 16, P.GREYP);
-    [-8.6, 0, 8.6].forEach(function (v) { f.B(-3.2, 0, v - 0.7, 3.2, 5.6, v + 0.7, P.CONCRETE); f.B(-3.3, 0, v - 0.75, 3.3, 0.5, v + 0.75, P.GREYP); f.S(-3.2, v - 0.7, 3.2, v + 0.7, 5.6); });
-    for (var v = -14; v < 14; v += 4) f.B(-5, 1.2, v, -4.9, 2.4, v + 2.5, pick(r, BRIGHT));
-  }
-};
-
-/* build the location on a finished road-chunk spec; returns the descriptor the sim uses, or null */
-function place(spec, seed, cx, cz, kind) {
-  var type = typeAt(seed, cx, cz); if (!type || (kind !== 'roadH' && kind !== 'roadV')) return null;
-  var axis = kind === 'roadV' ? 'z' : 'x', def = D.LOCATIONS[type], r = rngMod.createRng(rngMod.hash32(seed ^ 0x85ebca6b, cx, cz));
-  var side = r.chance(0.5) ? 1 : -1;
-  if (def.side) clearSide(spec, axis, side);
-  var f = frame(spec, axis, def.side ? side : 1);
-  PIECES[type](f, r);
-  var spawns = [], i;                                          /* men appear on the road and the yard edge, spread along the road */
-  for (i = 0; i < def.n; i++) {
-    var u = -9 + (i + 0.5) * 18 / def.n + r.range(-1, 1), v = r.range(-4.5, 4.5) + (def.side ? side * 1.5 : 0);
-    spawns.push(axis === 'x' ? { x: u, z: v } : { x: v, z: u });
-  }
-  return { type: type, name: def.name, n: def.n, stick: def.stick, r: def.r, x: spec.ox, z: spec.oz, spawns: spawns.map(function (s) { return { x: s.x + spec.ox, z: s.z + spec.oz }; }), side: def.side ? side : 0, axis: axis };
-}
-
-module.exports = { typeAt: typeAt, place: place };
-
-};
 defs["sim/combat"]=function(module,exports,require){
-/* sim: the street fight. Enemies, damage, blocking and rage run on the fixed tick with seeded randomness.
+/* sim: the fight. Enemies, damage, blocking and rage run on the fixed tick with seeded randomness.
    The view reports which player strikes landed (pendingStrikes) and reads the events this module emits. */
 'use strict';
 
@@ -3750,17 +2897,6 @@ var enemiesData = require('../data/enemies');
 var moves = require('../data/moves');
 
 var GH = enemiesData.GUARD_HITS, GCOOL = enemiesData.GUARD_COOLDOWN, GBREAK = enemiesData.GUARD_BREAK;
-/* strikes for the moves thrown from the saddle: each borrows the reach of the blow it is made from */
-(function () {
-  var map = { Jab: 'jab', Hook: 'hook', Cross: 'cross', Elbow: 'elbow', Kick: 'kick' }, n, sd, o, k;
-  function copy(sp, extra) { var c = {}, q; for (q in sp) c[q] = sp[q]; for (q in extra) c[q] = extra[q]; return c; }
-  for (n in map) for (sd = 0; sd < 2; sd++) { k = 'bk' + n + 'LR'[sd]; o = copy(enemiesData.STRIKES[map[n]], { label: map[n] }); if (n === 'Kick') { o.down = false; o.reach = 1.9; o.arc = 70; } enemiesData.STRIKES[k] = o; }
-  for (sd = 0; sd < 2; sd++) {
-    enemiesData.STRIKES['bkCElbow' + 'LR'[sd]] = { reach: 1.9, arc: 110, knock: 0.6, down: false, high: true };
-    enemiesData.STRIKES['bkSweep' + 'LR'[sd]] = { reach: 2.3, arc: 130, knock: 1.6, down: true, high: true };
-  }
-  enemiesData.STRIKES.bkDouble = { reach: 2.5, arc: 180, knock: 1.8, down: true, high: true };
-})();
 var TPS = 60, KINDS = enemiesData.KINDS, STRIKES = enemiesData.STRIKES, RAGE = enemiesData.RAGE;
 var TIMED_WINDOW = 12;
 
@@ -3778,32 +2914,14 @@ function spawn(world, kind, x, z) {
     kx: 0, kz: 0, phase: 0, canBlock: world.rng.next() < K.blockChance, guarding: false, guardHits: 0, guardCool: 0, guardTimer: 0, blockT: 99, lastMove: '', hitN: 0 });
 }
 
-function startWave(world) {
-  var c = world.combat, p = world.player, n = Math.min(7, 4 + c.wave), i;
-  c.wave++;
-  var base = world.rng.next() * Math.PI * 2;
-  for (i = 0; i < n; i++) {                                       /* spread all round the hero, not from one side */
-    var ang = base + i / n * Math.PI * 2 + (world.rng.next() - 0.5) * 0.5, r = 8 + world.rng.next() * 3;
-    spawn(world, (c.wave >= 2 && i === n - 1) ? 'stick' : 'thug', p.x + Math.cos(ang) * r, p.z + Math.sin(ang) * r);
-  }
-  c.banner = 'Wave ' + c.wave; c.bannerT = 150;
-  world.bus.emit('wave', { wave: c.wave, count: n });
-}
-
 /* a fight at a place: `n` men (`stick` of them armed) appear at the given points around the hero's arrival */
 function startLocation(world, name, points, n, stick) {
   var c = world.combat, i;
-  c.wave++; c.auto = false;
+  c.wave++;
   var kinds = c.lineup; c.lineup = null;                          /* a lineup set by the mission (fighter types, difficulty ramp) wins */
   if (kinds && kinds.length) n = kinds.length;
   for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, kinds ? kinds[i] : (i >= n - stick ? 'stick' : 'thug'), pt.x + (i >= points.length ? 0.9 : 0), pt.z + (i >= points.length ? 0.6 : 0)); }
-  c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
-}
-
-function begin(world) {
-  var c = world.combat; c.enabled = true; c.enemies.length = 0; c.wave = 0; c.kills = 0; c.combo = 0;
-  world.player.hp = world.player.maxHp; world.player.rage = 0; world.player.stun = 0; world.player.down = false;
-  startWave(world); c.auto = false;           /* one opening wave; after that the fights come from the places in the city */
+  c.banner = name; c.bannerT = 170;
 }
 
 /* who is allowed to close in: one man at a time (sometimes a pair), the nearest, and a man keeps his place while he is fighting */
@@ -3870,7 +2988,7 @@ function playerStrike(world, entry) {
     var e = c.enemies[i];
     if (e.dead || e.st === 'dead' || e.st === 'getup' || (e.st === 'down' && !counter)) continue;     /* counters keep hitting enemies on the floor */
     var d = dist(e, p), K = KINDS[e.kind];
-    if (d > spec.reach + K.radius + (world.mounted ? 1.0 : 0)) continue;           /* from the saddle he swings a little further */
+    if (d > spec.reach + K.radius) continue;
     if (spec.arc < 180) {
       var a = Math.atan2(e.x - p.x, e.z - p.z);
       if (Math.abs(angDiff(a, p.face)) > spec.arc * Math.PI / 180) continue;
@@ -4002,14 +3120,14 @@ function step(world, input) {
      until he falls, and every blow, gap-closing step and counter goes to him */
   var tgt = findEnemy(c, c.target);
   if (tgt && (tgt.dead || tgt.st === 'dead' || tgt.st === 'down' || tgt.st === 'getup' || dist(tgt, p) > 6)) { c.target = 0; tgt = null; }
-  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block && !world.mounted) {
+  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block) {
     var pick = pickTarget(c, p, s.mx, -s.my, tgt);
     if (pick) { c.target = pick.id; tgt = pick; }
   }
   if (tgt && !p.down && p.stun <= 0 && world.attackLock) {                          /* mid-move: stay square on him and close the gap, like a lunge */
     var tx = tgt.x - p.x, tz = tgt.z - p.z, td = Math.hypot(tx, tz) || 1;
     p.face = Math.atan2(tx, tz);
-    if (!world.mounted && td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
+    if (td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
   }
   /* Block pressed once the alert is up (from the yellow phase on): the hero answers at once with a counter */
   if (s.pressed.block && !p.down && p.stun <= 0 && !p.invuln) {
@@ -4025,12 +3143,8 @@ function step(world, input) {
       addRage(p, RAGE.timedBlock); c.guardHits = 0; pick.st = 'hurt'; pick.t = 0; pick.kx = 0; pick.kz = 0; pick.guarding = false;
       /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar half full the hero can spend it on a guitar counter instead. */
       var kind = near >= 2 ? 'double' : (p.rage >= 60 ? 'special' : 'direct');
-      if (world.mounted) {                                   /* from the saddle: an elbow first, a sweep once the man is hurt, a double sweep for two */
-        kind = near >= 2 ? 'bkDouble' : (pick.hp / pick.maxHp < 0.6 ? 'bkSweep' : 'bkElbow');
-        var rb = bearing - world.bike.h; world.rideSide = Math.atan2(Math.sin(rb), Math.cos(rb));
-      }
       if (kind === 'special') p.rage -= 50;
-      if (kind !== 'double' && kind !== 'bkDouble') { p.face = bearing; c.target = pick.id; }
+      if (kind !== 'double') { p.face = bearing; c.target = pick.id; }
       world.bus.emit('block', { timed: true, id: pick.id, x: p.x, z: p.z });
       world.bus.emit('counter', { id: pick.id, kind: kind });
     }
@@ -4040,20 +3154,15 @@ function step(world, input) {
   for (var k = 0; k < c.enemies.length; k++) stepEnemy(world, c.enemies[k], input);
   separate(c, p);
   /* defeated thugs are taken away (arrest scene arrives later) */
-  var alive = 0;
   for (var m = c.enemies.length - 1; m >= 0; m--) {
     var e = c.enemies[m];
     if (e.st === 'dead' && e.t > 100) { world.bus.emit('removed', { id: e.id }); c.enemies.splice(m, 1); }
-    else if (!e.dead) alive++;
   }
-  if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down! Resetting...'; c.bannerT = 150; }
-  if (p.down && ++c.downT > 170) begin(world);
-  else if (!p.down && alive === 0 && c.enemies.every(function (q) { return q.st === 'dead' || q.dead; })) {
-    if (c.auto) { if (!c.waveGap) c.waveGap = 110; if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); } }
-  }
+  if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down!'; c.bannerT = 150; }
+  if (p.down) c.downT++;                              /* how long he has been down: the fight decides when it is lost */
 }
 
-module.exports = { startLocation: startLocation, createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+module.exports = { startLocation: startLocation, createCombat: createCombat, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
 
 };
 defs["sim/encounter"]=function(module,exports,require){
@@ -4288,6 +3397,92 @@ function step(r, input) {
 }
 
 module.exports = { canStart: canStart, start: start, step: step, runAhead: runAhead, BIKE_MOVES: BIKE_MOVES, ROOF_MOVES: ROOF_MOVES };
+
+};
+defs["sim/fightworld"]=function(module,exports,require){
+/* sim: one fight at one trouble spot. Only the arena, that gang's men and Toofan on foot: no bike, no city, no traffic, no waves.
+   The fighting itself is sim/combat, stepped exactly as it always was for Toofan on foot (walk, lock while a move plays or Block is held,
+   blows, guards, counters, the finisher). Around it: the arena's walls and props keep everybody in, and the fight ends when the last man is
+   down (cleared) or when Toofan has been down long enough (lost). Plain data, seeded; no graphics, no DOM. */
+'use strict';
+
+var CONFIG = require('../data/config');
+var rngMod = require('../core/rng');
+var combatMod = require('./combat');
+var arenagen = require('./arenagen');
+var LOC = require('../data/locations');
+
+/* opts: seed, bus, type (the kind of place), lineup (fighter kinds, from sim/lineup) */
+function create(opts) {
+  var seed = opts.seed >>> 0, type = arenagen.has(opts.type) ? opts.type : 'market', spec = arenagen.build(seed, type, 0, 0);
+  var fw = {
+    seed: seed, tick: 0, rng: rngMod.createRng(seed), bus: opts.bus || { emit: function () {} },
+    type: type, name: LOC.LOCATIONS[type].name, arena: spec, bounds: spec.bounds,
+    player: { x: spec.start.x, z: spec.start.z, px: spec.start.x, pz: spec.start.z, face: Math.PI, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
+    combat: combatMod.createCombat(), pendingStrikes: [], counters: { attacks: 0, blocks: 0, finishers: 0 },
+    attackLock: false, invuln: false, state: 'fight'                   /* fight | cleared | lost */
+  };
+  /* the fight as the brawler always started it at a place: the combat is switched on, then this place's men walk in (one fight, so the
+     engagement rules see it as the second wave, as they did when a fight followed the street's opening wave) */
+  var c = fw.combat; c.enabled = true; c.wave = 1; c.auto = false; c.lineup = opts.lineup && opts.lineup.length ? opts.lineup.slice() : null;
+  var D = LOC.LOCATIONS[type];
+  combatMod.startLocation(fw, spec.loc.name, spec.loc.spawns, D.n, D.stick); fw.hadMen = c.enemies.length > 0;
+  return fw;
+}
+
+/* nobody walks through the props or out of the arena */
+var R = 0.35;
+function pushOut(o, fw) {
+  var sol = fw.arena.solids, i;
+  for (i = 0; i < sol.length; i++) {
+    var q = sol[i]; if (q.y1 < 0.25) continue;
+    var x0 = q.x0 + fw.arena.ox, x1 = q.x1 + fw.arena.ox, z0 = q.z0 + fw.arena.oz, z1 = q.z1 + fw.arena.oz;
+    var cx = Math.max(x0, Math.min(x1, o.x)), cz = Math.max(z0, Math.min(z1, o.z)), dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz);
+    if (d >= R) continue;
+    if (d < 1e-5) {                                   /* inside the footprint: leave by the nearest side */
+      var l = o.x - x0, r = x1 - o.x, t = o.z - z0, b = z1 - o.z, m = Math.min(l, r, t, b);
+      if (m === l) o.x = x0 - R; else if (m === r) o.x = x1 + R; else if (m === t) o.z = z0 - R; else o.z = z1 + R;
+    } else { o.x = cx + dx / d * R; o.z = cz + dz / d * R; }
+  }
+  var B = fw.bounds;
+  o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
+}
+
+function step(fw, input) {
+  if (fw.state !== 'fight') { fw.tick++; return; }
+  var p = fw.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ, c = fw.combat;
+  /* down too long: the fight is lost (the combat's own reset would start a new street wave, which a fight never has) */
+  if (p.down && c.downT >= 170) { fw.state = 'lost'; fw.bus.emit('fight:lost', { type: fw.type, name: fw.name }); fw.tick++; return; }
+  p.px = p.x; p.pz = p.z;
+  var mx = s.mx, mz = -s.my, m = Math.sqrt(mx * mx + mz * mz);       /* stick up = away from camera = -z */
+  var locked = !!fw.attackLock || !!(s.held && s.held.block) || p.stun > 0 || p.down;   /* committed: no walking while a move plays or Block is held */
+  p.invuln = !!fw.invuln;
+  p.moving = !locked && m > 0.1;
+  if (p.moving) { p.x += mx * v; p.z += mz * v; p.face = Math.atan2(mx, mz); }
+  if (s.pressed.attack) { fw.counters.attacks++; fw.bus.emit('action', { type: 'attack' }); }
+  if (s.pressed.block) { fw.counters.blocks++; fw.bus.emit('action', { type: 'block' }); }
+  if (s.pressed.finisher && p.rage >= 100) { fw.counters.finishers++; p.rage = 0; fw.bus.emit('action', { type: 'finisher' }); }
+  combatMod.step(fw, input);
+  pushOut(p, fw); for (var i = 0; i < c.enemies.length; i++) if (!c.enemies[i].dead) pushOut(c.enemies[i], fw);
+  if (c.enemies.length) fw.hadMen = true;
+  if (!p.down && fw.hadMen && !c.enemies.some(function (q) { return !q.dead && q.st !== 'dead'; })) {     /* every man down (or already taken away) */
+    fw.state = 'cleared'; c.banner = fw.name + ' cleared'; c.bannerT = 170; fw.bus.emit('fight:clear', { type: fw.type, name: fw.name });
+  }
+  fw.tick++;
+}
+
+/* order-stable fingerprint of the fight */
+function hash(fw) {
+  var p = fw.player, h = 2166136261 >>> 0, c = fw.combat, i;
+  function mix(n) { h ^= (n | 0) & 0xffffffff; h = Math.imul(h, 16777619) >>> 0; }
+  function mixf(f) { mix(Math.round(f * 10000)); }
+  mix(fw.tick); mixf(p.x); mixf(p.z); mixf(p.face); mix(p.rage); mix(p.hp); mix(p.down ? 1 : 0);
+  mix(fw.counters.attacks); mix(fw.counters.blocks); mix(fw.counters.finishers); mix(fw.rng.getState()); mix(c.kills);
+  for (i = 0; i < c.enemies.length; i++) { var e = c.enemies[i]; mix(e.id); mixf(e.x); mixf(e.z); mix(e.hp); mix(e.st.length); mix(e.dead ? 1 : 0); }
+  return h >>> 0;
+}
+
+module.exports = { create: create, step: step, hash: hash };
 
 };
 defs["sim/hideoutgen"]=function(module,exports,require){
@@ -4797,530 +3992,6 @@ function generate(seed) {
 }
 
 module.exports = { generate: generate, clearOfProps: clearOfProps, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };
-
-};
-defs["sim/streaming"]=function(module,exports,require){
-/* sim: decides which chunks should exist around the player and reports loads and unloads.
-   The view builds and frees meshes from those events; this module holds no graphics objects. */
-'use strict';
-
-var CONFIG = require('../data/config');
-var gen = require('./chunkgen');
-
-function createStreaming(seed, bus, genFn) {
-  genFn = genFn || gen.generateChunk;
-  var S = CONFIG.CHUNK_SIZE, R = CONFIG.STREAM_RADIUS;
-  var loaded = {};            /* key -> spec */
-  var cache = [];             /* recent specs, newest last */
-  var centre = { cx: 1e9, cz: 1e9 };
-  var stats = { loads: 0, unloads: 0, cacheHits: 0, peakLoaded: 0 };
-
-  function fromCache(key) {
-    for (var i = 0; i < cache.length; i++) if (cache[i].key === key) {
-      var s = cache.splice(i, 1)[0]; stats.cacheHits++; return s;
-    }
-    return null;
-  }
-
-  function update(px, pz) {
-    var cx = Math.floor((px + S / 2) / S), cz = Math.floor((pz + S / 2) / S);
-    if (cx === centre.cx && cz === centre.cz) return false;
-    centre.cx = cx; centre.cz = cz;
-    var want = {}, x, z, key;
-    for (x = cx - R; x <= cx + R; x++) for (z = cz - R; z <= cz + R; z++) want[gen.chunkKey(x, z)] = [x, z];
-
-    for (key in loaded) if (!want[key]) {              /* unload first so the peak never exceeds the budget */
-      var spec = loaded[key]; delete loaded[key];
-      cache.push(spec); if (cache.length > CONFIG.CACHE_SPECS) cache.shift();
-      stats.unloads++;
-      bus.emit('chunk:unload', { key: key });
-    }
-    for (key in want) if (!loaded[key]) {
-      var sp = fromCache(key) || genFn(seed, want[key][0], want[key][1]);
-      loaded[key] = sp; stats.loads++;
-      bus.emit('chunk:load', { key: key, spec: sp });
-    }
-    var n = Object.keys(loaded).length;
-    if (n > stats.peakLoaded) stats.peakLoaded = n;
-    return true;
-  }
-
-  /* collision queries for the bike: footprints near a point, and the ground height (ramps) under it. World metres. */
-  function specAt(x, z) { return loaded[gen.chunkKey(Math.floor((x + S / 2) / S), Math.floor((z + S / 2) / S))] || null; }
-  function solidsNear(x, z, r, out) {
-    out = out || []; var cx0 = Math.floor((x - r + S / 2) / S), cx1 = Math.floor((x + r + S / 2) / S), cz0 = Math.floor((z - r + S / 2) / S), cz1 = Math.floor((z + r + S / 2) / S), a, b, i;
-    for (a = cx0; a <= cx1; a++) for (b = cz0; b <= cz1; b++) {
-      var sp = loaded[gen.chunkKey(a, b)]; if (!sp || !sp.solids) continue;
-      for (i = 0; i < sp.solids.length; i++) {
-        var q = sp.solids[i], x0 = q.x0 + sp.ox, x1 = q.x1 + sp.ox, z0 = q.z0 + sp.oz, z1 = q.z1 + sp.oz;
-        if (x1 > x - r && x0 < x + r && z1 > z - r && z0 < z + r) out.push({ x0: x0, z0: z0, x1: x1, z1: z1, y1: q.y1 });
-      }
-    }
-    return out;
-  }
-  function groundAt(x, z) {
-    var sp = specAt(x, z); if (!sp || !sp.ramps) return 0;
-    for (var i = 0; i < sp.ramps.length; i++) {
-      var r = sp.ramps[i], lx = x - sp.ox, lz = z - sp.oz;
-      if (lx < r.x0 || lx > r.x1 || lz < r.z0 || lz > r.z1) continue;
-      var t = r.axis === 'x' ? (r.dir > 0 ? lx - r.x0 : r.x1 - lx) / (r.x1 - r.x0) : (r.dir > 0 ? lz - r.z0 : r.z1 - lz) / (r.z1 - r.z0);
-      return r.h * (t < 0 ? 0 : t > 1 ? 1 : t);
-    }
-    return 0;
-  }
-
-  /* the bad road: 'pot' (pothole), 'brk' (speed breaker) or null under a point, world metres */
-  function hazardAt(x, z) {
-    var sp = specAt(x, z); if (!sp || !sp.hazards) return null; var lx = x - sp.ox, lz = z - sp.oz;
-    for (var i = 0; i < sp.hazards.length; i++) { var h = sp.hazards[i]; if (lx >= h.x0 && lx <= h.x1 && lz >= h.z0 && lz <= h.z1) return h.k; }
-    return null;
-  }
-
-  return {
-    hazardAt: hazardAt,
-    update: update, specAt: specAt, solidsNear: solidsNear, groundAt: groundAt,
-    loadedKeys: function () { return Object.keys(loaded).sort(); },
-    snapshotSpecs: function () { return Object.keys(loaded).sort().map(function (k) { return loaded[k]; }); },
-    loadedCount: function () { return Object.keys(loaded).length; },
-    stats: stats,
-    centre: centre
-  };
-}
-
-module.exports = { createStreaming: createStreaming };
-
-};
-defs["sim/traffic"]=function(module,exports,require){
-/* sim: ambient life. Autos, scooters, cars, buses and trucks drive the lanes (on the left); people walk the pavements; cows stand in the
-   road; dogs trot about. They appear out of sight around the hero and go away when he is far. Deterministic: all randomness comes from world.rng.
-   The bike can hit any of them: vehicles and cows are walls with a name, people and dogs are knocked over. No graphics here. */
-'use strict';
-
-var D = require('../data/traffic');
-var CONFIG = require('../data/config');
-var BIKE = require('../data/bike');
-var S = CONFIG.CHUNK_SIZE;
-
-function mod(a, n) { return ((a % n) + n) % n; }
-function create() { return { list: [], nextId: 1, tick: 0 }; }
-
-function pickKind(rng) {
-  var tot = 0, i; for (i = 0; i < D.WEIGHTS.length; i++) tot += D.WEIGHTS[i][1];
-  var r = rng.next() * tot; for (i = 0; i < D.WEIGHTS.length; i++) { r -= D.WEIGHTS[i][1]; if (r <= 0) return D.WEIGHTS[i][0]; }
-  return 'auto';
-}
-function count(t, cls) { var n = 0, i; for (i = 0; i < t.list.length; i++) if (D.KINDS[t.list[i].kind].kind === cls) n++; return n; }
-
-/* the road grid: east-west roads at z = 96*k (chunk rows divisible by 3), north-south roads at x = 32 + 96*k (columns = 1 mod 3) */
-function roadsNear(x, z) {
-  var out = [], cz0 = Math.round(z / S), cx0 = Math.round(x / S), k;
-  for (k = -3; k <= 3; k++) {
-    var cz = cz0 + k, cx = cx0 + k;
-    if (mod(cz, 3) === 0) out.push({ axis: 'x', c: cz * S });
-    if (mod(cx, 3) === 1) out.push({ axis: 'z', c: cx * S });
-  }
-  return out;
-}
-
-function spawnOne(t, world, cls) {
-  var p = world.player, rng = world.rng, roads = roadsNear(p.x, p.z), i;
-  if (!roads.length) return;
-  var rd = roads[rng.int(0, roads.length - 1)], ang = rng.next() < 0.5 ? -1 : 1, d = rng.range(D.SPAWN_MIN, D.SPAWN_MAX) * ang;
-  var along = (rd.axis === 'x' ? p.x : p.z) + d, e;
-  if (cls === 'veh') {
-    var kind = pickKind(rng), dir = rng.next() < 0.5 ? 1 : -1, lane;
-    if (rd.axis === 'x') { lane = dir > 0 ? -3.0 : 3.0; e = { x: along, z: rd.c + lane, h: dir > 0 ? Math.PI / 2 : -Math.PI / 2 }; }
-    else { lane = dir > 0 ? 3.0 : -3.0; e = { x: rd.c + lane, z: along, h: dir > 0 ? 0 : Math.PI }; }
-    e.kind = kind; e.v = 0; e.axis = rd.axis; e.road = rd.c; e.dir = dir;
-  } else if (cls === 'ped') {
-    var side = rng.next() < 0.5 ? 1 : -1, off = side * rng.range(7.2, 7.9), dr = rng.next() < 0.5 ? 1 : -1;
-    e = rd.axis === 'x' ? { x: along, z: rd.c + off, h: dr > 0 ? Math.PI / 2 : -Math.PI / 2 } : { x: rd.c + off, z: along, h: dr > 0 ? 0 : Math.PI };
-    e.kind = 'ped'; e.v = D.KINDS.ped.speed * rng.range(0.7, 1.2); e.axis = rd.axis; e.road = rd.c; e.dir = dr; e.look = rng.int(0, 5);
-  } else {
-    var isCow = rng.next() < 0.55, off2 = isCow ? (rng.next() < 0.5 ? -1 : 1) * rng.range(1.5, 4.5) : (rng.next() < 0.5 ? -1 : 1) * rng.range(6.5, 8);
-    e = rd.axis === 'x' ? { x: along, z: rd.c + off2, h: rng.range(-3, 3) } : { x: rd.c + off2, z: along, h: rng.range(-3, 3) };
-    e.kind = isCow ? 'cow' : 'dog'; e.v = 0; e.axis = rd.axis; e.road = rd.c; e.dir = 1; e.look = rng.int(0, 2);
-  }
-  for (i = 0; i < t.list.length; i++) if (Math.hypot(t.list[i].x - e.x, t.list[i].z - e.z) < 9) return;
-  e.id = t.nextId++; e.px = e.x; e.pz = e.z; e.ph = e.h; e.state = 'go'; e.t = 0; e.wait = 0; e.phase = rng.next() * 6.28; e.hit = 0; e.dx = 0; e.dz = 0;
-  t.list.push(e);
-}
-
-function distToBody(e, x, z) {
-  var K = D.KINDS[e.kind], hl = K.len / 2 - K.r, fx = Math.sin(e.h), fz = Math.cos(e.h), ax = x - e.x, az = z - e.z, u = Math.max(-hl, Math.min(hl, ax * fx + az * fz));
-  return Math.hypot(ax - fx * u, az - fz * u);
-}
-
-/* something in the way, straight ahead and close? (vehicles stop; cows and other vehicles and the bike all count) */
-function blocked(t, e, world) {
-  var K = D.KINDS[e.kind], fx = Math.sin(e.h), fz = Math.cos(e.h), reach = K.len / 2 + 3.5 + e.v * 0.6, i, b = world.bike;
-  function ahead(x, z, r) { var dx = x - e.x, dz = z - e.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); return along > K.len / 2 - 0.2 && along < reach + r && side < K.r + r + 0.5; }
-  if (ahead(b.x, b.z, BIKE.RADIUS)) return 'bike';
-  if (!world.mounted && ahead(world.player.x, world.player.z, 0.4)) return 'bike';
-  for (i = 0; i < t.list.length; i++) { var o = t.list[i]; if (o === e || o.state === 'down') continue; var ok = D.KINDS[o.kind]; if (ok.kind === 'ped') continue; if (ahead(o.x, o.z, ok.r + ok.len / 2 * 0.5)) return 'thing'; }
-  return null;
-}
-
-function step(t, world) {
-  var p = world.player, rng = world.rng, dt = 1 / 60, i, e;
-  if (t.off) { t.list.length = 0; return; }        /* a fight arena: no passing traffic, people or animals */
-  t.tick++;
-  if (t.tick % 20 === 0) {
-    var cls = ['veh', 'ped', 'animal'][t.tick / 20 % 3 | 0];
-    if (count(t, cls) < D.LIMITS[cls]) spawnOne(t, world, cls);
-  }
-  for (i = t.list.length - 1; i >= 0; i--) {
-    e = t.list[i]; e.px = e.x; e.pz = e.z; e.ph = e.h; e.t++;
-    if (Math.hypot(e.x - p.x, e.z - p.z) > D.DESPAWN) { t.list.splice(i, 1); continue; }
-    var K = D.KINDS[e.kind], fx = Math.sin(e.h), fz = Math.cos(e.h);
-    if (e.state === 'down') { e.hit -= dt; e.x += e.dx * dt; e.z += e.dz * dt; e.dx *= 0.9; e.dz *= 0.9; if (e.hit <= 0) e.state = 'go'; continue; }
-    if (K.kind === 'veh') {
-      var bl = blocked(t, e, world), target = bl ? 0 : K.speed;
-      if (e.wait > 0) { e.wait -= dt; target = 0; }
-      e.v += (target - e.v) * Math.min(1, (bl ? 3.5 : 0.9) * dt);
-      if (bl === 'bike' && e.v < 1.2 && e.t % 90 === 0) world.bus.emit('npc:honk', { x: e.x, z: e.z, kind: e.kind });
-      e.x += fx * e.v * dt; e.z += fz * e.v * dt;
-    } else if (K.kind === 'ped') {
-      e.x += fx * e.v * dt; e.z += fz * e.v * dt; e.phase += e.v * dt * 3.2;
-      if (e.t % 400 === 0 && rng.next() < 0.35) { e.h += Math.PI; e.dir = -e.dir; }
-    } else if (e.kind === 'dog') {
-      var bd = Math.hypot(world.bike.x - e.x, world.bike.z - e.z);
-      if (bd < 7 && Math.abs(world.bike.speed) > 3) { e.h = Math.atan2(e.x - world.bike.x, e.z - world.bike.z); e.v = 4.6; } else if (e.t % 150 === 0) { e.h += rng.range(-1.5, 1.5); e.v = rng.next() < 0.4 ? 0 : K.speed; }
-      e.x += Math.sin(e.h) * e.v * dt; e.z += Math.cos(e.h) * e.v * dt; e.phase += e.v * dt * 4;
-    }
-  }
-}
-
-/* the bike against everything: vehicles and cows are walls (a named crash); people and dogs are knocked flying */
-function collide(t, world) {
-  var b = world.bike, i, e, bus = world.bus;
-  if (world.mounted === false && Math.abs(b.speed) < 0.1) return;
-  for (i = 0; i < t.list.length; i++) {
-    e = t.list[i]; if (e.state === 'down') continue;
-    if (Math.abs(e.x - b.x) > 6 || Math.abs(e.z - b.z) > 6) continue;
-    var K = D.KINDS[e.kind], d = distToBody(e, b.x, b.z), need = BIKE.RADIUS + K.r;
-    if (d >= need) continue;
-    var nx = b.x - e.x, nz = b.z - e.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
-    var fx = Math.sin(b.h), fz = Math.cos(b.h), into = Math.max(0, -(fx * nx + fz * nz) * b.speed);
-    if (K.kind === 'veh' || e.kind === 'cow') {
-      b.x += nx * (need - d); b.z += nz * (need - d);
-      if (into > 1.5) {
-        var hard = into > 9; b.speed *= hard ? 0.1 : (1 - 0.55 * Math.min(1, into / 9)); if (hard) b.crash = 0.9; else if (into > 4) b.crash = 0.3;
-        e.v = 0; e.wait = 1.2; e.dx = 0; e.dz = 0;
-        if (into > 3) bus.emit('ride:crash', { x: b.x, z: b.z, speed: into, hard: hard, with: e.kind });
-        if (K.kind === 'veh') bus.emit('npc:honk', { x: e.x, z: e.z, kind: e.kind });
-      }
-    } else if (Math.abs(b.speed) > 2) {
-      e.state = 'down'; e.hit = 2.5; e.dx = fx * b.speed * 0.5 + nx * 2; e.dz = fz * b.speed * 0.5 + nz * 2; b.speed *= e.kind === 'ped' ? 0.85 : 0.95;
-      bus.emit('npc:bump', { x: e.x, z: e.z, kind: e.kind, speed: Math.abs(b.speed) });
-    }
-  }
-}
-
-module.exports = { create: create, step: step, collide: collide, roadsNear: roadsNear };
-
-};
-defs["sim/world"]=function(module,exports,require){
-/* sim: the game state and its per-tick update. No graphics, no audio, no DOM.
-   Phase 0 content is a walking placeholder player so the loop, input and streaming can be tested. */
-'use strict';
-
-var CONFIG = require('../data/config');
-var rngMod = require('../core/rng');
-var streamingMod = require('./streaming');
-var combatMod = require('./combat');
-var citygen = require('./citygen');
-var trafficMod = require('./traffic'), locsMod = require('./citylocs'), LOCD = require('../data/locations');
-var bikeMod = require('./bike');
-var BIKE = require('../data/bike');
-
-function createWorld(seed, bus) {
-  var world = {
-    seed: seed >>> 0,
-    tick: 0,
-    rng: rngMod.createRng(seed),
-    player: { x: 0, z: 0, px: 0, pz: 0, face: 0, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
-    combat: combatMod.createCombat(), pendingStrikes: [],
-    counters: { attacks: 0, blocks: 0, finishers: 0 },
-    streaming: streamingMod.createStreaming(seed, bus, citygen.generate),
-    bike: bikeMod.createBike(1.7, -1.2, Math.PI / 2), mounted: false, mountTick: -999,
-    traffic: trafficMod.create(), locs: { cleared: {}, active: null, next: null, clearedCount: 0 },
-    bus: bus
-  };
-  world.streaming.update(0, 0);
-  return world;
-}
-
-/* fight locations: arriving at an uncleared one starts its fight; killing the last man clears it. Every half second the nearest uncleared one
-   is looked up (by hash, no chunk building) so the HUD can point the way. */
-function locationStep(world) {
-  var L = world.locs, p = world.player, c = world.combat, S = CONFIG.CHUNK_SIZE;
-  if (!c.enabled) return;
-  if (L.active) {
-    var alive = false, i;
-    for (i = 0; i < c.enemies.length; i++) if (!c.enemies[i].dead && c.enemies[i].st !== 'dead') { alive = true; break; }
-    if (!alive && !p.down) { L.cleared[L.active.key] = true; L.clearedCount++; world.bus.emit('location:clear', { key: L.active.key, name: L.active.name, x: L.active.x, z: L.active.z }); c.banner = L.active.name + ' cleared'; c.bannerT = 170; L.active = null; }
-    else if (p.down) L.active = null;
-  }
-  if (world.tick % 30 === 0) {
-    var ccx = Math.round(p.x / S), ccz = Math.round(p.z / S), bestD = 1e9, best = null, cx, cz;
-    for (cx = ccx - 7; cx <= ccx + 7; cx++) for (cz = ccz - 7; cz <= ccz + 7; cz++) {
-      var t = locsMod.typeAt(world.seed, cx, cz); if (!t) continue; var key = cx + ',' + cz; if (L.cleared[key]) continue;
-      var d = Math.hypot(cx * S - p.x, cz * S - p.z); if (d < bestD) { bestD = d; best = { key: key, type: t, name: LOCD.LOCATIONS[t].name, x: cx * S, z: cz * S, dist: d }; }
-    }
-    L.next = best;
-  }
-  if (!L.active && L.next && !L.cleared[L.next.key] && Math.hypot(L.next.x - p.x, L.next.z - p.z) < LOCD.LOCATIONS[L.next.type].r && c.enemies.every(function (q) { return q.dead || q.st === 'dead'; })) {
-    var sp = world.streaming.specAt(L.next.x, L.next.z);
-    if (sp && sp.loc) {
-      var D2 = LOCD.LOCATIONS[sp.loc.type]; L.active = { key: L.next.key, name: sp.loc.name, x: sp.loc.x, z: sp.loc.z };
-      combatMod.startLocation(world, sp.loc.name, sp.loc.spawns, D2.n, D2.stick); world.bus.emit('location:start', { key: L.next.key, name: sp.loc.name });
-    }
-  }
-}
-
-/* the nearest living man within reach of the saddle, or null */
-function foeInReach(world, r) {
-  var l = world.combat.enemies, b = world.bike, best = null, bd = r, i;
-  for (i = 0; i < l.length; i++) {
-    var e = l[i]; if (e.dead || e.st === 'dead' || e.st === 'getup') continue;
-    var d = Math.hypot(e.x - b.x, e.z - b.z); if (d < bd) { bd = d; best = e; }
-  }
-  return best;
-}
-function alertNear(world) {
-  var l = world.combat.enemies, p = world.player, i;
-  for (i = 0; i < l.length; i++) if (l[i].st === 'windup' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < 4) return true;
-  return false;
-}
-
-/* riding. Stick: throttle, brake, steer. Attack: a tap fights (when a man is in reach), a hold boosts. Block: hold guards, a tap
-   with an alert showing counters, and at a standstill with nobody about it parks the bike and he steps off. */
-function rideStep(world, input) {
-  var p = world.player, s = input.state, b = world.bike, env = world.streaming, dt = 1 / CONFIG.TICK_HZ, c = world.combat;
-  p.px = p.x; p.pz = p.z; p.moving = false;
-  var hp0 = p.hp;
-  if (!s.held.attack) world.atkArmed = true;
-  var prevHold = world.atkHold || 0;
-  world.atkHold = s.held.attack ? (world.atkHold || 0) + 1 : 0;
-  var foe = s.pressed.attack && world.atkArmed && !p.down && p.stun <= 0 ? foeInReach(world, 2.7) : null;
-  var tapped = false;
-  if (foe) {                                           /* a man beside him: Attack is a blow, and this hold is not a boost */
-    c.target = foe.id; world.atkArmed = false; tapped = true;
-    var rel = Math.atan2(foe.x - b.x, foe.z - b.z) - b.h; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); world.rideSide = rel;
-    world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
-  } else if (s.released.attack && world.atkArmed && prevHold < BIKE.BOOST_HOLD && !p.down && p.stun <= 0) {
-    /* a short tap with nobody beside him is still a swing (toward the nearest man, else the near side), so the button always answers */
-    var f2 = foeInReach(world, 6), rl = 0;
-    if (f2) { c.target = f2.id; rl = Math.atan2(f2.x - b.x, f2.z - b.z) - b.h; rl = Math.atan2(Math.sin(rl), Math.cos(rl)); } else rl = -1.0;
-    world.rideSide = rl; world.counters.attacks++; world.bus.emit('action', { type: 'attack' });
-  }
-  var boost = !!s.held.attack && world.atkArmed && world.atkHold >= BIKE.BOOST_HOLD;
-  var alert = alertNear(world);
-  bikeMod.step(b, { throttle: Math.max(0, s.my), brake: Math.max(0, -s.my), steer: s.mx, reverse: s.my < -0.3, boost: boost, drift: false }, env, dt, world.bus);
-  p.x = b.x; p.z = b.z; p.face = b.h;
-  if (s.pressed.block && !alert && !b.air && Math.abs(b.speed) < BIKE.PARK_SPEED && world.tick - world.mountTick > 30 && !menNear(world, p, 3.6)) {
-    b.speed = 0; world.mounted = false; input.consume('attack', 99); world.atkArmed = false;
-    p.x = b.x + Math.cos(b.h) * 1.0; p.z = b.z - Math.sin(b.h) * 1.0;     /* steps off to the bike's left */
-    p.guard = false;
-    world.bus.emit('ride:park', { x: b.x, z: b.z });
-    world.streaming.update(p.x, p.z); world.tick++; return;
-  }
-  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
-  if (p.hp < hp0) b.speed *= 0.82;                    /* a blow rocks the bike */
-  p.x = b.x; p.z = b.z;
-  world.streaming.update(p.x, p.z);
-  world.tick++;
-}
-
-/* a man right beside him means the button is for fighting; one further off does not stop him climbing on */
-function menNear(world, p, r) {
-  r = r || BIKE.MOUNT_BLOCK;
-  var l = world.combat.enemies;
-  for (var i = 0; i < l.length; i++) if (!l[i].dead && l[i].st !== 'dead' && Math.hypot(l[i].x - p.x, l[i].z - p.z) < r) return true;
-  return false;
-}
-/* how far he stands from the bike's body (a line from rear wheel to front wheel), not from its middle */
-function bikeDistance(world) {
-  var b = world.bike, p = world.player, fx = Math.sin(b.h), fz = Math.cos(b.h), dx = p.x - b.x, dz = p.z - b.z;
-  var t = Math.max(-BIKE.HALF_LEN, Math.min(BIKE.HALF_LEN, dx * fx + dz * fz));
-  return Math.hypot(dx - fx * t, dz - fz * t);
-}
-function canMount(world) {
-  var p = world.player;
-  return !world.mounted && !p.down && p.stun <= 0 && bikeDistance(world) < BIKE.MOUNT_REACH && !menNear(world, p);
-}
-
-function step(world, input) {
-  if (world.mounted) { rideStep(world, input); return; }
-  var p = world.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ;
-  p.px = p.x; p.pz = p.z;
-  world.bike.speed = 0;
-  if (canMount(world) && (s.pressed.attack || input.consume('attack', 8))) {
-    input.consume('attack', 99); world.mounted = true; world.mountTick = world.tick; world.atkArmed = false; p.guard = false; p.x = world.bike.x; p.z = world.bike.z; p.face = world.bike.h;
-    world.bus.emit('ride:mount', { x: world.bike.x, z: world.bike.z });
-    world.streaming.update(p.x, p.z); world.tick++; return;
-  }
-  var mx = s.mx, mz = -s.my;                       /* stick up = away from camera = -z */
-  var m = Math.sqrt(mx * mx + mz * mz);
-  /* committed to an action: no walking or turning while a move plays or Block is held */
-  var locked = !!world.attackLock || !!(s.held && s.held.block) || p.stun > 0 || p.down;
-  p.invuln = !!world.invuln;
-  p.moving = !locked && m > 0.1;
-  if (p.moving) {
-    p.x += mx * v; p.z += mz * v;
-    p.face = Math.atan2(mx, mz);
-  }
-  /* the parked bike is solid: three discs along its body push him out */
-  var bk = world.bike, bfx = Math.sin(bk.h), bfz = Math.cos(bk.h), bo, SOL = [-0.7, 0, 0.7];
-  for (bo = 0; bo < 3; bo++) {
-    var cx = bk.x + bfx * SOL[bo], cz = bk.z + bfz * SOL[bo], ddx = p.x - cx, ddz = p.z - cz, dd = Math.hypot(ddx, ddz), need = BIKE.SOLID_R;
-    if (dd < need) { if (dd < 1e-4) { ddx = Math.cos(bk.h); ddz = -Math.sin(bk.h); dd = 1; } p.x = cx + ddx / dd * need; p.z = cz + ddz / dd * need; }
-  }
-  /* placeholder actions: they only prove that buttons reach the simulation and the rage gate works */
-  if (s.pressed.attack) { world.counters.attacks++; if (!world.combat.enabled) p.rage = Math.min(100, p.rage + 12); world.bus.emit('action', { type: 'attack' }); }
-  if (s.pressed.block) { world.counters.blocks++; world.bus.emit('action', { type: 'block' }); }
-  if (s.pressed.finisher && p.rage >= 100) { world.counters.finishers++; p.rage = 0; world.bus.emit('action', { type: 'finisher' }); }
-  combatMod.step(world, input); trafficMod.step(world.traffic, world); trafficMod.collide(world.traffic, world); locationStep(world);
-  if (world.bounds) keepInArena(world);
-  world.streaming.update(p.x, p.z);
-  world.tick++;
-}
-
-/* in a fight arena (world.bounds set by the mission), nobody walks through the props or out of the arena: the hero and every man are
-   pushed out of solid footprints and kept inside the rectangle. The open city never sets bounds, so the street plays as before. */
-var ARENA_R = 0.35;
-function pushOut(o, world) {
-  var near = world.streaming.solidsNear(o.x, o.z, ARENA_R + 0.1, []), i;
-  for (i = 0; i < near.length; i++) {
-    var q = near[i]; if (q.y1 < 0.25) continue;
-    var cx = Math.max(q.x0, Math.min(q.x1, o.x)), cz = Math.max(q.z0, Math.min(q.z1, o.z)), dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz);
-    if (d >= ARENA_R) continue;
-    if (d < 1e-5) {                                   /* inside the footprint: leave by the nearest side */
-      var l = o.x - q.x0, r = q.x1 - o.x, t = o.z - q.z0, b = q.z1 - o.z, m = Math.min(l, r, t, b);
-      if (m === l) o.x = q.x0 - ARENA_R; else if (m === r) o.x = q.x1 + ARENA_R; else if (m === t) o.z = q.z0 - ARENA_R; else o.z = q.z1 + ARENA_R;
-    } else { o.x = cx + dx / d * ARENA_R; o.z = cz + dz / d * ARENA_R; }
-  }
-  var B = world.bounds;
-  o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
-}
-function keepInArena(world) {
-  pushOut(world.player, world);
-  var l = world.combat.enemies, i;
-  for (i = 0; i < l.length; i++) if (!l[i].dead) pushOut(l[i], world);
-}
-
-/* order-stable fingerprint of everything that must be identical between two runs */
-function hash(world) {
-  var p = world.player, h = 2166136261 >>> 0;
-  function mix(n) { h ^= (n | 0) & 0xffffffff; h = Math.imul(h, 16777619) >>> 0; }
-  function mixf(f) { mix(Math.round(f * 10000)); }
-  mix(world.tick); mixf(p.x); mixf(p.z); mixf(p.face); mix(p.rage);
-  mix(world.counters.attacks); mix(world.counters.blocks); mix(world.counters.finishers);
-  mix(world.rng.getState()); mix(world.traffic.list.length); mix(world.locs.clearedCount); mixf(world.bike.x); mixf(world.bike.z); mixf(world.bike.h); mixf(world.bike.speed); mix(world.mounted ? 1 : 0);
-  var keys = world.streaming.loadedKeys();
-  for (var i = 0; i < keys.length; i++) for (var j = 0; j < keys[i].length; j++) mix(keys[i].charCodeAt(j));
-  return h >>> 0;
-}
-
-module.exports = { canMount: canMount, bikeDistance: bikeDistance, createWorld: createWorld, step: step, hash: hash, startFight: combatMod.begin };
-
-};
-defs["view/ambientvox"]=function(module,exports,require){
-/* view: the street's voxel population: autos, scooters, cars, buses, trucks, cows, dogs and people. One shared geometry per kind (and look),
-   one mesh per entity. Voxels are 10 cm. Forward is local +z, like the bike. */
-'use strict';
-
-var vg = require('./voxgrid');
-var h = vg.hex, VS = 0.1;
-var C = { blk: h('#17181b'), grey: h('#6b7078'), glass: h('#8fc1d8'), white: h('#f1efe8'), red: h('#c8372d'), yel: h('#f2c230'), grn: h('#2f8f4a'), blue: h('#2b57b8'),
-          sf: h('#f08a24'), tyre: h('#1d1e21'), lamp: h('#fff3c4'), skin: h('#b57a52'), skin2: h('#8a5a3a'), hair: h('#1a1410'), cow: h('#e8e2d2'), cowD: h('#8a6a4a'), horn: h('#d8cfa8'), dog: h('#b98a4f') };
-
-function wheel(g, x, z, r) { var y; for (y = 0; y <= r; y++) vg.box(g, x, y, z, x, y, z + (r > 1 ? 1 : 0), C.tyre); vg.box(g, x, 0, z, x, r, z + (r > 1 ? 1 : 0), C.tyre); }
-
-function auto(look) {                                        /* the three-wheeler: yellow body, black hood, green skirt */
-  var g = vg.createGrid(15, 20, 28), body = look ? C.grn : C.yel;
-  vg.box(g, 2, 3, 6, 12, 7, 26, body); vg.box(g, 2, 3, 6, 12, 4, 26, C.blk);              /* lower body and skirt */
-  vg.box(g, 3, 7, 14, 11, 8, 24, C.blk); vg.box(g, 3, 8, 6, 11, 14, 8, C.blk);            /* seat back */
-  vg.box(g, 2, 14, 4, 12, 15, 24, C.blk); vg.box(g, 3, 15, 6, 11, 15, 22, C.blk);         /* canvas hood */
-  vg.box(g, 2, 8, 24, 12, 13, 24, C.glass); vg.box(g, 6, 3, 25, 8, 5, 27, C.grey);         /* windscreen, front mudguard */
-  vg.box(g, 6, 5, 25, 8, 7, 26, C.lamp); vg.box(g, 3, 4, 3, 11, 5, 5, body);
-  vg.box(g, 1, 0, 4, 1, 3, 8, C.tyre); vg.box(g, 13, 0, 4, 13, 3, 8, C.tyre); vg.box(g, 7, 0, 24, 7, 3, 26, C.tyre);
-  vg.box(g, 6, 8, 20, 8, 9, 22, C.grey);
-  return g;
-}
-function scooter(look) {
-  var g = vg.createGrid(9, 16, 18), c = [C.red, C.blue, C.white, C.grn][look % 4];
-  vg.box(g, 3, 3, 3, 5, 7, 12, c); vg.box(g, 3, 7, 2, 5, 8, 6, C.blk); vg.box(g, 3, 4, 12, 5, 9, 14, c);
-  vg.box(g, 1, 9, 13, 7, 9, 13, C.blk); vg.box(g, 4, 9, 14, 4, 10, 14, C.lamp); vg.box(g, 4, 0, 14, 4, 3, 16, C.tyre); vg.box(g, 4, 0, 1, 4, 3, 4, C.tyre);
-  vg.box(g, 3, 8, 3, 5, 14, 5, [C.sf, C.blue, C.grn, C.red][(look + 1) % 4]);               /* rider's body */
-  vg.ellipsoid(g, 4, 15, 4, 1.7, 1.6, 1.7, C.skin); vg.box(g, 2, 14, 3, 6, 15, 5, [C.blk, C.red, C.blue][look % 3]);
-  vg.box(g, 3, 9, 9, 3, 10, 12, C.skin); vg.box(g, 5, 9, 9, 5, 10, 12, C.skin);
-  return g;
-}
-function car(look) {                                         /* the black-and-yellow taxi, or a plain hatch */
-  var g = vg.createGrid(19, 17, 40), body = look ? C.white : C.blk, roof = look ? C.white : C.yel;
-  vg.box(g, 2, 3, 3, 16, 8, 37, body); vg.box(g, 4, 8, 11, 14, 13, 28, roof); vg.box(g, 4, 9, 11, 14, 12, 11, C.glass); vg.box(g, 4, 9, 28, 14, 12, 28, C.glass);
-  vg.box(g, 4, 9, 12, 4, 12, 27, C.glass); vg.box(g, 14, 9, 12, 14, 12, 27, C.glass);
-  vg.box(g, 3, 6, 37, 15, 7, 37, C.lamp); vg.box(g, 3, 6, 2, 15, 7, 2, C.red); vg.box(g, 2, 5, 3, 16, 5, 37, look ? C.grey : C.yel);
-  [[1, 6], [17, 6], [1, 28], [17, 28]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 4, q[1] + 4, C.tyre); });
-  return g;
-}
-function bus(look) {                                         /* a long red state bus, or a green one */
-  var g = vg.createGrid(27, 30, 82), body = look ? C.grn : C.red;
-  vg.box(g, 2, 4, 3, 24, 22, 79, body); vg.box(g, 2, 12, 3, 24, 13, 79, C.white); vg.box(g, 2, 4, 3, 24, 6, 79, C.blk);
-  var z; for (z = 8; z < 74; z += 9) { vg.box(g, 2, 15, z, 2, 20, z + 6, C.glass); vg.box(g, 24, 15, z, 24, 20, z + 6, C.glass); }
-  vg.box(g, 3, 14, 79, 23, 21, 79, C.glass); vg.box(g, 3, 5, 79, 8, 7, 80, C.lamp); vg.box(g, 18, 5, 79, 23, 7, 80, C.lamp); vg.box(g, 9, 21, 79, 17, 22, 79, C.yel);
-  vg.box(g, 3, 22, 8, 23, 23, 76, C.white); vg.box(g, 6, 8, 2, 20, 10, 3, C.yel);
-  [[0, 9], [25, 9], [0, 60], [25, 60]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 5, q[1] + 6, C.tyre); });
-  return g;
-}
-function truck(look) {                                       /* a painted lorry */
-  var g = vg.createGrid(25, 30, 62), cab = [C.blue, C.sf, C.grn, C.red][look % 4], cargo = [C.yel, C.red, C.blue, C.sf][(look + 1) % 4];
-  vg.box(g, 2, 5, 38, 22, 17, 59, cab); vg.box(g, 3, 12, 59, 21, 17, 59, C.glass); vg.box(g, 2, 17, 38, 22, 19, 55, cab); vg.box(g, 4, 6, 60, 8, 8, 61, C.lamp); vg.box(g, 16, 6, 60, 20, 8, 61, C.lamp);
-  vg.box(g, 2, 5, 2, 22, 7, 38, C.blk); vg.box(g, 1, 7, 2, 23, 22, 37, cargo); vg.box(g, 1, 7, 2, 23, 9, 37, C.blk); vg.box(g, 2, 22, 3, 22, 23, 36, cargo);
-  vg.box(g, 6, 14, 1, 18, 17, 1, C.white);
-  [[0, 6], [23, 6], [0, 14], [23, 14], [0, 44], [23, 44]].forEach(function (q) { vg.box(g, q[0], 0, q[1], q[0] + 1, 5, q[1] + 5, C.tyre); });
-  return g;
-}
-function cow(look) {
-  var g = vg.createGrid(9, 15, 20), c = look === 1 ? C.cowD : C.cow;
-  vg.box(g, 2, 6, 3, 6, 10, 14, c); vg.box(g, 3, 10, 12, 5, 12, 16, c); vg.box(g, 3, 8, 16, 5, 12, 18, c); vg.box(g, 3, 8, 18, 5, 9, 19, C.skin2);          /* body, neck, head */
-  vg.box(g, 2, 11, 16, 2, 12, 17, C.horn); vg.box(g, 6, 11, 16, 6, 12, 17, C.horn); vg.box(g, 4, 10, 11, 4, 11, 12, C.cowD);                          /* horns, hump */
-  vg.box(g, 2, 0, 3, 3, 6, 4, c); vg.box(g, 5, 0, 3, 6, 6, 4, c); vg.box(g, 2, 0, 12, 3, 6, 13, c); vg.box(g, 5, 0, 12, 6, 6, 13, c); vg.box(g, 4, 5, 1, 4, 9, 2, c);
-  if (look === 2) vg.box(g, 2, 6, 5, 6, 9, 8, C.cowD);
-  return g;
-}
-function dog(look) {
-  var g = vg.createGrid(5, 8, 12), c = [C.dog, C.cowD, C.white][look % 3];
-  vg.box(g, 1, 3, 2, 3, 5, 8, c); vg.box(g, 1, 5, 7, 3, 7, 10, c); vg.box(g, 2, 5, 10, 2, 6, 11, C.blk); vg.box(g, 1, 0, 2, 1, 3, 2, c); vg.box(g, 3, 0, 2, 3, 3, 2, c); vg.box(g, 1, 0, 7, 1, 3, 7, c); vg.box(g, 3, 0, 7, 3, 3, 7, c); vg.box(g, 2, 5, 0, 2, 7, 2, c);
-  return g;
-}
-var KURTA = [C.white, C.blue, C.sf, C.grn, C.red, C.yel], PANT = [C.blk, C.grey, C.white, C.blue, C.blk, C.grey];
-function ped(look) {                                         /* a walker: 1.7 m, kurta or saree */
-  var g = vg.createGrid(7, 18, 5), top = KURTA[look % 6], skin = look % 2 ? C.skin : C.skin2;
-  vg.box(g, 2, 0, 1, 2, 7, 2, PANT[look % 6]); vg.box(g, 4, 0, 1, 4, 7, 2, PANT[look % 6]);
-  vg.box(g, 2, 7, 1, 4, 13, 3, top); if (look % 3 === 0) vg.box(g, 2, 3, 1, 4, 7, 3, top);      /* a saree or long kurta to the knee */
-  vg.box(g, 1, 8, 1, 1, 12, 2, top); vg.box(g, 5, 8, 1, 5, 12, 2, top); vg.box(g, 1, 7, 1, 1, 8, 2, skin); vg.box(g, 5, 7, 1, 5, 8, 2, skin);
-  vg.box(g, 3, 13, 1, 3, 14, 3, skin); vg.ellipsoid(g, 3, 15.5, 2, 1.6, 1.8, 1.7, skin); vg.box(g, 2, 16, 1, 4, 17, 3, C.hair);
-  return g;
-}
-
-var BUILD = { auto: auto, scooter: scooter, car: car, bus: bus, truck: truck, cow: cow, dog: dog, ped: ped }, LOOKS = { auto: 2, scooter: 4, car: 2, bus: 2, truck: 4, cow: 3, dog: 3, ped: 6 };
-var cache = {}, mat = null;
-function geo(kind, look) {
-  var key = kind + look; if (cache[key]) return cache[key];
-  if (!mat) mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  var g = BUILD[kind](look), a = vg.meshGrid(g, { x: g.W / 2, y: 0, z: g.D / 2 }, VS, { jitter: 0.04, seed: key.length * 7 + look });
-  var bg = new THREE.BufferGeometry();
-  bg.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); bg.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
-  bg.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); bg.setIndex(new THREE.BufferAttribute(a.indices, 1)); bg.computeBoundingSphere();
-  return (cache[key] = bg);
-}
-function createMesh(e) { var m = new THREE.Mesh(geo(e.kind, (e.look !== undefined ? e.look : e.id) % LOOKS[e.kind]), (geo(e.kind, (e.look !== undefined ? e.look : e.id) % LOOKS[e.kind]), mat)); m.frustumCulled = true; return m; }
-function dispose() { Object.keys(cache).forEach(function (k) { cache[k].dispose(); }); cache = {}; if (mat) { mat.dispose(); mat = null; } }
-
-module.exports = { createMesh: createMesh, dispose: dispose, VS: VS };
 
 };
 defs["view/app"]=function(module,exports,require){
@@ -6124,7 +4795,6 @@ var vg = require('./voxgrid');
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
-var ambient = require('./ambientvox');
 
 var ridevox = require('./ridevox');
 var ROOF_Y = 1.42, HALF_W = 0.9;                    /* the gang car's roof height and half width, before scaling (from its model) */
@@ -6560,14 +5230,14 @@ module.exports = { createEnemyView: createEnemyView };
 
 };
 defs["view/fightui"]=function(module,exports,require){
-/* view: fight HUD - health, rage, combo counter, wave banner. Plain DOM, restyled via inline styles so the page template stays small. */
+/* view: fight HUD - health, rage, combo counter, the men still standing. Plain DOM, restyled via inline styles so the page template stays small. */
 'use strict';
 
 function createFightUi() {
   var el = document.createElement('div');
   el.style.cssText = 'position:fixed;top:max(56px,calc(env(safe-area-inset-top) + 48px));right:max(14px,env(safe-area-inset-right));width:min(260px,44vw);z-index:4;pointer-events:none;font:700 11px system-ui,sans-serif;letter-spacing:.1em;color:#fff;text-transform:uppercase';
   el.innerHTML =
-    '<div style="display:flex;justify-content:space-between"><span>Toofan</span><span id="fuWave" style="color:#ffc21a">Wave 1</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Toofan</span><span id="fuWave" style="color:#ffc21a"></span></div>' +
     '<div style="height:12px;margin:4px 0;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:3px;overflow:hidden"><div id="fuHp" style="height:100%;width:100%;background:linear-gradient(90deg,#d63a2f,#ff7a3d)"></div></div>' +
     '<div style="height:7px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);border-radius:3px;overflow:hidden"><div id="fuRage" style="height:100%;width:0;background:linear-gradient(90deg,#ffc21a,#fff1a8)"></div></div>' +
     '<div style="display:flex;justify-content:space-between;margin-top:4px;opacity:.85"><span id="fuRageT">Rage</span><span id="fuKo">KO 0</span></div>' +
@@ -6582,7 +5252,7 @@ function createFightUi() {
       hp.style.width = Math.max(0, p.hp / p.maxHp * 100) + '%';
       rage.style.width = p.rage + '%'; rageT.textContent = p.rage >= 100 ? 'Rage full - finisher!' : 'Rage';
       rageT.style.color = p.rage >= 100 ? '#ffc21a' : '#fff';
-      ko.textContent = 'KO ' + c.kills; wave.textContent = 'Wave ' + c.wave;
+      ko.textContent = 'KO ' + c.kills; var left = 0; for (var i = 0; i < c.enemies.length; i++) if (!c.enemies[i].dead && c.enemies[i].st !== 'dead') left++; wave.textContent = left ? 'GOONS ' + left : 'CLEAR';
       combo.textContent = c.combo + (c.combo === 1 ? ' hit' : ' hits'); combo.style.opacity = c.combo >= 2 ? 1 : 0;
       ban.textContent = c.banner; ban.style.opacity = c.bannerT > 0 ? 1 : 0;
     },
@@ -8315,69 +6985,6 @@ module.exports = { layer: layer, blend: blend, copy: copy, named: named, approac
   sequencePose: sequencePose, sequenceDuration: sequenceDuration, smooth: smooth };
 
 };
-defs["view/ridecam"]=function(module,exports,require){
-/* view: the riding camera and the rider's pose. Pure maths (no THREE), so both can be tested in Node.
-   The camera follows a smoothed heading so it swings behind the bike in turns, widens the view with speed, drifts to a
-   three-quarter angle when slow so the bike and the street are on show, and pulls in rather than sit inside a building. */
-'use strict';
-
-function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
-function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
-function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
-
-function createRideCam() {
-  var S = { h: 0, d: 5.4, lx: 0, lz: 0, steerS: 0, init: false, q: 1, fov: 46, ly: 1.0 };
-  return {
-    state: S,
-    /* b: bike sim state, x/y/z/h: interpolated position and heading, env: {solidsNear}, dt seconds. Returns a shot {x,y,z,lx,ly,lz,fov}. */
-    update: function (dt, b, x, y, z, h, env) {
-      var sp = Math.abs(b.speed), sn = clamp(sp / 25, 0, 1), k;
-      if (!S.init) { S.init = true; S.h = h + 0.5; S.lx = x; S.lz = z; }
-      /* heading follows with a lag, so a turn opens up to show the bike's lean and the street ahead */
-      k = 1 - Math.exp(-(2.6 + sn * 1.2) * dt); S.h += angDiff(h, S.h) * k;
-      S.steerS += (b.steer - S.steerS) * (1 - Math.exp(-3 * dt));
-      var slow = 1 - smooth(sp / 6), side = 0.78 * slow + S.steerS * 0.42 * sn;                 /* angle off straight-behind: three-quarter when slow, outside of the turn when fast */
-      var ang = S.h + Math.PI + side, dist = 5.0 + sn * 2.4 + (b.boosting ? 0.8 : 0) + slow * 0.6, hgt = 2.1 + sn * 0.9 + slow * 0.3;
-      var tx = x + Math.sin(ang) * dist, tz = z + Math.cos(ang) * dist;
-      /* shrink toward the bike while the camera would sit inside a building */
-      var tries = 0, f = 1;
-      while (tries++ < 7 && env) {
-        var cx = x + (tx - x) * f, cz = z + (tz - z) * f, hit = env.solidsNear(cx, cz, 0.4, []), bad = false, i;
-        for (i = 0; i < hit.length; i++) if (hit[i].y1 > hgt - 0.3) bad = true;
-        if (!bad) break; f *= 0.72;
-      }
-      var camx = x + (tx - x) * f, camz = z + (tz - z) * f, camy = y + 0.7 + (hgt - 0.7) * (0.5 + 0.5 * f);
-      /* look a little ahead of the bike, further at speed */
-      var ahead = 1.2 + sn * 3.2, ltx = x + Math.sin(h) * ahead, ltz = z + Math.cos(h) * ahead;
-      var lk = 1 - Math.exp(-6 * dt); S.lx += (ltx - S.lx) * lk; S.lz += (ltz - S.lz) * lk;
-      var fovT = 46 + sn * 12 + (b.boosting ? 7 : 0) + (b.air ? 3 : 0); S.fov += (fovT - S.fov) * (1 - Math.exp(-3 * dt));
-      return { x: camx, y: camy, z: camz, lx: S.lx, ly: y + 1.0, lz: S.lz, fov: S.fov };
-    }
-  };
-}
-
-/* the rider on a cruiser: relaxed and upright, feet forward on the pegs, hands up on the bars. Leans with the bike, bars follow the steering. */
-function ridePose(b, t) {
-  var st = clamp(b.steer, -1, 1), ln = clamp(b.lean, -0.6, 0.6), sp = clamp(Math.abs(b.speed) / 25, 0, 1), air = b.air ? 1 : 0;
-  var p = {
-    'hip.y': -0.01, 'hip.rx': 4 + sp * 6 + (b.pitch < 0 ? -b.pitch * 40 : 0), 'hip.rz': 0, 'spine.rx': 10 + sp * 12, 'spine.rz': -ln * 14, 'spine.ry': -st * 8,
-    'neck.rx': -6 - sp * 8, 'head.rx': -8 - sp * 6, 'head.ry': -st * 14, 'head.rz': ln * 8,
-    'armA.sx': 62 + sp * 6, 'armA.sz': 14, 'armA.e': 42 - sp * 8, 'armA.sy': 0, 'armA.w': -12,
-    'armB.sx': 62 + sp * 6, 'armB.sz': 14, 'armB.e': 42 - sp * 8, 'armB.sy': 0, 'armB.w': -12,
-    'legA.hx': 58, 'legA.hz': 16, 'legA.k': 44, 'legA.a': -6, 'legB.hx': 58, 'legB.hz': 16, 'legB.k': 44, 'legB.a': -6
-  };
-  /* the bars turn: one arm reaches, the other draws back */
-  p['armA.sx'] += st * 7; p['armB.sx'] -= st * 7; p['armA.sy'] = -st * 8; p['armB.sy'] = -st * 8;
-  p['hip.ry'] = -st * 3;
-  if (air) { p['legA.k'] += 10; p['legB.k'] += 10; p['spine.rx'] += 4; }
-  /* a slight engine tremble at the shoulders */
-  p['spine.rx'] += Math.sin(t * 38) * 0.35 * (0.3 + b.thr);
-  return p;
-}
-
-module.exports = { createRideCam: createRideCam, ridePose: ridePose };
-
-};
 defs["view/rideview"]=function(module,exports,require){
 /* view: ride mode, styled after the first Toofan prototype: a warm evening sky, colourful shopfront rows with striped shutters and awnings,
    lettered signboards, upper windows with sills, AC units and shades, rooftop tanks, poles with sagging wires, round voxel trees,
@@ -8387,7 +6994,6 @@ defs["view/rideview"]=function(module,exports,require){
 
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
-var ambient = require('./ambientvox');
 var ridevox = require('./ridevox');
 var bikevox = require('./bikevox');
 var herorig = require('./herorig');
@@ -8698,7 +7304,7 @@ function createRideView(scene) {
       if (roads) roads.geometry.dispose(); if (wires) { wires.geometry.dispose(); wires.material.dispose(); }
       if (treeGeos) treeGeos.forEach(function (g) { g.dispose(); });
       sky.dispose(); signMat.map.dispose(); signMat.dispose(); shadowMat.dispose(); blob.dispose();
-      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); ambient.dispose(); traffic.dispose(); cars = {};
+      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); traffic.dispose(); cars = {};
     }
   };
 }

@@ -8,7 +8,7 @@ async function shoot(skin) {
   var b = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   var page = await (await b.newContext({ viewport: { width: 700, height: 520 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); });
-  await page.goto('file://' + file + '?skin=' + skin + '#studio'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
+  await page.goto('file://' + file + '?skin=' + skin + '?dev=1#studio'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
   var ids = await page.evaluate(function () { return Array.prototype.map.call(document.querySelectorAll('[id^="pose-"]'), function (e) { return e.id; }); });
   for (var i = 0; i < ids.length && i < 6; i++) {
     await page.click('#' + ids[i]); await page.waitForTimeout(1600);

@@ -7,13 +7,13 @@ var counts = (process.argv[2] || '5,7').split(',').map(Number), file = process.a
   var b = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   var page = await (await b.newContext({ viewport: { width: 900, height: 600 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); });
-  await page.goto('file://' + file + ('?skin=' + (process.env.SKIN || 1) + (process.env.TIER ? '&tier=' + process.env.TIER : '')) + '#street'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
+  await page.goto('file://' + file + ('?skin=' + (process.env.SKIN || 1) + (process.env.TIER ? '&tier=' + process.env.TIER : '')) + '#fight=market,2').replace('?skin=', '?dev=1&skin='); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
   for (var i = 0; i < counts.length; i++) {
     var n = counts[i];
     var r = await page.evaluate(function (n) {
-      var g = window.__game.ctx, w = g.world; w.mounted = false; w.player.x = 0; w.player.z = 0; w.combat.auto = false;
+      var g = window.__game.ctx, w = g.fight;
       var list = w.combat.enemies, proto = list[0] ? JSON.parse(JSON.stringify(list[0])) : { id: 1, kind: 'thug', x: 0, z: 0, px: 0, pz: 0, face: 0, hp: 9999, maxHp: 9999, st: 'approach', t: 0, cd: 60, kx: 0, kz: 0, phase: 0, canBlock: false, guarding: false, guardHits: 0, guardCool: 0, guardTimer: 0, blockT: 99, lastMove: '', hitN: 0 }; list.length = 0;
-      for (var k = 0; k < n; k++) { var e = JSON.parse(JSON.stringify(proto)); e.id = 900 + k; e.x = e.px = Math.cos(k / n * 6.28) * 3.2; e.z = e.pz = Math.sin(k / n * 6.28) * 3.2; e.st = 'approach'; e.hp = e.maxHp = 9999; list.push(e); }
+      for (var k = 0; k < n; k++) { var e = JSON.parse(JSON.stringify(proto)); e.id = 900 + k; e.x = e.px = w.player.x + Math.cos(k / n * 6.28) * 3.2; e.z = e.pz = w.player.z - 3 + Math.sin(k / n * 6.28) * 3.2; e.st = 'approach'; e.hp = e.maxHp = 9999; list.push(e); }
       return list.length;
     }, n);
     await page.waitForTimeout(2500);

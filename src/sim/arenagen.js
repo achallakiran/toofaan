@@ -1,12 +1,10 @@
-/* sim: fight arenas as chunk specs. When the ride brings Toofan to a trouble spot, the fight is held in a closed arena built for that
-   kind of place instead of the open city: the arena is one spec at the location's chunk (same world position, so keys and clears line
-   up), and every chunk round it is bare ground the camera never sees past the backdrop. The spec has the usual fields (boxes, solids,
-   ramps, hazards, loc) plus `tall` (fadeable groups), `signs` (painted text for the view) and `bounds` (where the fight can go). */
+/* sim: fight arenas. When the ride brings Toofan to a trouble spot, the fight (sim/fightworld) is held in a closed arena built for that kind
+   of place. The spec has the arena's boxes and solid footprints, `tall` (fadeable groups), `signs` (painted text for the view), `bounds`
+   (where the fight can go), the start point and the place (`loc`) with its spawn points. */
 'use strict';
 
 var CONFIG = require('../data/config');
 var rngMod = require('../core/rng');
-var gen = require('./chunkgen');
 var kit = require('./arenakit');
 var arenas = require('./arenas');
 var D = require('../data/locations');
@@ -25,22 +23,13 @@ function build(seed, type, cx, cz) {
   });
   var B = arenas.BOUNDS;
   return {
-    key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: ox, oz: oz, kind: 'arena', arena: type,
-    boxes: o.boxes, tall: o.tall, signs: o.signs, solids: o.solids, ramps: [], hazards: [],
+    key: cx + ',' + cz, cx: cx, cz: cz, ox: ox, oz: oz, kind: 'arena', arena: type,
+    boxes: o.boxes, tall: o.tall, signs: o.signs, solids: o.solids,
     bounds: { x0: ox + B.x0, z0: oz + B.z0, x1: ox + B.x1, z1: oz + B.z1 },
     start: { x: ox + arenas.START.x, z: oz + arenas.START.z },
-    loc: { type: type, name: def.name, n: def.n, stick: def.stick, r: def.r, x: ox, z: oz, side: 0, axis: 'x',
+    loc: { type: type, name: def.name, n: def.n, stick: def.stick, x: ox, z: oz,
            spawns: info.spawns.map(function (s) { var q = kit.squeeze(s[0], s[1]); return { x: ox + q[0], z: oz + q[1] }; }) }
   };
 }
 
-/* a chunk generator for the streaming system: the arena at (cx, cz), bare ground elsewhere */
-function createGen(type, acx, acz) {
-  return function (seed, cx, cz) {
-    if (cx === acx && cz === acz) return build(seed, type, cx, cz);
-    var S = CONFIG.CHUNK_SIZE;
-    return { key: gen.chunkKey(cx, cz), cx: cx, cz: cz, ox: cx * S, oz: cz * S, kind: 'void', boxes: [], solids: [], ramps: [], hazards: [], loc: null };
-  };
-}
-
-module.exports = { has: has, build: build, createGen: createGen };
+module.exports = { has: has, build: build };

@@ -7,7 +7,7 @@ function req(p) { return require(path.join(S, p)); }
 
 var rngMod = req('core/rng'), busMod = req('core/events'), inputMod = req('core/input'), loopMod = req('core/loop');
 var saveMod = req('core/save'), scopeMod = req('core/scope'), modesMod = req('core/modes');
-var gen = req('sim/chunkgen'), worldMod = req('sim/world'), boxmesh = req('view/boxmesh'), CONFIG = req('data/config');
+var fwMod = req('sim/fightworld'), boxmesh = req('view/boxmesh'), CONFIG = req('data/config');
 
 var passed = 0, failed = 0;
 function test(name, fn) {
@@ -87,48 +87,50 @@ test('modes: exit disposes the previous scope before the next enter', function (
 });
 
 console.log('sim');
-test('chunkgen: same seed and coordinates give identical specs', function () {
-  assert.deepStrictEqual(gen.generateChunk(42, 3, -1), gen.generateChunk(42, 3, -1));
-  assert.notDeepStrictEqual(gen.generateChunk(42, 3, -1).boxes, gen.generateChunk(43, 3, -1).boxes);
-});
-test('chunkgen: road chunk keeps the roadway clear and has raised shopfronts', function () {
-  var c = gen.generateChunk(7, 0, 0), S = CONFIG.CHUNK_SIZE / 2;
-  c.boxes.forEach(function (b) { if (b.y1 > 3) assert(b.z0 >= 8 || b.z1 <= -8 || b.z0 > 7 || b.z1 < -7, 'tall box in roadway'); });
-  assert(c.boxes.some(function (b) { return Math.abs(b.y1 - 2.7) < 1e-6; }), 'shop band missing');
-  assert(c.boxes.every(function (b) { return b.x0 >= -S - 1e-6 && b.x1 <= S + 1e-6; }), 'box outside chunk');
-});
-test('world: identical inputs from the same seed give identical hashes', function () {
-  function run(seed) {
-    var bus = busMod.createBus(), w = worldMod.createWorld(seed, bus), inp = inputMod.createInput();
-    for (var t = 0; t < 900; t++) {
-      inp.setAxis(Math.sin(t / 50), Math.cos(t / 37)); inp.setButton('attack', t % 40 === 5); inp.setButton('block', t % 90 === 30);
-      inp.tick(t); worldMod.step(w, inp);
-    }
-    return worldMod.hash(w);
+/* a recorded fight at five places (scripted stick, blows and blocks): every one of these was checked tick by tick against the old street
+   brawler before it was removed (same blows, same knockdowns, same health), so a change here means the fighting itself has changed */
+function replay(type, ti, atkP) {
+  var lineupMod = req('sim/lineup'), G = req('data/gangs');
+  var lu = lineupMod.lineup(3, rngMod.createRng(99 + ti), G.GANGS[G.gangOf(type)].mix), fw = fwMod.create({ seed: 12345 + ti, bus: { emit: function () {} }, type: type, lineup: lu });
+  var r = rngMod.createRng(7 + ti), I = inputMod.createInput(), sched = [], lock = -1, ci = 0, MV = ['jab', 'cross', 'hook', 'kick', 'uppercut'], t, q;
+  for (t = 0; t < 2400 && fw.state === 'fight'; t++) {
+    var a = r.next(), mx = Math.sin(t / 37) * (a < 0.5 ? 1 : 0), my = Math.cos(t / 53) * (a < 0.5 ? 1 : 0), atk = r.next() < atkP, blk = r.next() < 0.08;
+    I.setAxis(mx, my); I.setButton('attack', atk); I.setButton('block', blk); I.tick(t);
+    if (I.state.pressed.attack && !(lock > t)) { lock = t + 22; sched.push({ at: t + 9, move: MV[ci % 5], last: ci % 5 === 4 }); ci++; }
+    for (q = sched.length - 1; q >= 0; q--) if (sched[q].at === t) { fw.pendingStrikes.push({ move: sched[q].move, last: sched[q].last }); sched.splice(q, 1); }
+    fw.attackLock = lock > t; fwMod.step(fw, I);
   }
-  assert.strictEqual(run(11), run(11)); assert.notStrictEqual(run(11), run(12));
+  return [fw.state, fw.combat.kills, fw.player.hp, fwMod.hash(fw)];
+}
+test('fight replay: recorded fights play out exactly as they did in the old brawler (won, lost and still going)', function () {
+  var GOLD = { market: [['cleared', 6, 74, 383987282], ['lost', 1, 0, 3421740356]], temple: [['cleared', 6, 88, 3458210680], ['fight', 3, 16, 478999363]],
+    toll: [['cleared', 6, 26, 3243150521], ['lost', 1, 0, 2497604353]], railway: [['cleared', 6, 87, 2495508288], ['lost', 1, 0, 778287865]], warehouse: [['cleared', 6, 64, 3390784540], ['lost', 1, 0, 1644809001]] };
+  Object.keys(GOLD).forEach(function (type, i) { assert.deepStrictEqual([replay(type, i, 0.3), replay(type, i, 0.03)], GOLD[type], type); });
 });
-test('world: different input changes the hash', function () {
-  var bus = busMod.createBus(), a = worldMod.createWorld(1, bus), b = worldMod.createWorld(1, bus), i1 = inputMod.createInput(), i2 = inputMod.createInput();
-  i1.setAxis(1, 0); i1.tick(0); i2.tick(0); worldMod.step(a, i1); worldMod.step(b, i2);
-  assert.notStrictEqual(worldMod.hash(a), worldMod.hash(b));
+test('fight: identical inputs from the same seed give identical hashes; different input changes it', function () {
+  function run(seed, k) {
+    var fw = fwMod.create({ seed: seed, type: 'temple' }), inp = inputMod.createInput();
+    for (var t = 0; t < 900; t++) { inp.setAxis(Math.sin(t / 50) * k, Math.cos(t / 37)); inp.setButton('attack', t % 40 === 5); inp.setButton('block', t % 90 === 30); inp.tick(t); fwMod.step(fw, inp); }
+    return fwMod.hash(fw);
+  }
+  assert.strictEqual(run(11, 1), run(11, 1)); assert.notStrictEqual(run(11, 1), run(12, 1)); assert.notStrictEqual(run(11, 1), run(11, 0.5));
 });
-test('rage gate: finisher only fires at full rage, then resets', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(1, bus), inp = inputMod.createInput(), t = 0; w.bike.x = 500;
-  function press(name) { inp.setButton(name, true); inp.tick(t++); worldMod.step(w, inp); inp.setButton(name, false); inp.tick(t++); worldMod.step(w, inp); }
-  press('finisher'); assert.strictEqual(w.counters.finishers, 0);
-  for (var i = 0; i < 9; i++) press('attack');
-  assert.strictEqual(w.player.rage, 100); press('finisher');
-  assert.strictEqual(w.counters.finishers, 1); assert.strictEqual(w.player.rage, 0);
+test('rage gate: the finisher only fires at full rage, then resets', function () {
+  var f = fightWorld(), p = f.w.player;
+  function press(name) { f.inp.setButton(name, true); f.tick(1); f.inp.setButton(name, false); f.tick(1); }
+  p.rage = 99; press('finisher'); assert.strictEqual(f.w.counters.finishers, 0);
+  p.rage = 100; press('finisher'); assert.strictEqual(f.w.counters.finishers, 1); assert.strictEqual(p.rage, 0);
 });
 
 
-console.log('street fight');
+console.log('fight');
+/* a bare fight: open ground round the origin, no men yet, Toofan at the centre facing +z (each test brings its own men) */
 function fightWorld() {
-  var bus = busMod.createBus(), w = worldMod.createWorld(7, bus), inp = inputMod.createInput(), t = 0, ev = []; w.bike.x = 500;
-  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
-  worldMod.startFight(w); w.combat.enemies.length = 0;
-  return { w: w, inp: inp, ev: ev, tick: function (n) { for (var i = 0; i < (n || 1); i++) { inp.tick(t++); worldMod.step(w, inp); } },
+  var bus = busMod.createBus(), w = fwMod.create({ seed: 7, bus: bus, type: 'market' }), inp = inputMod.createInput(), t = 0, ev = [];
+  w.combat.enemies.length = 0; w.hadMen = false; w.arena = { solids: [], ox: 0, oz: 0 }; w.bounds = { x0: -60, z0: -60, x1: 60, z1: 60 };
+  var p = w.player; p.x = p.px = 0; p.z = p.pz = 0; p.face = 0;
+  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown', 'fight:clear', 'fight:lost'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
+  return { w: w, inp: inp, ev: ev, tick: function (n) { for (var i = 0; i < (n || 1); i++) { inp.tick(t++); fwMod.step(w, inp); } },
     count: function (n) { return ev.filter(function (e) { return e[0] === n; }).length; } };
 }
 var combatMod = req('sim/combat');
@@ -174,11 +176,15 @@ test('fight: a stick swing cannot be blocked', function () {
   combatMod.spawn(f.w, 'stick', 0, 1.2); var e = f.w.combat.enemies[0]; e.cd = 0; f.tick(1); f.tick(80);
   assert.strictEqual(f.count('playerHurt'), 1);
 });
-test('fight: finisher whirl clears everybody around, a new wave arrives afterwards', function () {
+test('fight: the finisher whirl clears everybody around; the place is cleared and no new wave comes', function () {
   var f = fightWorld(); [[1.5, 0], [-1.5, 0.4], [0, -2], [2.5, 2]].forEach(function (p) { combatMod.spawn(f.w, 'thug', p[0], p[1]); });
   f.w.combat.enemies.forEach(function (e) { e.cd = 9999; });
   for (var h = 0; h < 6; h++) f.w.pendingStrikes.push('finisherWhirl'); f.tick(1);
-  assert.strictEqual(f.count('ko'), 4); f.tick(400); assert.ok(f.count('wave') >= 1);
+  assert.strictEqual(f.count('ko'), 4); f.tick(400); assert.strictEqual(f.count('fight:clear'), 1); assert.strictEqual(f.count('wave'), 0); assert.strictEqual(f.w.state, 'cleared');
+});
+test('fight: down too long and the fight is lost (no street wave starts round him)', function () {
+  var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.0); var e = f.w.combat.enemies[0]; e.cd = 0; f.w.player.hp = 1;
+  f.tick(400); assert.strictEqual(f.w.state, 'lost'); assert.strictEqual(f.count('fight:lost'), 1); assert.strictEqual(f.count('wave'), 0); assert.strictEqual(f.w.combat.enemies.length, 1);
 });
 test('fight: an unguarded thug takes six blows of the string before he falls, and stays where he stands', function () {
   var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.1); var e = f.w.combat.enemies[0]; e.cd = 9999; f.w.player.face = 0;
@@ -204,18 +210,13 @@ test('fight: a normal blow hits only one man', function () {
   assert.strictEqual(f.count('hit'), 1);
 });
 test('fight: enemies queue up - two or three fight at once, the rest hold a ring', function () {
-  var f = fightWorld(); f.w.combat.enemies.length = 0; combatMod.begin(f.w); var maxAtt = 0, maxClose = 0, c = f.w.combat;
+  var f = fightWorld(), pts = [], c = f.w.combat, k; for (k = 0; k < 7; k++) pts.push({ x: Math.cos(k * 0.9) * 9, z: Math.sin(k * 0.9) * 9 }); c.wave = 2; c.lineup = ['thug', 'thug', 'thug', 'thug', 'thug', 'thug', 'stick']; combatMod.startLocation(f.w, 'test', pts, 7, 1); var maxAtt = 0, maxClose = 0;
   for (var i = 0; i < 900; i++) {
     f.w.player.hp = 100; f.tick(1);
     var att = 0, close = 0; c.enemies.forEach(function (e) { if (e.st === 'windup' || e.st === 'strike') att++; if (Math.hypot(e.x - f.w.player.x, e.z - f.w.player.z) < 2.3) close++; });
     if (att > maxAtt) maxAtt = att; if (close > maxClose) maxClose = close;
   }
   assert.ok(maxAtt <= 3, 'attackers ' + maxAtt); assert.ok(maxClose <= 3, 'close ' + maxClose);
-});
-test('fight: waves spawn all round the hero', function () {
-  var f = fightWorld(); f.w.combat.enemies.length = 0; combatMod.begin(f.w); var sides = {};
-  f.w.combat.enemies.forEach(function (e) { sides[(e.x > 0 ? 'E' : 'W') + (e.z > 0 ? 'S' : 'N')] = 1; });
-  assert.ok(Object.keys(sides).length >= 3, JSON.stringify(sides));
 });
 test('lock-on: the stick picks the target, the lock holds, blows go to him, and the hero closes the gap', function () {
   var f = fightWorld(); combatMod.spawn(f.w, 'thug', 2.0, 0); combatMod.spawn(f.w, 'thug', -2.0, 0.2); f.w.combat.enemies.forEach(function (e) { e.cd = 9999; });
@@ -229,38 +230,19 @@ test('lock-on: the stick picks the target, the lock holds, blows go to him, and 
   east.st = 'down'; f.tick(1); f.inp.setAxis(0, 0);
 });
 test('fight: same seed and inputs give the same fight', function () {
-  function run() { var f = fightWorld(); f.w.combat.enemies.length = 0; combatMod.begin(f.w); f.tick(300); return worldMod.hash(f.w) + ':' + f.w.combat.enemies.map(function (e) { return e.x.toFixed(3) + e.st; }).join(); }
+  function run() { var f = fightWorld(), pts = [{ x: 6, z: 0 }, { x: -6, z: 1 }, { x: 0, z: 7 }, { x: 1, z: -6 }]; combatMod.startLocation(f.w, 'test', pts, 4, 1); f.tick(300); return fwMod.hash(f.w) + ':' + f.w.combat.enemies.map(function (e) { return e.x.toFixed(3) + e.st; }).join(); }
   assert.strictEqual(run(), run());
 });
 
-console.log('streaming and memory budget');
-test('streaming: loads the full window, then only the edge on movement', function () {
-  var bus = busMod.createBus(), loads = 0, unloads = 0; bus.on('chunk:load', function () { loads++; }); bus.on('chunk:unload', function () { unloads++; });
-  var w = worldMod.createWorld(3, bus), side = 2 * CONFIG.STREAM_RADIUS + 1;
-  assert.strictEqual(w.streaming.loadedCount(), side * side); assert.strictEqual(loads, side * side);
-  loads = 0; w.streaming.update(CONFIG.CHUNK_SIZE, 0);
-  assert.strictEqual(loads, side); assert.strictEqual(unloads, side);
-});
-test('streaming: a long random walk never exceeds the chunk budget and frees what it unloads', function () {
-  var bus = busMod.createBus(), live = {}, peak = 0;
-  bus.on('chunk:load', function (e) { live[e.key] = 1; peak = Math.max(peak, Object.keys(live).length); });
-  bus.on('chunk:unload', function (e) { assert(live[e.key], 'unload of unknown chunk'); delete live[e.key]; });
-  var w = worldMod.createWorld(8, bus), r = rngMod.createRng(99), x = 0, z = 0;
-  for (var i = 0; i < 4000; i++) { x += r.range(-12, 12); z += r.range(-12, 12); w.streaming.update(x, z); }
-  assert(peak <= CONFIG.BUDGET.maxLoadedChunks, 'peak ' + peak);
-  assert.deepStrictEqual(Object.keys(live).sort(), w.streaming.loadedKeys());
-});
-test('streaming: returning to a recent area reuses cached specs', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(5, bus);
-  w.streaming.update(CONFIG.CHUNK_SIZE, 0); w.streaming.update(CONFIG.CHUNK_SIZE * 2, 0);
-  w.streaming.update(CONFIG.CHUNK_SIZE, 0); w.streaming.update(0, 0);
-  assert(w.streaming.stats.cacheHits >= 10, 'hits ' + w.streaming.stats.cacheHits);
-});
-test('mesh: a full window stays under the triangle budget', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(21, bus), tris = 0;
-  w.streaming.snapshotSpecs().forEach(function (s) { tris += boxmesh.boxesToArrays(s.boxes, CONFIG.PALETTE).triangles; });
-  assert(tris <= CONFIG.BUDGET.maxTriangles, 'triangles ' + tris);
-  console.log('       full window: ' + tris + ' triangles');
+console.log('arenas and memory budget');
+test('mesh: every arena stays under the triangle budget', function () {
+  var ag = req('sim/arenagen'), LOCD = req('data/locations'), worst = 0;
+  LOCD.ORDER.forEach(function (type) {
+    var a = ag.build(21, type, 0, 0), tris = boxmesh.boxesToArrays(a.boxes, CONFIG.PALETTE).triangles;
+    a.tall.forEach(function (g) { tris += boxmesh.boxesToArrays(g.boxes, CONFIG.PALETTE).triangles; }); worst = Math.max(worst, tris);
+    assert(tris <= CONFIG.BUDGET.maxTriangles, type + ' triangles ' + tris);
+  });
+  console.log('       busiest arena: ' + worst + ' triangles');
 });
 test('mesh: arrays are consistent', function () {
   var a = boxmesh.boxesToArrays([{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 2, z1: 3, c: 0 }], CONFIG.PALETTE);
@@ -287,14 +269,14 @@ test('counters: three guitar counters draw from the back, fire their hits and th
 });
 
 test('sim: no walking while a move plays or Block is held', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), t = 0, x0;
-  inp.setAxis(1, 0); inp.tick(t++); worldMod.step(w, inp);
-  x0 = w.player.x; for (var i = 0; i < 30; i++) { inp.tick(t++); worldMod.step(w, inp); }
+  var f = fightWorld(), w = f.w, inp = f.inp, x0;
+  inp.setAxis(1, 0); f.tick(1);
+  x0 = w.player.x; f.tick(30);
   assert(w.player.x > x0 + 0.5, 'walks when free');
-  w.attackLock = true; x0 = w.player.x; for (i = 0; i < 30; i++) { inp.tick(t++); worldMod.step(w, inp); }
+  w.attackLock = true; x0 = w.player.x; f.tick(30);
   assert.strictEqual(w.player.x, x0); assert.strictEqual(w.player.moving, false);
-  w.attackLock = false; inp.setButton('block', true); inp.tick(t++); worldMod.step(w, inp); x0 = w.player.x;
-  for (i = 0; i < 30; i++) { inp.tick(t++); worldMod.step(w, inp); }
+  w.attackLock = false; inp.setButton('block', true); f.tick(1); x0 = w.player.x;
+  f.tick(30);
   assert.strictEqual(w.player.x, x0, 'held block pins the hero');
 });
 test('camera: finisher and counters fly a continuous shot that returns to the chase camera', function () {
@@ -361,184 +343,11 @@ test('fight: while a man is held in the broken-guard sequence, two others can st
   assert.ok(started >= 2, 'others attacked: ' + started); assert.strictEqual(a.st, 'hurt', 'the dazed man is still held');
 });
 
-console.log('\ncity and bike');
-var citygen = req('sim/citygen'), bikeMod = req('sim/bike'), streamMod = req('sim/streaming'), BIKE = req('data/bike');
-test('city: same seed and coordinates give identical chunks; kinds follow the road grid', function () {
-  assert.deepStrictEqual(citygen.generate(42, 4, -3), citygen.generate(42, 4, -3));
-  assert.strictEqual(citygen.generate(1, 0, 0).kind, 'roadH'); assert.strictEqual(citygen.generate(1, 1, 0).kind, 'cross');
-  assert.strictEqual(citygen.generate(1, 1, 1).kind, 'roadV'); assert.strictEqual(citygen.generate(1, 2, 1).kind, 'block');
-});
-test('city: every chunk keeps its boxes and footprints inside it; roadways are clear of footprints; the start chunk has no ramp', function () {
-  var S = CONFIG.CHUNK_SIZE / 2, cx, cz;
-  for (cx = -4; cx <= 4; cx++) for (cz = -4; cz <= 4; cz++) {
-    var c = citygen.generate(11, cx, cz);
-    assert(c.boxes.every(function (b) { return b.x0 >= -S - 1e-6 && b.x1 <= S + 1e-6 && b.z0 >= -S - 1e-6 && b.z1 <= S + 1e-6; }), 'box outside ' + c.key);
-    assert(c.solids.every(function (q) { return q.x0 >= -S - 1e-6 && q.x1 <= S + 1e-6 && q.z0 >= -S - 1e-6 && q.z1 <= S + 1e-6; }), 'footprint outside ' + c.key);
-    if (c.kind === 'roadH' && !(c.loc && !c.loc.side)) assert(c.solids.every(function (q) { return q.z0 >= 7.3 || q.z1 <= -7.3; }), 'footprint in the roadway ' + c.key);
-    if (c.kind === 'roadV' && !(c.loc && !c.loc.side)) assert(c.solids.every(function (q) { return q.x0 >= 7.3 || q.x1 <= -7.3; }), 'footprint in the roadway ' + c.key);
-    if (c.kind === 'cross') assert(c.solids.every(function (q) { return (q.x0 >= 7 || q.x1 <= -7) && (q.z0 >= 7 || q.z1 <= -7); }), 'footprint in the junction');
-  }
-  assert.strictEqual(citygen.generate(11, 0, 0).ramps.length, 0);
-});
-test('city: no jump ramps in the city; streaming keeps within the chunk budget and ground height follows a ramp when a generator provides one', function () {
-  var bus0 = busMod.createBus(), st0 = streamMod.createStreaming(5, bus0, citygen.generate), q, r2; st0.update(0, 0);
-  for (q = -8; q <= 8; q++) for (r2 = -8; r2 <= 8; r2++) assert.strictEqual(citygen.generate(5, q, r2).ramps.length, 0, 'ramp at ' + q + ',' + r2);
-  var bus = busMod.createBus(), st = streamMod.createStreaming(5, bus), found = null, cx, cz;
-  st.update(0, 0);
-  for (cx = -6; cx <= 6 && !found; cx++) for (cz = -6; cz <= 6 && !found; cz++) { var c = gen.generateChunk(5, cx, cz); if (c.ramps.length) found = c; }
-  assert(found, 'some ramp exists'); st.update(found.ox, found.oz);
-  var r = found.ramps[0], mid = (r.z0 + r.z1) / 2;
-  assert(st.groundAt(found.ox + r.x0 + 0.1, found.oz + mid) < 0.5); assert(Math.abs(st.groundAt(found.ox + r.x1 - 0.01, found.oz + mid) - r.h) < 0.1);
-  assert(st.loadedCount() <= CONFIG.BUDGET.maxLoadedChunks);
-});
-function flat() { return { groundAt: function () { return 0; }, solidsNear: function () { return []; } }; }
-function ride(b, env, n, c) { for (var i = 0; i < n; i++) bikeMod.step(b, typeof c === 'function' ? c(i) : c, env, 1 / 60, null); }
-var GO = { throttle: 1, brake: 0, steer: 0, boost: false, drift: false, stunt: false };
-test('bike: builds speed gradually, never above top speed, and brakes to a stop', function () {
-  var b = bikeMod.createBike(0, 0, 0), env = flat();
-  ride(b, env, 60, GO); assert(b.speed > 2.5 && b.speed < 8, 'after 1 s ' + b.speed);
-  var t60 = 0, c60 = bikeMod.createBike(0, 0, 0); while (c60.speed < 16.7 && t60 < 3000) { ride(c60, env, 1, GO); t60++; } assert(t60 / 60 > 5 && t60 / 60 < 14, '0 to 60 km/h takes ' + t60 / 60 + ' s: a Bullet, not a sports bike');
-  ride(b, env, 1500, GO); assert(b.speed <= BIKE.MAX_SPEED + 0.01 && b.speed > BIKE.MAX_SPEED - 4, 'top ' + b.speed);
-  ride(b, env, 600, { throttle: 0, brake: 1, steer: 0, boost: false, drift: false, stunt: false }); assert(b.speed <= 0.3, 'stopped ' + b.speed);
-});
-test('bike: boost raises the top speed and drains the meter; a heavy cruiser turns in a wide arc at speed', function () {
-  var b = bikeMod.createBike(0, 0, 0); ride(b, flat(), 1200, GO); var s0 = b.speed;
-  ride(b, flat(), 120, { throttle: 1, brake: 0, steer: 0, boost: true, drift: false, stunt: false }); assert(b.speed > s0 + 2 && b.boost < 1, 'boost');
-  var c = bikeMod.createBike(0, 0, 0); ride(c, flat(), 900, GO); var h0 = c.h; ride(c, flat(), 60, { throttle: 1, brake: 0, steer: 1, boost: false, drift: false, stunt: false });
-  var turn = h0 - c.h; assert(turn > 0.2 && turn < 1.2, 'one second at full lock turns ' + turn + ' rad (right turn lowers heading)');
-});
-test('bike: a wall stops it and a hard hit crashes it; it cannot end up inside the footprint', function () {
-  var env = { groundAt: function () { return 0; }, solidsNear: function () { return [{ x0: 30, z0: -5, x1: 40, z1: 5, y1: 10 }]; } };
-  var b = bikeMod.createBike(0, 0, Math.PI / 2), crashed = 0, bus = busMod.createBus(); bus.on('ride:crash', function () { crashed++; });
-  for (var i = 0; i < 1500; i++) bikeMod.step(b, GO, env, 1 / 60, bus);
-  assert(b.x <= 30 - BIKE.RADIUS + 0.01, 'x ' + b.x); assert(crashed >= 1);
-});
-function rampEnv() { return { groundAt: function (x) { return x < 0 || x > 8 ? 0 : 3.0 * x / 8; }, solidsNear: function () { return []; } }; }
-test('bike: a ramp throws it into the air for about a second, then it lands', function () {
-  var b = bikeMod.createBike(-30, 0, Math.PI / 2), bus = busMod.createBus(), ev = []; bus.on('ride:jump', function () { ev.push('j'); }); bus.on('ride:land', function () { ev.push('l'); });
-  var maxY = 0, air = 0; for (var i = 0; i < 1200; i++) { bikeMod.step(b, GO, rampEnv(), 1 / 60, bus); if (b.air) air++; maxY = Math.max(maxY, b.y); }
-  assert.deepStrictEqual(ev, ['j', 'l']); assert(air > 40 && air < 120, 'air ticks ' + air); assert(maxY > 3.0, 'maxY ' + maxY); assert.strictEqual(b.y, 0);
-});
-test('world: walk up to the bike, Attack mounts, riding moves the player and the streaming, Block at a standstill parks and steps off beside it', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), ev = [];
-  ['ride:mount', 'ride:park'].forEach(function (n) { bus.on(n, function () { ev.push(n); }); });
-  function run(n, mx, my, atk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', atk && i === 0); inp.tick(w.tick); worldMod.step(w, inp); } }
-  run(2, 0, 0, false); run(2, 0, 0, true); assert(w.mounted, 'mounted');
-  run(300, 0, 1, false); assert(w.bike.speed > 5 && w.player.x > 10, 'moved ' + w.player.x); assert.strictEqual(w.player.x, w.bike.x);
-  var g0 = 0; while (w.bike.speed > 0.3 && g0++ < 2000) run(1, 0, -1, false); run(60, 0, 0, false); assert(Math.abs(w.bike.speed) < 0.7, 'slow ' + w.bike.speed); assert(w.mounted, 'still seated at a standstill');
-  run(2, 0, 0, false); inp.setButton('block', true); run(2, 0, 0, false); inp.setButton('block', false); assert(!w.mounted, 'dismounted'); assert(Math.hypot(w.player.x - w.bike.x, w.player.z - w.bike.z) < 1.5);
-  assert.deepStrictEqual(ev, ['ride:mount', 'ride:park']);
-});
-test('world: climbing on is easy beside either wheel, still works with a man a few steps away, and is refused only when one is right beside him', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), b = w.bike, fx = Math.sin(b.h), fz = Math.cos(b.h);
-  function tryAt(x, z) { w.mounted = false; w.player.x = x; w.player.z = z; inp.setButton('attack', false); for (var q = 0; q < 12; q++) { inp.tick(w.tick); worldMod.step(w, inp); w.mounted = false; } inp.tick(w.tick); worldMod.step(w, inp); inp.setButton('attack', true); inp.tick(w.tick); worldMod.step(w, inp); inp.setButton('attack', false); inp.tick(w.tick); worldMod.step(w, inp); return w.mounted; }
-  assert(tryAt(b.x + fx * 1.0 + fz * 1.3, b.z + fz * 1.0 - fx * 1.3), 'beside the front wheel');
-  assert(tryAt(b.x - fx * 1.0 + fz * 1.3, b.z - fz * 1.0 - fx * 1.3), 'beside the back wheel');
-  assert(!tryAt(b.x + 4, b.z + 4), 'too far');
-  combatMod.spawn(w, 'thug', b.x + 6, b.z); assert(tryAt(b.x + fz * 1.3, b.z - fx * 1.3), 'a man a few steps off does not stop him');
-  w.combat.enemies.length = 0; combatMod.spawn(w, 'thug', b.x + fz * 2.0, b.z - fx * 2.0); assert(!tryAt(b.x + fz * 1.3, b.z - fx * 1.3), 'a man right beside him means fight');
-});
-test('world: the same seed and the same inputs give the same hash with the bike in play', function () {
-  function go() { var bus = busMod.createBus(), w = worldMod.createWorld(8, bus), inp = inputMod.createInput();
-    for (var t = 0; t < 1500; t++) { inp.setAxis(Math.sin(t / 90) * 0.8, t < 1200 ? 1 : 0); inp.setButton('attack', t === 3 || t % 200 === 150); inp.setButton('block', t % 333 > 300); inp.tick(w.tick); worldMod.step(w, inp); } return worldMod.hash(w); }
-  assert.strictEqual(go(), go());
-});
-
-test('world: the parked bike is solid; he walks around it, not through it', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(), b = w.bike, fx = Math.sin(b.h), fz = Math.cos(b.h);
-  w.combat.enabled = false; w.player.x = b.x + fz * 2.5; w.player.z = b.z - fx * 2.5;
-  for (var i = 0; i < 240; i++) { inp.setAxis(-fz, fx); inp.tick(w.tick); worldMod.step(w, inp); }       /* walk straight at the bike from the side */
-  var side = (w.player.x - b.x) * fz - (w.player.z - b.z) * fx; assert(side > 0.6, 'pushed out of the bike, side distance ' + side);
-});
-function rideWorld() { var bus = busMod.createBus(), w = worldMod.createWorld(3, bus), inp = inputMod.createInput(); w.combat.enemies.length = 0; w.combat.enabled = false; w.mounted = true; w.mountTick = -99; w.atkArmed = true;
-  return { w: w, inp: inp, bus: bus, stop: function () { var g = 0; while (Math.abs(w.bike.speed) > 0.3 && g++ < 2000) this.run(1, 0, w.bike.speed > 0 ? -1 : 0, false); this.run(60, 0, 0, false); },
-  run: function (n, mx, my, atk, blk) { for (var i = 0; i < n; i++) { inp.setAxis(mx, my); inp.setButton('attack', typeof atk === 'function' ? atk(i) : !!atk); inp.setButton('block', !!blk); inp.tick(w.tick); worldMod.step(w, inp); } } }; }
-test('ride controls: a held Attack boosts, a tap with nobody near still swings, a tap beside a man fights', function () {
-  var R = rideWorld(), w = R.w, acts = 0; R.bus.on('action', function () { acts++; });
-  R.run(200, 0, 1, false); var s0 = w.bike.speed, seen = false; for (var q = 0; q < 50; q++) { R.run(1, 0, 1, true); if (w.bike.boosting) seen = true; } assert(seen && w.bike.speed > s0 && w.bike.boost < 1, 'hold boosts');
-  R.run(5, 0, 1, false); acts = 0; R.run(8, 0, 1, function (i) { return i < 4; }); assert(acts >= 1, 'a tap always swings');
-  R.run(5, 0, 0, false); w.combat.enabled = true; combatMod.spawn(w, 'thug', w.bike.x + Math.cos(w.bike.h) * 1.6, w.bike.z - Math.sin(w.bike.h) * 1.6);
-  R.run(2, 0, 0, function (i) { return i === 0; }); assert(acts >= 1, 'tap beside a man starts a blow'); assert(!w.bike.boosting, 'that hold is not a boost');
-});
-test('ride controls: Block parks only at a standstill with nobody close; a man close means Block is for the fight', function () {
-  var R = rideWorld(), w = R.w; R.run(200, 0, 1, false); R.run(4, 0, 0, false, true); assert(w.mounted, 'no parking at speed');
-  R.stop(); w.combat.enabled = true; combatMod.spawn(w, 'thug', w.bike.x + 2.5, w.bike.z); R.run(2, 0, 0, false, true); assert(w.mounted, 'a man close: no parking'); w.combat.enemies.length = 0; w.combat.enabled = false;
-  R.run(2, 0, 0, false); R.run(2, 0, 0, false, true); assert(!w.mounted, 'parked');
-});
-test('ride fight: blows from the saddle hurt a man beside the bike and not one far off; a blow rocks the bike', function () {
-  var R = rideWorld(), w = R.w, side = { x: Math.cos(w.bike.h), z: -Math.sin(w.bike.h) }; w.combat.enemies.length = 0; w.combat.enabled = true; w.attackLock = true;
-  combatMod.spawn(w, 'thug', w.bike.x + side.x * 1.7, w.bike.z + side.z * 1.7); combatMod.spawn(w, 'thug', w.bike.x - side.x * 9, w.bike.z - side.z * 9); var near = w.combat.enemies[0], far = w.combat.enemies[1], hp0 = near.hp, hf = far.hp;
-  R.run(3, 0, 0, false); R.run(1, 0, 0, true); for (var i = 0; i < 4; i++) { w.pendingStrikes.push({ move: 'cross', last: false }); R.run(1, 0, 0, false); }
-  assert(near.hp < hp0, 'near man hurt ' + near.hp + '/' + hp0); assert.strictEqual(far.hp, hf, 'far man untouched');
-});
-test('bike moves: every saddle move exists with a strike, left and right; counters escalate elbow, sweep, double', function () {
-  var moves = req('data/moves'), en = req('data/enemies'), names = ['Jab', 'Cross', 'Hook', 'Elbow', 'Kick'], n, sd;
-  for (n = 0; n < names.length; n++) for (sd = 0; sd < 2; sd++) { var k = 'bk' + names[n] + 'LR'[sd]; assert(moves.MOVES[k] && en.STRIKES[k], k); assert(!moves.MOVES[k].counter); }
-  ['bkCElbowL', 'bkCElbowR', 'bkSweepL', 'bkSweepR', 'bkDouble'].forEach(function (k) { assert(moves.MOVES[k] && moves.MOVES[k].counter && en.STRIKES[k], k); });
+test('road fight moves: every saddle blow exists left and right, and the saddle counter', function () {
+  var moves = req('data/moves'), names = ['Jab', 'Cross', 'Hook', 'Elbow', 'Kick'], n, sd;
+  for (n = 0; n < names.length; n++) for (sd = 0; sd < 2; sd++) { var k = 'bk' + names[n] + 'LR'[sd]; assert(moves.MOVES[k] && !moves.MOVES[k].counter, k); }
+  ['bkCElbowL', 'bkCElbowR'].forEach(function (k) { assert(moves.MOVES[k] && moves.MOVES[k].counter, k); });
   assert(moves.MOVES.bkJabL.keys[3].pose['armA.sx'] > 80 && moves.MOVES.bkJabR.keys[3].pose['armB.sx'] > 80, 'jab uses the near arm on each side');
-  function counterKind(hpFrac, two) {
-    var R = rideWorld(), w = R.w, kind = null; R.bus.on('counter', function (e) { kind = e.kind; }); w.combat.enabled = true; w.combat.enemies.length = 0;
-    combatMod.spawn(w, 'thug', w.bike.x + 1.5, w.bike.z); var e0 = w.combat.enemies[0]; e0.hp = e0.maxHp * hpFrac; e0.st = 'windup'; e0.t = Math.round(combatMod.KINDS.thug.windup * 60 * 0.5);
-    if (two) { combatMod.spawn(w, 'thug', w.bike.x - 1.5, w.bike.z); var e1 = w.combat.enemies[1]; e1.st = 'windup'; e1.t = e0.t; }
-    R.inp.setButton('block', true); R.inp.tick(w.tick); worldMod.step(w, R.inp); return kind;
-  }
-  assert.strictEqual(counterKind(1, false), 'bkElbow'); assert.strictEqual(counterKind(0.4, false), 'bkSweep'); assert.strictEqual(counterKind(1, true), 'bkDouble');
-});
-test('city detail: road chunks carry potholes and speed breakers inside the chunk; the bike is jarred and slowed by them', function () {
-  var cx, found = null, pot = 0, brk = 0;
-  for (cx = -6; cx <= 6; cx++) { var c = citygen.generate(11, cx, 0); if (c.kind !== 'roadH') continue; c.hazards.forEach(function (h) { if (h.k === 'pot') pot++; if (h.k === 'brk') brk++; assert(h.x0 >= -16 && h.x1 <= 16 && h.z0 >= -16 && h.z1 <= 16); }); if (!found && c.hazards.length) found = c; }
-  assert(pot > 8 && brk >= 1, 'pot ' + pot + ' brk ' + brk);
-  var env = { groundAt: function () { return 0; }, solidsNear: function () { return []; }, hazardAt: function (x) { return x > 40 && x < 41 ? 'brk' : (x > 70 && x < 71 ? 'pot' : null); } };
-  var b = bikeMod.createBike(0, 0, Math.PI / 2), bumps = 0, bus = busMod.createBus(), vmax = 0, vAfter = 0; bus.on('ride:bump', function () { bumps++; });
-  for (var i = 0; i < 1500; i++) { bikeMod.step(b, GO, env, 1 / 60, bus); if (b.x < 40) vmax = b.speed; if (b.x > 42 && !vAfter) vAfter = b.speed; }
-  assert(bumps >= 2 && vAfter < vmax, 'bumps ' + bumps + ' before ' + vmax + ' after ' + vAfter);
-});
-test('locations: forced ones sit near the start, are deterministic, stay inside the chunk and leave the road passable', function () {
-  var locsMod = req('sim/citylocs'), loc = req('data/locations');
-  ['2,0', '-1,0', '3,0', '1,1', '1,-1', '-3,0'].forEach(function (k) { var a = k.split(','), c = citygen.generate(5, +a[0], +a[1]); assert(c.loc && c.loc.type === loc.FORCED[k], k + ' ' + (c.loc && c.loc.type)); assert.deepStrictEqual(c.loc, citygen.generate(5, +a[0], +a[1]).loc); });
-  var types = {}, n = 0, cx, cz;
-  for (cx = -12; cx <= 12; cx++) for (cz = -12; cz <= 12; cz++) {
-    var c = citygen.generate(9, cx, cz); if (!c.loc) continue; n++; types[c.loc.type] = 1;
-    assert.strictEqual(c.loc.spawns.length, c.loc.n);
-    c.boxes.forEach(function (b) { assert(b.x0 >= -16 - 1e-6 && b.x1 <= 16 + 1e-6 && b.z0 >= -16 - 1e-6 && b.z1 <= 16 + 1e-6, 'box outside ' + c.key); });
-    var lane = c.loc.axis === 'x' ? function (q) { return q.z1 > -5.5 && q.z0 < 5.5 && q.x1 > -16; } : function (q) { return q.x1 > -5.5 && q.x0 < 5.5 && q.z1 > -16; };
-    var inRoad = c.solids.filter(lane).filter(function (q) { return q.y1 > 0.5; });
-    var spans = []; inRoad.forEach(function (q) { var a = c.loc.axis === 'x' ? [q.z0, q.z1] : [q.x0, q.x1]; spans.push([Math.max(-6, a[0]), Math.min(6, a[1])]); });
-    spans.sort(function (a, b) { return a[0] - b[0]; }); var edge = -6, gap = 0; spans.forEach(function (s2) { gap = Math.max(gap, s2[0] - edge); edge = Math.max(edge, s2[1]); }); gap = Math.max(gap, 6 - edge);
-    assert(gap >= 1.6 || spans.length === 0, 'a bike can pass ' + c.key + ' ' + c.loc.type + ' gap ' + gap);
-  }
-  assert(n > 20 && Object.keys(types).length >= 8, 'variety ' + n + ' ' + Object.keys(types).join());
-});
-test('traffic: vehicles appear on the lanes (left-hand side), stop for the bike, and the same run gives the same life', function () {
-  function run() { var bus = busMod.createBus(), w = worldMod.createWorld(4, bus), inp = inputMod.createInput(); w.combat.enabled = false; w.player.x = 40; w.player.z = 0; w.bike.x = 40; w.bike.z = 0; w.mounted = true;
-    for (var i = 0; i < 1800; i++) { inp.setAxis(0, 0); inp.tick(w.tick); worldMod.step(w, inp); } return w; }
-  var w = run(), w2 = run(); assert.strictEqual(worldMod.hash(w), worldMod.hash(w2));
-  var kinds = {}; w.traffic.list.forEach(function (e) { kinds[e.kind] = 1; }); assert(w.traffic.list.length >= 8, 'population ' + w.traffic.list.length);
-  w.traffic.list.forEach(function (e) {
-    var K = req('data/traffic').KINDS[e.kind]; if (K.kind !== 'veh') return;
-    var off = e.axis === 'x' ? e.z - e.road : e.x - e.road; assert(Math.abs(Math.abs(off) - 3) < 0.3 || e.t < 5 || Math.abs(off) > 5, 'on its lane ' + off);
-  });
-});
-test('traffic: the bike hits a vehicle like a wall and knocks a walker over', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(4, bus), crashes = 0, bumps = 0; bus.on('ride:crash', function (e) { if (e.with === 'bus') crashes++; }); bus.on('npc:bump', function () { bumps++; });
-  w.combat.enabled = false; w.mounted = true; w.bike.x = 0; w.bike.z = 0; w.bike.h = Math.PI / 2; w.bike.speed = 14; w.player.x = 0; w.player.z = 0;
-  w.traffic.list.push({ id: 1, kind: 'bus', x: 6, z: 0, px: 6, pz: 0, h: Math.PI / 2, ph: Math.PI / 2, v: 0, axis: 'x', road: 0, dir: 1, state: 'go', t: 10, wait: 99, phase: 0, hit: 0, dx: 0, dz: 0 });
-  var trafficMod = req('sim/traffic'); for (var i = 0; i < 30; i++) { bikeMod.step(w.bike, { throttle: 0, brake: 0, steer: 0 }, flat(), 1 / 60, null); trafficMod.collide(w.traffic, w); }
-  assert(crashes >= 1 && w.bike.speed < 10 && w.bike.x < 6 - 1, 'bus stops the bike ' + w.bike.speed + ' ' + w.bike.x);
-  w.traffic.list.length = 0; w.bike.x = 0; w.bike.speed = 10; w.traffic.list.push({ id: 2, kind: 'ped', x: 1.5, z: 0, px: 1.5, pz: 0, h: 0, ph: 0, v: 0, axis: 'x', road: 0, dir: 1, state: 'go', t: 10, wait: 0, phase: 0, hit: 0, dx: 0, dz: 0 });
-  for (i = 0; i < 20; i++) { bikeMod.step(w.bike, { throttle: 0, brake: 0, steer: 0 }, flat(), 1 / 60, null); trafficMod.collide(w.traffic, w); }
-  assert(bumps >= 1 && w.traffic.list[0].state === 'down', 'walker knocked down');
-});
-test('locations: arriving at an uncleared place starts its fight; clearing it marks it and the pointer moves on; the first wave no longer repeats forever', function () {
-  var bus = busMod.createBus(), w = worldMod.createWorld(5, bus), inp = inputMod.createInput(), started = [], cleared = [];
-  bus.on('location:start', function (e) { started.push(e.name); }); bus.on('location:clear', function (e) { cleared.push(e.name); });
-  combatMod.begin(w); w.combat.enemies.length = 0; w.player.x = 64; w.player.z = 0; w.bike.x = 5000;
-  for (var i = 0; i < 70; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
-  assert.deepStrictEqual(started, ['Market lane']); assert(w.combat.enemies.length >= 5, 'men ' + w.combat.enemies.length);
-  w.combat.enemies.forEach(function (e) { e.dead = true; e.st = 'dead'; });
-  for (i = 0; i < 70; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
-  assert.deepStrictEqual(cleared, ['Market lane']); assert(w.locs.cleared['2,0']); assert(!w.locs.active);
-  w.combat.enemies.length = 0; for (i = 0; i < 600; i++) { inp.tick(w.tick); worldMod.step(w, inp); } assert.strictEqual(w.combat.enemies.length, 0, 'no endless waves'); assert.notStrictEqual(w.locs.next.key, '2,0');
 });
 
 console.log('ride mode (Phase 4)');
@@ -639,14 +448,14 @@ console.log('ride mode (Phase 4)');
     assert.strictEqual(bad, 0, 'vehicles on the wrong side: ' + bad);
   });
 })();
-test('fight areas: for every kind of place, arriving from the ride starts its fight with the men close by (not hundreds of metres away)', function () {
-  var mission = req('modes/mission'), LOCD = req('data/locations');
+test('fight areas: every kind of place opens its fight with its men close by, inside the walls and clear of props', function () {
+  var LOCD = req('data/locations');
   LOCD.ORDER.forEach(function (type) {
-    var bus = busMod.createBus(), w = worldMod.createWorld(20261028, bus), inp = inputMod.createInput(), i;
-    mission.place({ world: w, bus: bus }, { type: type }); worldMod.startFight(w); w.combat.enemies.length = 0;
-    for (i = 0; i < 100; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
-    var p = w.player, far = w.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) > 25; }).length;
-    assert(w.combat.enemies.length >= 4 && far === 0, type + ': ' + w.combat.enemies.length + ' men, ' + far + ' far away');
+    var fw = fwMod.create({ seed: 20261028, type: type }), inp = inputMod.createInput(), i, B = fw.bounds;
+    for (i = 0; i < 100; i++) { inp.tick(i); fwMod.step(fw, inp); }
+    var p = fw.player, far = fw.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) > 25; }).length;
+    assert(fw.combat.enemies.length >= 4 && far === 0, type + ': ' + fw.combat.enemies.length + ' men, ' + far + ' far away');
+    fw.combat.enemies.forEach(function (e) { assert(e.x >= B.x0 - 1e-6 && e.x <= B.x1 + 1e-6 && e.z >= B.z0 - 1e-6 && e.z <= B.z1 + 1e-6, type + ': a man outside'); });
   });
 });
 test('arenas: every arena builds the same twice, its men start inside the walls and clear of props', function () {
@@ -664,23 +473,18 @@ test('arenas: every arena builds the same twice, its men start inside the walls 
     assert(a.tall.length >= 3 && n > 700, type + ': too bare (' + n + ' boxes, ' + a.tall.length + ' tall pieces)');
   });
 });
-test('arenas: from the ride, the fight is in a closed arena: no traffic, nobody walks out, and the city is back afterwards', function () {
-  var mission = req('modes/mission'), ag = req('sim/arenagen'), LOCD = req('data/locations');
-  LOCD.ORDER.filter(ag.has).forEach(function (type) {
-    var bus = busMod.createBus(), w = worldMod.createWorld(20261028, bus), inp = inputMod.createInput(), city = w.streaming, i, d, m = { type: type }, disposers = [];
-    mission.place({ world: w, bus: bus }, m);
-    assert(w.bounds && w.traffic.off && w.streaming !== city, type + ': not an arena');
-    worldMod.startFight(w); w.combat.enabled = false;
-    [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(function (dir) {
+test('arenas: a fight is only the arena: walking any way stays inside the walls, and there is no bike, city or traffic in it', function () {
+  var LOCD = req('data/locations');
+  LOCD.ORDER.forEach(function (type) {
+    var fw = fwMod.create({ seed: 20261028, type: type }), inp = inputMod.createInput(), t = 0, i;
+    fw.combat.enemies.length = 0;
+    assert(!('bike' in fw) && !('traffic' in fw) && !('streaming' in fw) && !('locs' in fw), type + ': street parts in the fight');
+    [[0, 1], [0, -1], [1, 0], [-1, 0], [0.7, 0.7], [-0.7, -0.7]].forEach(function (dir) {
       inp.setAxis(dir[0], dir[1]);
-      for (i = 0; i < 900; i++) { inp.tick(w.tick); worldMod.step(w, inp); }
-      var p = w.player, B = w.bounds;
+      for (i = 0; i < 900; i++) { inp.tick(t++); fwMod.step(fw, inp); }
+      var p = fw.player, B = fw.bounds;
       assert(p.x >= B.x0 - 1e-6 && p.x <= B.x1 + 1e-6 && p.z >= B.z0 - 1e-6 && p.z <= B.z1 + 1e-6, type + ': walked out going ' + dir);
-      assert.strictEqual(w.traffic.list.length, 0, type + ': traffic in the arena');
     });
-    mission.watch({ world: w, bus: bus, view: { scene: null, onFrame: function () { return function () {}; } }, debug: {}, go: function () {} }, { add: function (f) { disposers.push(f); } }, m);
-    disposers.forEach(function (f) { f(); });
-    assert(w.streaming === city && !w.bounds && !w.traffic.off, type + ': the city did not come back');
   });
 });
 test('ride: riding well away from the signal leaves it open for later and points to another; arriving there clears the skip', function () {
@@ -707,13 +511,12 @@ test('ride: riding well away from the signal leaves it open for later and points
     assert(['kicker', 'chain', 'blocker', 'thrower', 'heavy'].every(function (k) { return many[k]; }), 'late fights should bring every kind: ' + Object.keys(many));
   });
   function arena(kind, dz) {
-    var bus = busMod.createBus(), w = worldMod.createWorld(5, bus), inp = inputMod.createInput();
-    worldMod.startFight(w); w.combat.enemies.length = 0; w.combat.auto = false; w.player.x = 0; w.player.z = 0; w.player.face = 0;
-    combatMod.spawn(w, kind, 0, dz || 1.2); var e = w.combat.enemies[0]; e.cd = 0; return { w: w, e: e, inp: inp, bus: bus };
+    var f = fightWorld(); combatMod.spawn(f.w, kind, 0, dz || 1.2); var e = f.w.combat.enemies[0]; e.cd = 0;
+    return { w: f.w, e: e, inp: f.inp, bus: { on: function (n, fn) { f.w.bus.on(n, fn); } }, tick: f.tick };
   }
   test('fighters: the kicker kicks twice in a row', function () {
     var T = arena('kicker', 1.3), winds = 0, i; T.bus.on('windup', function () { winds++; }); T.w.player.hp = 1e6;
-    for (i = 0; i < 160; i++) { T.inp.tick(T.w.tick); worldMod.step(T.w, T.inp); if (winds >= 2) break; }
+    for (i = 0; i < 160; i++) { T.tick(1); if (winds >= 2) break; }
     assert(winds >= 2, 'only ' + winds + ' kick');
   });
   test('fighters: a kick smashes the blocker\'s guard open; punches only wear it down', function () {
@@ -728,7 +531,7 @@ test('ride: riding well away from the signal leaves it open for later and points
   });
   test('fighters: the thrower keeps his distance and hits from range', function () {
     var T = arena('thrower', 2.0), i, hurt = 0; T.bus.on('playerHurt', function () { hurt++; }); T.w.player.hp = 1e6;
-    for (i = 0; i < 400; i++) { T.inp.tick(T.w.tick); worldMod.step(T.w, T.inp); }
+    T.tick(400);
     var d = Math.hypot(T.e.x - T.w.player.x, T.e.z - T.w.player.z);
     assert(d > 3, 'thrower stayed close: ' + d.toFixed(2)); assert(hurt > 0, 'no bottle landed');
   });

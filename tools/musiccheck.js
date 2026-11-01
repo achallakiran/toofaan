@@ -11,7 +11,7 @@ var path = require('path'), pw = require('playwright');
   function st() { return p.evaluate(function () { var m = __game.ctx.debug.music; return { playing: m.playing(), track: m.track(), vocal: m.vocalReady(), beat: Math.round(m.beat()) }; }); }
   var ride = await st();
   await p.evaluate(function () { __game.ctx.debug.rideStart('bikes'); }); await p.waitForTimeout(4500); var road = await st();
-  await p.evaluate(function () { __game.ctx.go('freeroam', { mission: { type: 'temple', name: 'x' } }); }); await p.waitForTimeout(4500); var arena = await st();
+  await p.evaluate(function () { __game.ctx.go('fight', { type: 'temple' }); }); await p.waitForTimeout(4500); var arena = await st();
   await p.evaluate(function () { __game.ctx.go('studio'); }); await p.waitForTimeout(1500); var studio = await st();
   console.log(JSON.stringify({ ride: ride, road: road, arena: arena, studio: studio, errs: errs }));
   var ok = ride.playing && ride.track === 'ride' && ride.vocal && road.track === 'road' && arena.track === 'arena' && !studio.playing && !errs.length;

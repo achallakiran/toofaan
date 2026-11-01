@@ -1,4 +1,4 @@
-/* sim: the street fight. Enemies, damage, blocking and rage run on the fixed tick with seeded randomness.
+/* sim: the fight. Enemies, damage, blocking and rage run on the fixed tick with seeded randomness.
    The view reports which player strikes landed (pendingStrikes) and reads the events this module emits. */
 'use strict';
 
@@ -6,17 +6,6 @@ var enemiesData = require('../data/enemies');
 var moves = require('../data/moves');
 
 var GH = enemiesData.GUARD_HITS, GCOOL = enemiesData.GUARD_COOLDOWN, GBREAK = enemiesData.GUARD_BREAK;
-/* strikes for the moves thrown from the saddle: each borrows the reach of the blow it is made from */
-(function () {
-  var map = { Jab: 'jab', Hook: 'hook', Cross: 'cross', Elbow: 'elbow', Kick: 'kick' }, n, sd, o, k;
-  function copy(sp, extra) { var c = {}, q; for (q in sp) c[q] = sp[q]; for (q in extra) c[q] = extra[q]; return c; }
-  for (n in map) for (sd = 0; sd < 2; sd++) { k = 'bk' + n + 'LR'[sd]; o = copy(enemiesData.STRIKES[map[n]], { label: map[n] }); if (n === 'Kick') { o.down = false; o.reach = 1.9; o.arc = 70; } enemiesData.STRIKES[k] = o; }
-  for (sd = 0; sd < 2; sd++) {
-    enemiesData.STRIKES['bkCElbow' + 'LR'[sd]] = { reach: 1.9, arc: 110, knock: 0.6, down: false, high: true };
-    enemiesData.STRIKES['bkSweep' + 'LR'[sd]] = { reach: 2.3, arc: 130, knock: 1.6, down: true, high: true };
-  }
-  enemiesData.STRIKES.bkDouble = { reach: 2.5, arc: 180, knock: 1.8, down: true, high: true };
-})();
 var TPS = 60, KINDS = enemiesData.KINDS, STRIKES = enemiesData.STRIKES, RAGE = enemiesData.RAGE;
 var TIMED_WINDOW = 12;
 
@@ -34,32 +23,14 @@ function spawn(world, kind, x, z) {
     kx: 0, kz: 0, phase: 0, canBlock: world.rng.next() < K.blockChance, guarding: false, guardHits: 0, guardCool: 0, guardTimer: 0, blockT: 99, lastMove: '', hitN: 0 });
 }
 
-function startWave(world) {
-  var c = world.combat, p = world.player, n = Math.min(7, 4 + c.wave), i;
-  c.wave++;
-  var base = world.rng.next() * Math.PI * 2;
-  for (i = 0; i < n; i++) {                                       /* spread all round the hero, not from one side */
-    var ang = base + i / n * Math.PI * 2 + (world.rng.next() - 0.5) * 0.5, r = 8 + world.rng.next() * 3;
-    spawn(world, (c.wave >= 2 && i === n - 1) ? 'stick' : 'thug', p.x + Math.cos(ang) * r, p.z + Math.sin(ang) * r);
-  }
-  c.banner = 'Wave ' + c.wave; c.bannerT = 150;
-  world.bus.emit('wave', { wave: c.wave, count: n });
-}
-
 /* a fight at a place: `n` men (`stick` of them armed) appear at the given points around the hero's arrival */
 function startLocation(world, name, points, n, stick) {
   var c = world.combat, i;
-  c.wave++; c.auto = false;
+  c.wave++;
   var kinds = c.lineup; c.lineup = null;                          /* a lineup set by the mission (fighter types, difficulty ramp) wins */
   if (kinds && kinds.length) n = kinds.length;
   for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, kinds ? kinds[i] : (i >= n - stick ? 'stick' : 'thug'), pt.x + (i >= points.length ? 0.9 : 0), pt.z + (i >= points.length ? 0.6 : 0)); }
-  c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
-}
-
-function begin(world) {
-  var c = world.combat; c.enabled = true; c.enemies.length = 0; c.wave = 0; c.kills = 0; c.combo = 0;
-  world.player.hp = world.player.maxHp; world.player.rage = 0; world.player.stun = 0; world.player.down = false;
-  startWave(world); c.auto = false;           /* one opening wave; after that the fights come from the places in the city */
+  c.banner = name; c.bannerT = 170;
 }
 
 /* who is allowed to close in: one man at a time (sometimes a pair), the nearest, and a man keeps his place while he is fighting */
@@ -126,7 +97,7 @@ function playerStrike(world, entry) {
     var e = c.enemies[i];
     if (e.dead || e.st === 'dead' || e.st === 'getup' || (e.st === 'down' && !counter)) continue;     /* counters keep hitting enemies on the floor */
     var d = dist(e, p), K = KINDS[e.kind];
-    if (d > spec.reach + K.radius + (world.mounted ? 1.0 : 0)) continue;           /* from the saddle he swings a little further */
+    if (d > spec.reach + K.radius) continue;
     if (spec.arc < 180) {
       var a = Math.atan2(e.x - p.x, e.z - p.z);
       if (Math.abs(angDiff(a, p.face)) > spec.arc * Math.PI / 180) continue;
@@ -258,14 +229,14 @@ function step(world, input) {
      until he falls, and every blow, gap-closing step and counter goes to him */
   var tgt = findEnemy(c, c.target);
   if (tgt && (tgt.dead || tgt.st === 'dead' || tgt.st === 'down' || tgt.st === 'getup' || dist(tgt, p) > 6)) { c.target = 0; tgt = null; }
-  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block && !world.mounted) {
+  if (s.pressed.attack && p.stun <= 0 && !p.down && !s.held.block) {
     var pick = pickTarget(c, p, s.mx, -s.my, tgt);
     if (pick) { c.target = pick.id; tgt = pick; }
   }
   if (tgt && !p.down && p.stun <= 0 && world.attackLock) {                          /* mid-move: stay square on him and close the gap, like a lunge */
     var tx = tgt.x - p.x, tz = tgt.z - p.z, td = Math.hypot(tx, tz) || 1;
     p.face = Math.atan2(tx, tz);
-    if (!world.mounted && td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
+    if (td > 1.15 && td < 3.8) { var stp = Math.min(td - 1.1, 4.2 / TPS); p.x += tx / td * stp; p.z += tz / td * stp; }
   }
   /* Block pressed once the alert is up (from the yellow phase on): the hero answers at once with a counter */
   if (s.pressed.block && !p.down && p.stun <= 0 && !p.invuln) {
@@ -281,12 +252,8 @@ function step(world, input) {
       addRage(p, RAGE.timedBlock); c.guardHits = 0; pick.st = 'hurt'; pick.t = 0; pick.kx = 0; pick.kz = 0; pick.guarding = false;
       /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar half full the hero can spend it on a guitar counter instead. */
       var kind = near >= 2 ? 'double' : (p.rage >= 60 ? 'special' : 'direct');
-      if (world.mounted) {                                   /* from the saddle: an elbow first, a sweep once the man is hurt, a double sweep for two */
-        kind = near >= 2 ? 'bkDouble' : (pick.hp / pick.maxHp < 0.6 ? 'bkSweep' : 'bkElbow');
-        var rb = bearing - world.bike.h; world.rideSide = Math.atan2(Math.sin(rb), Math.cos(rb));
-      }
       if (kind === 'special') p.rage -= 50;
-      if (kind !== 'double' && kind !== 'bkDouble') { p.face = bearing; c.target = pick.id; }
+      if (kind !== 'double') { p.face = bearing; c.target = pick.id; }
       world.bus.emit('block', { timed: true, id: pick.id, x: p.x, z: p.z });
       world.bus.emit('counter', { id: pick.id, kind: kind });
     }
@@ -296,17 +263,12 @@ function step(world, input) {
   for (var k = 0; k < c.enemies.length; k++) stepEnemy(world, c.enemies[k], input);
   separate(c, p);
   /* defeated thugs are taken away (arrest scene arrives later) */
-  var alive = 0;
   for (var m = c.enemies.length - 1; m >= 0; m--) {
     var e = c.enemies[m];
     if (e.st === 'dead' && e.t > 100) { world.bus.emit('removed', { id: e.id }); c.enemies.splice(m, 1); }
-    else if (!e.dead) alive++;
   }
-  if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down! Resetting...'; c.bannerT = 150; }
-  if (p.down && ++c.downT > 170) begin(world);
-  else if (!p.down && alive === 0 && c.enemies.every(function (q) { return q.st === 'dead' || q.dead; })) {
-    if (c.auto) { if (!c.waveGap) c.waveGap = 110; if (--c.waveGap <= 0) { c.waveGap = 0; startWave(world); } }
-  }
+  if (p.hp <= 0 && !p.down) { p.hp = 0; p.down = true; c.downT = 0; world.bus.emit('heroDown', {}); c.banner = 'Down!'; c.bannerT = 150; }
+  if (p.down) c.downT++;                              /* how long he has been down: the fight decides when it is lost */
 }
 
-module.exports = { startLocation: startLocation, createCombat: createCombat, begin: begin, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+module.exports = { startLocation: startLocation, createCombat: createCombat, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };

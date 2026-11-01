@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* the whole loop: ride to a trouble spot -> cut shot -> fight area (brawler) -> cleared -> police on the ride -> next signal. node tools/flowcheck.js outDir */
+/* the whole loop: ride to a trouble spot -> cut shot -> fight (its own mode) -> cleared -> police on the ride -> next signal. node tools/flowcheck.js outDir */
 'use strict';
 var path = require('path'), fs = require('fs'), pw = require('playwright'), out = process.argv[2] || '.'; fs.mkdirSync(out, { recursive: true });
 (async function () {
@@ -12,11 +12,13 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   var key = await page.evaluate(function () { var r = window.__game.ctx.ride, T = r.target; r.bike.x = T.x; r.bike.z = T.z; return T.key; });
   res.arrived = await wait(function () { return window.__game.ctx.ride.state === 'arrived'; });
   await page.waitForTimeout(700); await page.screenshot({ path: path.join(out, 'flow_1_arrive.png') });
-  res.inFightArea = await wait(function () { return window.__game.modes.currentName() === 'freeroam'; });
-  res.fightStarted = await wait(function () { var w = window.__game.ctx.world; return !!w.locs.active && w.combat.enemies.length > 0; });
-  res.fightType = await page.evaluate(function () { var w = window.__game.ctx.world; return w.locs.active && w.locs.active.name; });
-  await page.waitForTimeout(2500); res.menNear = await page.evaluate(function () { var w = window.__game.ctx.world, p = w.player; return w.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) < 20; }).length; }); await page.screenshot({ path: path.join(out, 'flow_2_fight.png') });
-  await page.evaluate(function () { window.__game.ctx.world.combat.enemies.forEach(function (e) { e.dead = true; e.st = 'dead'; }); });
+  res.inFightArea = await wait(function () { return window.__game.modes.currentName() === 'fight'; });
+  res.fightStarted = await wait(function () { var w = window.__game.ctx.fight; return !!w && w.combat.enemies.length > 0; });
+  res.fightType = await page.evaluate(function () { var w = window.__game.ctx.fight; return w && w.name; });
+  res.addressInFight = await page.evaluate(function () { return location.hash; });
+  res.noStreetParts = await page.evaluate(function () { var w = window.__game.ctx.fight; return !w.bike && !w.traffic && !w.streaming; });
+  await page.waitForTimeout(2500); res.menNear = await page.evaluate(function () { var w = window.__game.ctx.fight, p = w.player; return w.combat.enemies.filter(function (e) { return Math.hypot(e.x - p.x, e.z - p.z) < 20; }).length; }); await page.screenshot({ path: path.join(out, 'flow_2_fight.png') });
+  await page.evaluate(function () { window.__game.ctx.fight.combat.enemies.forEach(function (e) { e.dead = true; e.st = 'dead'; }); });
   res.backOnRide = await wait(function () { return window.__game.modes.currentName() === 'ride'; });
   res.arrestScene = await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.kind === 'arrest' && e.t > 200; });
   await page.screenshot({ path: path.join(out, 'flow_3_arrest.png') });
@@ -25,7 +27,15 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   await page.waitForTimeout(800); await page.screenshot({ path: path.join(out, 'flow_4_rideon.png') });
   /* a second trouble spot straight after: the fight must start again */
   await page.evaluate(function () { var r = window.__game.ctx.ride; if (r.enc) { r.enc = null; r.state = 'ride'; } var T = r.target; r.bike.x = T.x; r.bike.z = T.z; });
-  res.second = await wait(function () { var w = window.__game.ctx.world; return window.__game.modes.currentName() === 'freeroam' && !!w.locs.active && w.combat.enemies.length > 0; }, 90000);
-  res.secondType = await page.evaluate(function () { var w = window.__game.ctx.world; return w.locs.active && w.locs.active.name; });
+  res.second = await wait(function () { var w = window.__game.ctx.fight; return window.__game.modes.currentName() === 'fight' && !!w && w.combat.enemies.length > 0; }, 90000);
+  res.secondType = await page.evaluate(function () { var w = window.__game.ctx.fight; return w && w.name; });
+  /* a reload in the middle of a fight (a phone does this after switching apps): back on the ride, the place still open, never the old street */
+  var key2 = await page.evaluate(function () { return window.__game.ctx.ride.target.key; });
+  await page.reload(); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
+  res.reloadInFight = await page.evaluate(function (k) { var g = window.__game; return g.modes.currentName() + ' ' + location.hash + ' place=' + (g.ctx.ride && g.ctx.ride.missions[k]); }, key2);
+  await page.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '#street'); await page.reload(); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(800);
+  res.oldStreetAddress = await page.evaluate(function () { return window.__game.modes.currentName(); });
+  await page.goto('file://' + path.resolve(__dirname, '..', 'dist', 'toofan-brawler.html') + '#studio'); await page.reload(); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(800);
+  res.studioWithoutDev = await page.evaluate(function () { return window.__game.modes.currentName(); });
   console.log(JSON.stringify(res), 'errors', JSON.stringify(errs)); await b.close();
 })();

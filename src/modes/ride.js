@@ -1,5 +1,5 @@
 /* modes: Ride, the heart of the game (Phase 4). Toofan rides Bijli across the city to the next trouble spot. On the way the bike goons
-   attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into the fight area (the brawler, Street mode).
+   attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into that place's fight (modes/fight).
    When the area is clear it comes back here: the police take the goons away and Toofan rides on to the next signal.
    Big moments in the road fights (counters, knockouts, the leap) slow time and pull the camera back wide, with speed lines, bursts and a flash. */
 'use strict';
@@ -173,7 +173,7 @@ function createRide() {
         var a2 = c.yaw + 2.2 + C.t * 0.7, rad = 5.2 - C.t * 0.6;
         mix({ x: x + Math.sin(a2) * rad, y: 1.4 + C.t * 0.3, z: z + Math.cos(a2) * rad, lx: x, ly: 1.5, lz: z, fov: 40 }, ease(C.t / 0.6));
         if (C.t > 1.7 && !C.card) { C.card = true; var gk = GANGS.gangOf(C.key), gg = gk && GANGS.GANGS[gk]; cinecard.show({ title: C.name.toUpperCase(), sub: gg ? gg.name.toUpperCase() + ' KA ILAAKA' : 'TOOFAN AA RAHA HAI!', ms: 2600 }); }
-        if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('freeroam', { mission: { type: C.key, name: C.name } }); return; }
+        if (C.t > 2.15 && !C.gone) { C.gone = true; ctx.go('fight', { type: C.key }); return; }
       }
       if (S.shake > 0) { var sh = S.shake * 0.25; shot.x += (Math.random() - 0.5) * sh; shot.y += (Math.random() - 0.5) * sh; S.shake = Math.max(0, S.shake - dt * 1.5); }
       ctx.view.followCamera(0, 0, shot);

@@ -2,18 +2,16 @@
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 69',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 70',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
   /* real-world metres. Each asset class picks its own voxel size. */
   VOXEL: { hero: 0.025, enemy: 0.025, bike: 0.075, car: 0.075, building: 0.15, prop: 0.10 },
 
-  /* world streaming */
+  /* a fight arena's square (metres) and the per-scene budget */
   CHUNK_SIZE: 32,
-  STREAM_RADIUS: 2,          /* chunks kept loaded around the player: (2r+1)^2 */
-  CACHE_SPECS: 30,           /* generated chunk specs kept after unload (cheap data, no GPU memory) */
-  BUDGET: { maxLoadedChunks: 25, maxTriangles: 120000, maxDrawCalls: 80 },
+  BUDGET: { maxTriangles: 120000, maxDrawCalls: 80 },
 
   /* quality tiers: phones start on 'low', computers on 'high'. pr = pixel-ratio cap, lod = metres within which fine props show, fogFar = where the world fades out */
   TIERS: {
@@ -24,7 +22,7 @@ var CONFIG = {
 
   PLAYER: { walkSpeed: 4.0, radius: 0.35, height: 1.9 },
 
-  /* palette indices used by chunk specs, resolved to colours by the view */
+  /* palette indices used by the arenas, the hideout and the box meshes, resolved to colours by the view */
   PALETTE: [
     '#6b6f76', '#3a3d42', '#b9a98f', '#c76b4a', '#d9b24a', '#4f7fb0',
     '#7a9a6a', '#8a5a44', '#c9c3b6', '#5d4a63', '#a34a52', '#2f6f6a',
@@ -34,8 +32,7 @@ var CONFIG = {
     /* 36+: the fight arenas' kit (stone, wood, brass, marigold, brick, foliage, paint) */
     '#9b958b', '#80796f', '#5e5850', '#b07a45', '#7a4f2a', '#c9a227', '#ff9f1c', '#ffd166', '#e63946', '#2d6a4f', '#52b788', '#264653',
     '#a8854c', '#a89f8c', '#8a8a83', '#3d405b', '#f4f1de', '#1d3557', '#457b9d', '#bc6c25', '#8b3a1e', '#606c38', '#ffb4a2', '#6d597a'
-  ],
-  GROUND: { road: 1, sidewalk: 8, dirt: 2 }
+  ]
 };
 
 module.exports = CONFIG;

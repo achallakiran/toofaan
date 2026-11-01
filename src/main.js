@@ -7,12 +7,12 @@ var busMod = require('./core/events');
 var inputMod = require('./core/input');
 var saveMod = require('./core/save');
 var modesMod = require('./core/modes');
-var worldMod = require('./sim/world');
 var viewMod = require('./view/app');
 var hudMod = require('./view/hud');
 var controls = require('./view/controls');
 var sfxMod = require('./view/sfx');
-var freeroam = require('./modes/freeroam');
+var fight = require('./modes/fight');
+var fightworld = require('./sim/fightworld');
 var studio = require('./modes/studio');
 var ride = require('./modes/ride');
 var title = require('./modes/title');
@@ -33,7 +33,7 @@ function boot() {
 
   var bus = busMod.createBus();
   var input = inputMod.createInput();
-  var world = worldMod.createWorld(seed, bus);
+  var world = { seed: seed };                                            /* the game's seed: the ride's city and every fight grow from it */
   var tierName = params.get('tier');
   if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
   var view = viewMod.createView(document.getElementById('game'), tierName);
@@ -68,27 +68,33 @@ function boot() {
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };
   ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
   var modes = modesMod.createModes(ctx);
-  modes.register(freeroam.createFreeroam());
+  modes.register(fight.createFight());
   modes.register(studio.createStudio());
   modes.register(ride.createRide());
   modes.register(title.createTitle());
   modes.register(wake.createWake());
   modes.register(hideoutMode.createHideout());
-  var tabs = { studio: document.getElementById('tabStudio'), freeroam: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
+  /* the page address names only what a player can come back to: the ride (also during a fight: a reload goes back to the ride, the place
+     still open), the hideout, the nightmare. The developer views (#studio, #fight) open only with ?dev=1. */
+  var DEV = !!params.get('dev');
+  var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
+  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio' };
   function go(name, args) {
-    if (name === 'studio' || (name === 'freeroam' && !(args && args.mission))) musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer views are silent */
+    if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
-    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (name === 'freeroam' ? '#street' : name === 'ride' ? '#ride' : name === 'wake' ? '#wake' : name === 'hideout' ? '#hideout' : '#studio')); } catch (e) { /* hash only */ }
+    try { history.replaceState(null, '', name === 'title' ? location.pathname + location.search : location.search + (HASH[name] || '')); } catch (e) { /* hash only */ }
   }
   tabs.studio.addEventListener('click', function () { go('studio'); });
-  tabs.freeroam.addEventListener('click', function () { go('freeroam'); });
+  tabs.fight.addEventListener('click', function () { go('fight', { type: 'market', level: 2 }); });
   tabs.ride.addEventListener('click', function () { go('ride'); });
-  /* one game: it opens on the ride; the studio and the bare street are developer views (?dev=1 shows their tabs, or #studio / #street) */
   ctx.go = go;
-  if (!params.get('dev')) document.getElementById('tabs').style.display = 'none';
-  var H = window.location.hash;
-  go(H === '#street' ? 'freeroam' : H === '#studio' ? 'studio' : H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
+  if (!DEV) document.getElementById('tabs').style.display = 'none';
+  /* #fight=type,level (developer): a practice fight at that kind of place */
+  var H = window.location.hash, HM = /^#fight(?:=(\w+)(?:,(\d+))?)?$/.exec(H);
+  if (HM && DEV) go('fight', { type: HM[1] || 'market', level: HM[2] !== undefined ? +HM[2] : 2 });
+  else if (H === '#studio' && DEV) go('studio');
+  else go(H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
@@ -101,7 +107,7 @@ function boot() {
   loop.start();
   document.addEventListener('visibilitychange', function () { input.reset(); });
 
-  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashWorld: function () { return worldMod.hash(world); } };
+  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
   document.documentElement.setAttribute('data-ready', '1');
 }
 

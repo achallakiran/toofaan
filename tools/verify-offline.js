@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* Opens the built file from file:// in headless Chromium with every network request refused,
-   drives the keyboard, and checks the game ran, streamed chunks and logged no errors. */
+   drives the keyboard in a practice fight, and checks the game ran, the arena loaded, nothing reached the network and nothing logged an error. */
 'use strict';
 var path = require('path');
 var pw = require('playwright');
@@ -14,30 +14,29 @@ var shotDir = process.argv[2] || path.resolve(__dirname, '..', 'dist');
   await ctx.route(/^https?:/, function (r) { blocked.push(r.request().url()); r.abort(); });
   page.on('pageerror', function (e) { errors.push('pageerror: ' + e.message); });
   page.on('console', function (m) { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-  await page.goto('file://' + file + '#street');
+  await page.goto('file://' + file + '?dev=1#fight=market,2');
   await page.waitForSelector('html[data-ready="1"]', { timeout: 15000 });
   await page.waitForTimeout(600);
   var t0 = await page.evaluate(function () { return window.__game.loop.getTick(); });
 
-  await page.evaluate(function () { window.__game.ctx.world.combat.enabled = false; });      /* the streaming walk must not be interrupted by thugs */
+  await page.evaluate(function () { window.__game.ctx.fight.combat.enabled = false; window.__x0 = window.__game.ctx.fight.player.x; });      /* the walk must not be interrupted by the men */
   await page.keyboard.down('KeyD');
-  await page.waitForFunction(function () { return window.__game.ctx.world.player.x > 26; }, null, { timeout: 30000 }).catch(function () { });      /* headless software GL runs slower than real time, so wait for the distance, not for seconds */
+  await page.waitForFunction(function () { return window.__game.ctx.fight.player.x > window.__x0 + 4; }, null, { timeout: 30000 }).catch(function () { });      /* headless software GL runs slower than real time, so wait for the distance, not for seconds */
   await page.keyboard.up('KeyD');
   for (var i = 0; i < 9; i++) { await page.keyboard.down('KeyJ'); await page.waitForTimeout(60); await page.keyboard.up('KeyJ'); await page.waitForTimeout(60); }
   await page.waitForTimeout(500);
   var r = await page.evaluate(function () {
-    window.__game.ctx.world.combat.enabled = true;
-    var g = window.__game, w = g.ctx.world;
-    return { tick: g.loop.getTick(), x: w.player.x, rage: w.player.rage, chunks: w.streaming.loadedCount(), loads: w.streaming.stats.loads,
-      unloads: w.streaming.stats.unloads, peak: w.streaming.stats.peakLoaded, view: g.ctx.view.stats(), finVisible: !document.getElementById('btnFinisher').hidden,
-      hash: g.hashWorld(), mode: g.modes.currentName() };
+    window.__game.ctx.fight.combat.enabled = true;
+    var g = window.__game, w = g.ctx.fight;
+    return { tick: g.loop.getTick(), x: w.player.x - window.__x0, rage: w.player.rage, inside: w.player.x <= w.bounds.x1 + 1e-6, view: g.ctx.view.stats(), finVisible: !document.getElementById('btnFinisher').hidden,
+      hash: g.hashFight(), mode: g.modes.currentName() };
   });
   await page.screenshot({ path: path.join(shotDir, 'shot-desktop.png') });
-  await page.evaluate(function () { var w = window.__game.ctx.world; w.player.rage = 100; w.player.hp = 100; w.player.stun = 0; w.player.down = false; });
+  await page.evaluate(function () { var w = window.__game.ctx.fight; w.player.rage = 100; w.player.hp = 100; w.player.stun = 0; w.player.down = false; });
   await page.waitForTimeout(300);
-  var enemiesSeen = await page.evaluate(function () { return window.__game.ctx.world.combat.enemies.length; });
+  var enemiesSeen = await page.evaluate(function () { return window.__game.ctx.fight.combat.enemies.length; });
   await page.keyboard.down('KeyL'); await page.waitForTimeout(80); await page.keyboard.up('KeyL'); await page.waitForTimeout(400);
-  var after = await page.evaluate(function () { return { rage: window.__game.ctx.world.player.rage, fin: window.__game.ctx.world.counters.finishers }; });
+  var after = await page.evaluate(function () { return { rage: window.__game.ctx.fight.player.rage, fin: window.__game.ctx.fight.counters.finishers }; });
 
   /* phone-sized viewport with touch layout */
   await page.setViewportSize({ width: 390, height: 780 });
@@ -46,9 +45,9 @@ var shotDir = process.argv[2] || path.resolve(__dirname, '..', 'dist');
   await browser.close();
 
   console.log(JSON.stringify({ ticksRan: r.tick - t0, playerX: +r.x.toFixed(2), rageBeforeFinisher: r.rage, finisherButtonVisible: r.finVisible,
-    afterFinisher: after, chunks: r.chunks, loads: r.loads, unloads: r.unloads, peak: r.peak, mode: r.mode,
+    afterFinisher: after, insideArena: r.inside, mode: r.mode,
     chunkMeshes: r.view.chunkMeshes, triangles: r.view.triangles, calls: r.view.calls, geometries: r.view.geometries, blockedRequests: blocked, errors: errors }, null, 1));
-  var ok = r.tick - t0 > 150 && r.x > 20 && r.chunks === 25 && r.unloads > 0 && r.view.chunkMeshes === 25 && r.view.geometries <= 25 + 21 + 26 + 10 && r.peak <= 25 && blocked.length === 0 && errors.length === 0 && enemiesSeen > 0 && after.fin === 1;
+  var ok = r.tick - t0 > 150 && r.x > 3 && r.inside && r.mode === 'fight' && r.view.chunkMeshes >= 1 && blocked.length === 0 && errors.length === 0 && enemiesSeen > 0 && after.fin === 1;
   console.log(ok ? 'OFFLINE VERIFY: PASS' : 'OFFLINE VERIFY: FAIL');
   process.exit(ok ? 0 : 1);
 })().catch(function (e) { console.error(e); process.exit(2); });

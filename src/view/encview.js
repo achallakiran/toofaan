@@ -8,7 +8,6 @@ var vg = require('./voxgrid');
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
-var ambient = require('./ambientvox');
 
 var ridevox = require('./ridevox');
 var ROOF_Y = 1.42, HALF_W = 0.9;                    /* the gang car's roof height and half width, before scaling (from its model) */

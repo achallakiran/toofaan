@@ -6,7 +6,6 @@
 
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
-var ambient = require('./ambientvox');
 var ridevox = require('./ridevox');
 var bikevox = require('./bikevox');
 var herorig = require('./herorig');
@@ -317,7 +316,7 @@ function createRideView(scene) {
       if (roads) roads.geometry.dispose(); if (wires) { wires.geometry.dispose(); wires.material.dispose(); }
       if (treeGeos) treeGeos.forEach(function (g) { g.dispose(); });
       sky.dispose(); signMat.map.dispose(); signMat.dispose(); shadowMat.dispose(); blob.dispose();
-      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); ambient.dispose(); traffic.dispose(); cars = {};
+      ring.geometry.dispose(); beam.geometry.dispose(); mat.dispose(); traffic.dispose(); cars = {};
     }
   };
 }
