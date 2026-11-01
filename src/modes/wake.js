@@ -1,4 +1,4 @@
-/* modes: the New Game opening. Night, in Toofan's room. He is asleep and the nightmare comes: he tosses, the dream world flashes in
+/* modes: the New Game opening. Night, in Toofan's bed corner of the underground hideout. He is asleep and the nightmare comes: he tosses, the dream world flashes in
    (Maa calling, his father falling, a shadow with a "?" for a face), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
    awake and sits up. The dream is its own world (view/dreamview), separate from the title video. A card, and the game rides out into the city. Skippable. The room, the dog and the dream are built here and freed
    on the way out. */
@@ -13,37 +13,15 @@ var cinecard = require('../view/cinecard');
 var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
 var kit = require('../sim/arenakit');
+var hideout = require('../sim/hideoutgen');
 var rngMod = require('../core/rng');
 var CONFIG = require('../data/config');
 
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-/* the room: plank floor, plastered walls, the bed, a window with the moon, a guitar on the wall, dumbbells, a rug, the door Raka comes in by */
-function room() {
-  var K = kit.createBuilder(rngMod.createRng(11)), C = kit.C, P = kit.P, x, z, k;
-  K.at(0, 0, 0);
-  for (x = -2.6; x < 2.6; x += 0.32) K.b(x, 0, -2.4, x + 0.3, 0.02, 2.4, (Math.round(x * 3) % 2) ? C.WOOD : C.WOOD2);   /* floor planks */
-  K.b(-2.6, 0, -2.5, 2.6, 3.0, -2.4, C.W_TURQ); K.b(-2.6, 0, -2.5, 2.6, 0.12, -2.38, C.WOOD2);                       /* back wall + skirting */
-  K.b(-2.7, 0, -2.5, -2.6, 3.0, 2.4, C.W_TURQ);                                                                      /* left wall */
-  K.b(2.6, 0, -2.5, 2.7, 3.0, -0.2, C.W_TURQ); K.b(2.6, 0, 0.9, 2.7, 3.0, 2.4, C.W_TURQ); K.b(2.6, 2.2, -0.2, 2.7, 3.0, 0.9, C.W_TURQ);   /* right wall with the door gap */
-  K.b(2.58, 0, -0.26, 2.72, 2.26, -0.2, C.WOOD2); K.b(2.58, 0, 0.9, 2.72, 2.26, 0.96, C.WOOD2); K.b(2.58, 2.2, -0.26, 2.72, 2.26, 0.96, C.WOOD2);
-  /* the window and the moon outside */
-  K.b(-0.7, 1.3, -2.41, 0.7, 2.4, -2.39, C.NAVY); K.b(-0.04, 1.3, -2.39, 0.04, 2.4, -2.37, C.WOOD2); K.b(-0.7, 1.84, -2.39, 0.7, 1.9, -2.37, C.WOOD2);
-  K.b(-0.78, 1.22, -2.4, 0.78, 1.3, -2.3, C.WOOD); K.b(0.25, 1.95, -2.405, 0.5, 2.2, -2.395, C.OFFWHITE);
-  for (k = 0; k < 6; k++) K.b(-0.68 + k * 0.25, 1.3, -2.385, -0.64 + k * 0.25, 2.4, -2.375, C.DARK);                   /* the grille */
-  /* the bed: frame, mattress, pillow, a tangled sheet */
-  K.b(-1.1, 0, -1.7, 1.1, 0.35, -0.5, C.WOOD2); K.b(-1.15, 0, -1.75, -1.0, 0.95, -0.45, C.WOOD2);
-  K.b(-1.05, 0.35, -1.65, 1.05, 0.55, -0.55, C.OFFWHITE); K.b(-1.0, 0.55, -1.5, -0.7, 0.68, -0.7, C.W_CREAM);
-  K.b(-0.2, 0.55, -1.66, 1.05, 0.6, -0.54, C.MAUVE); K.b(0.6, 0.35, -0.56, 1.05, 0.62, -0.5, C.MAUVE);
-  /* the side table, a lamp, a rug, dumbbells, a guitar on the wall, a poster */
-  K.b(-1.75, 0, -1.6, -1.25, 0.55, -1.1, C.WOOD); K.b(-1.6, 0.55, -1.45, -1.45, 0.6, -1.3, C.BRASS); K.b(-1.56, 0.6, -1.41, -1.49, 0.85, -1.34, C.BRASS); K.b(-1.66, 0.85, -1.5, -1.39, 1.0, -1.25, C.LEMON);
-  K.b(-1.3, 0.005, -0.3, 1.3, 0.025, 0.9, C.CRIMSON); K.b(-1.2, 0.025, -0.2, 1.2, 0.03, 0.8, C.MARIGOLD);
-  K.b(1.6, 0, 0.6, 2.2, 0.1, 0.7, C.STEEL); K.b(1.6, 0, 0.5, 1.7, 0.2, 0.8, C.CHAR); K.b(2.1, 0, 0.5, 2.2, 0.2, 0.8, C.CHAR);
-  K.b(1.2, 1.1, -2.39, 1.45, 2.1, -2.36, C.CRIMSON); K.b(1.29, 2.1, -2.39, 1.36, 2.7, -2.36, C.WOOD2); K.b(1.25, 2.6, -2.39, 1.4, 2.8, -2.36, C.BLACK);   /* the guitar */
-  K.b(-2.38, 1.2, -1.6, -2.36, 2.3, -0.4, C.MAGENTA); K.b(-2.36, 1.4, -1.4, -2.35, 2.1, -0.6, C.LEMON);                                              /* the poster */
-  return K.out.boxes;
-}
+/* the room is Toofan's hideout (sim/hideoutgen): the same layout the hideout hub uses, framed on his bed corner */
+function room() { return hideout.build(7).boxes; }
 
 function createWake() {
   var S = {};
@@ -62,6 +40,23 @@ function createWake() {
       /* Toofan asleep: a holder turns his standing rig to lie on his back along the bed, head on the pillow */
       S.rig = herorig.createHeroRig(); S.bed = new THREE.Group(); S.lie = new THREE.Group(); view.scene.add(S.bed); S.bed.add(S.lie); S.lie.add(S.rig.root);
       S.bed.rotation.y = Math.PI / 2; S.bed.position.set(0.75, 0, -1.1);
+      S.rig.guitar.visible = false;                                         /* no guitar in bed */
+      /* his blanket: a patterned quilt pulled up to his chest while he sleeps, bunched over his legs once he sits up */
+      function quilt(sit) {
+        var K = kit.createBuilder(rngMod.createRng(sit ? 5 : 4)), C = kit.C, x, z, k = 0; K.at(0, 0, 0);
+        var x0 = sit ? -0.32 : -0.5, top = sit ? 0.78 : 0.86;
+        for (x = x0; x < 1.08; x += 0.16) for (z = -1.64; z < -0.56; z += 0.16) {
+          var edge = Math.min(z + 1.64, -0.56 - z), lump = Math.sin(x * 9 + z * 5) * 0.025 + (sit ? Math.max(0, 0.08 - Math.abs(x - 0.1) * 0.2) : 0);
+          var y1 = edge < 0.12 ? 0.42 + edge * 2.6 : top + lump - (x > 0.85 ? (x - 0.85) * 0.6 : 0);
+          K.b(x, 0.4, z, x + 0.16, y1, z + 0.16, ((Math.round(x / 0.16) + Math.round(z / 0.16)) % 2) ? C.MAUVE : C.PLUM); k++;
+        }
+        K.b(x0 - 0.06, top - 0.06, -1.6, x0 + 0.06, top + 0.05, -0.6, C.OFFWHITE);           /* the folded-over sheet at the top */
+        var a2 = boxmesh.boxesToArrays(K.out.boxes, CONFIG.PALETTE), g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(a2.positions, 3)); g2.setAttribute('normal', new THREE.BufferAttribute(a2.normals, 3));
+        g2.setAttribute('color', new THREE.BufferAttribute(a2.colors, 3)); g2.setIndex(new THREE.BufferAttribute(a2.indices, 1));
+        return new THREE.Mesh(g2, S.roomMat);
+      }
+      S.quiltLie = quilt(false); S.quiltSit = quilt(true); S.quiltSit.visible = false; view.scene.add(S.quiltLie); view.scene.add(S.quiltSit);
       S.lie.rotation.set(-Math.PI / 2, 0, Math.PI / 2, 'XYZ');                 /* on his back: head toward the pillow (-x), chest up */
       S.lie.position.set(0, 0.68, 0);
       /* Raka, asleep by the door at first */
@@ -80,6 +75,7 @@ function createWake() {
       S.finish = finish;
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
+        view.scene.remove(S.quiltLie); view.scene.remove(S.quiltSit); S.quiltLie.geometry.dispose(); S.quiltSit.geometry.dispose();
         view.scene.remove(S.room); g.dispose(); S.roomMat.dispose(); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove();
       });
@@ -94,9 +90,10 @@ function createWake() {
         var p = posemath.layer(sleepP, { 'armA.sx': scream ? 150 : 10 + toss * 25, 'armB.sx': scream ? 150 : 10 - toss * 25, 'armA.sz': 20, 'armB.sz': 20, 'armA.e': scream ? 20 : 40, 'armB.e': scream ? 20 : 40,
           'head.ry': toss * 40, 'head.rx': scream ? -25 : 0, 'spine.ry': toss * 12, 'legA.hx': 8 + toss * 10, 'legB.hx': 8 - toss * 10, 'legA.k': 10, 'legB.k': 10 }, 1, 1, 1, 1);
         rig.applyPose(p, { plant: false }); S.lie.rotation.z = 0; S.lie.position.y = 0.68 + Math.abs(toss) * 0.03 + Math.sin(t * 1.6) * 0.005;
+        S.quiltLie.position.set(0, Math.abs(toss) * 0.02, toss * 0.03); S.quiltLie.rotation.x = toss * 0.02;
       } else {
         /* jolted awake: sitting up in bed, legs along it, turning to the dog */
-        if (S.rig.root.parent !== view.scene) { view.scene.add(S.rig.root); S.rig.root.rotation.set(0, Math.PI / 2, 0); S.rig.root.position.set(-0.55, -0.32, -1.1); S.lie.visible = false; }
+        if (S.rig.root.parent !== view.scene) { view.scene.add(S.rig.root); S.rig.root.rotation.set(0, Math.PI / 2, 0); S.rig.root.position.set(-0.55, -0.32, -1.1); S.lie.visible = false; S.quiltLie.visible = false; S.quiltSit.visible = true; }
         var u = ease((t - 9.6) / 1.2);
         rig.applyPose(posemath.layer(sleepP, { 'legA.hx': 88, 'legB.hx': 88, 'legA.k': 6, 'legB.k': 6, 'spine.rx': 8 - u * 6, 'head.ry': -55 * u, 'neck.ry': -20 * u,
           'armA.sx': 20 + 40 * u, 'armA.e': 30 + 40 * u, 'armB.sx': -10, 'armB.sz': 25, 'armB.e': 20 }, 1, 1, 1, 1), { plant: false });
