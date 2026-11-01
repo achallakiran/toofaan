@@ -696,5 +696,42 @@ test('ride: riding well away from the signal leaves it open for later and points
   assert(r.target && r.target.key !== T.key, 'pointer did not move on');
   assert.strictEqual(r.missions[T.key], 'open', 'the place should stay open');
 });
+(function () {
+  var lineup = req('sim/lineup'), ED = req('data/enemies');
+  test('fighters: the crowd grows from 4 to 8 with the places cleared, always with a lathi man, tougher kinds later', function () {
+    var a = lineup.lineup(0, rngMod.createRng(3)), b = lineup.lineup(5, rngMod.createRng(3)), c = lineup.lineup(12, rngMod.createRng(3));
+    assert.strictEqual(a.length, 4); assert.strictEqual(b.length, 8); assert.strictEqual(c.length, 8);
+    [a, b, c].forEach(function (l) { assert(l.indexOf('stick') >= 0, 'no lathi man: ' + l); l.forEach(function (k) { assert(ED.KINDS[k], 'unknown kind ' + k); }); });
+    assert(a.every(function (k) { return k === 'thug' || k === 'stick'; }), 'first fight should be simple: ' + a);
+    var many = {}; for (var i = 0; i < 30; i++) lineup.lineup(5, rngMod.createRng(i)).forEach(function (k) { many[k] = 1; });
+    assert(['kicker', 'chain', 'blocker', 'thrower', 'heavy'].every(function (k) { return many[k]; }), 'late fights should bring every kind: ' + Object.keys(many));
+  });
+  function arena(kind, dz) {
+    var bus = busMod.createBus(), w = worldMod.createWorld(5, bus), inp = inputMod.createInput();
+    worldMod.startFight(w); w.combat.enemies.length = 0; w.combat.auto = false; w.player.x = 0; w.player.z = 0; w.player.face = 0;
+    combatMod.spawn(w, kind, 0, dz || 1.2); var e = w.combat.enemies[0]; e.cd = 0; return { w: w, e: e, inp: inp, bus: bus };
+  }
+  test('fighters: the kicker kicks twice in a row', function () {
+    var T = arena('kicker', 1.3), winds = 0, i; T.bus.on('windup', function () { winds++; }); T.w.player.hp = 1e6;
+    for (i = 0; i < 160; i++) { T.inp.tick(T.w.tick); worldMod.step(T.w, T.inp); if (winds >= 2) break; }
+    assert(winds >= 2, 'only ' + winds + ' kick');
+  });
+  test('fighters: a kick smashes the blocker\'s guard open; punches only wear it down', function () {
+    var T = arena('blocker', 1.2), e = T.e; e.canBlock = true; e.guarding = true; e.face = Math.PI; var broke = null;
+    T.bus.on('enemyBlock', function (ev) { broke = ev.broke; });
+    combatMod.playerStrike(T.w, 'jab'); assert.strictEqual(broke, false, 'one jab should not break him');
+    e.guarding = true; combatMod.playerStrike(T.w, 'kick'); assert.strictEqual(broke, true, 'a kick should break the guard');
+  });
+  test('fighters: the heavy stays on his feet under a kick until he is worn down', function () {
+    var T = arena('heavy', 1.2), e = T.e; combatMod.playerStrike(T.w, { move: 'kick', last: true });
+    assert.notStrictEqual(e.st, 'down', 'heavy floored by one kick'); assert(e.hp < e.maxHp);
+  });
+  test('fighters: the thrower keeps his distance and hits from range', function () {
+    var T = arena('thrower', 2.0), i, hurt = 0; T.bus.on('playerHurt', function () { hurt++; }); T.w.player.hp = 1e6;
+    for (i = 0; i < 400; i++) { T.inp.tick(T.w.tick); worldMod.step(T.w, T.inp); }
+    var d = Math.hypot(T.e.x - T.w.player.x, T.e.z - T.w.player.z);
+    assert(d > 3, 'thrower stayed close: ' + d.toFixed(2)); assert(hurt > 0, 'no bottle landed');
+  });
+})();
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

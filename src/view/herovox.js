@@ -335,9 +335,20 @@ var COP = { skin: h('#a8754e'), skinD: h('#8c5e3c'), skinL: h('#bd8659'), skinDD
   yel: h('#c9b27a'), yelD: h('#a99560'), blu: h('#c2a86c'), bluD: h('#a68e55'), bluL: h('#d6be84'),
   pants: h('#b59d64'), pantsD: h('#97824f'), pantsL: h('#c8b077'), belt: h('#3a2414'), shoe: h('#15110d'), shoeL: h('#2a221a') };
 
+/* each kind of fighter gets his own clothes over the thug's build: vest (yel), shirt (blu), trousers; and his own skin and hair */
+var KIND_PAL = {
+  stick:   { yel: h('#3b3a34'), yelD: h('#2a2925'), blu: h('#6b4a2a'), bluD: h('#52381f'), bluL: h('#7d5a36') },
+  chain:   { yel: h('#1d1d22'), yelD: h('#121216'), blu: h('#2c2c33'), bluD: h('#1c1c22'), bluL: h('#3a3a44'), pants: h('#24242a'), pantsD: h('#18181c'), pantsL: h('#303038') },
+  heavy:   { yel: h('#efe3c8'), yelD: h('#d6c8a8'), blu: h('#efe3c8'), bluD: h('#d6c8a8'), bluL: h('#fff6e0'), pants: h('#6b2d2a'), pantsD: h('#52211f'), pantsL: h('#7d3a36'), skin: h('#9a6440'), skinD: h('#7c4e30'), skinL: h('#ad7450') },
+  kicker:  { yel: h('#c8962a'), yelD: h('#a67a1e'), blu: h('#1f6b5a'), bluD: h('#165244'), bluL: h('#2a826e'), pants: h('#2d3d58'), pantsD: h('#202c40'), pantsL: h('#3a4d6e') },
+  blocker: { yel: h('#2a4a8c'), yelD: h('#1f386b'), blu: h('#2a4a8c'), bluD: h('#1f386b'), bluL: h('#3a5ca6'), pants: h('#3a3a3a'), pantsD: h('#2a2a2a'), pantsL: h('#4a4a4a') },
+  thrower: { yel: h('#5a7a2a'), yelD: h('#45601f'), blu: h('#d8d0b8'), bluD: h('#bfb69c'), bluL: h('#ebe4cf'), skin: h('#c08458'), skinD: h('#a06c44'), skinL: h('#d29466') }
+};
 function buildParts(variant) {
-  if (variant === 'thug' || variant === 'cop') {
-    var PAL = variant === 'cop' ? COP : THUG, save = {}, k; for (k in PAL) { save[k] = C[k]; C[k] = PAL[k]; }
+  if (/^thug/.test(variant || '') || variant === 'cop') {
+    var PAL = variant === 'cop' ? COP : THUG, kind = (variant || '').split(':')[1], save = {}, k;
+    if (kind && KIND_PAL[kind]) { var P2 = {}; for (k in THUG) P2[k] = THUG[k]; for (k in KIND_PAL[kind]) P2[k] = KIND_PAL[kind][k]; PAL = P2; }
+    for (k in PAL) { save[k] = C[k]; C[k] = PAL[k]; }
     TH = true;
     try { return buildPartsRaw(); } finally { TH = false; for (k in save) C[k] = save[k]; }
   }

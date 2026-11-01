@@ -31,8 +31,22 @@ function createEnemyView(scene) {
   var views = {}, TPS = 60;
   var spikeGeo = new THREE.BoxGeometry(0.018, 0.018, 0.2), clubGeo = new THREE.BoxGeometry(0.07, 0.8, 0.07), clubMat = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
     var shadowGeo = new THREE.CircleGeometry(0.5, 20), shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
+  /* each kind of fighter carries his own gear on the rig: the chain, the heavy's bulk and belly, the kicker's headband, the blocker's
+     wrapped forearms, the thrower's bottle */
+  var gearMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: false }), M3 = {};
+  function mat(hex) { return M3[hex] || (M3[hex] = new THREE.MeshLambertMaterial({ color: hex })); }
+  function box(parent, w, h, d, x, y, z, hex) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(hex)); m.position.set(x, y, z); parent.add(m); return m; }
+  var bottleGeo = new THREE.BoxGeometry(0.07, 0.24, 0.07), bottleMat = new THREE.MeshLambertMaterial({ color: 0x2f8a3a, transparent: true, opacity: 0.9 });
+  function gear(kind, rig) {
+    var P = rig.parts, k;
+    if (kind === 'chain') { for (k = 0; k < 9; k++) box(P.R.wrist, 0.05, 0.075, 0.03 + (k % 2) * 0.03, 0, -0.1 - k * 0.075, 0.06 + Math.sin(k * 0.8) * 0.03, 0x9aa4ab); box(P.R.wrist, 0.09, 0.09, 0.09, 0, -0.1 - 9 * 0.075, 0.08, 0x6b747d); rig.root.scale.setScalar(1.04); }
+    if (kind === 'heavy') { rig.root.scale.set(1.3, 1.16, 1.3); box(rig.spine, 0.34, 0.26, 0.16, 0, 0.12, 0.13, 0x9a6440); box(rig.spine, 0.36, 0.06, 0.2, 0, -0.01, 0.1, 0x3a2414); }
+    if (kind === 'kicker') { box(rig.head, 0.27, 0.05, 0.27, 0, 0.1, 0, 0xffc21a); box(rig.head, 0.04, 0.12, 0.03, 0.05, 0.04, -0.15, 0xffc21a); }
+    if (kind === 'blocker') { ['L', 'R'].forEach(function (S) { box(P[S].elbow, 0.12, 0.2, 0.12, 0, -0.14, 0, 0xf2f2ee); box(P[S].wrist, 0.13, 0.1, 0.13, 0, -0.03, 0, 0xc8202a); }); box(rig.head, 0.28, 0.12, 0.28, 0, 0.12, 0, 0x2a4a8c); rig.root.scale.setScalar(1.05); }
+    if (kind === 'thrower') { box(P.R.wrist, 0.07, 0.22, 0.07, 0, -0.12, 0.05, 0x2f8a3a); box(rig.head, 0.26, 0.06, 0.26, 0, 0.12, 0.02, 0x5a7a2a); rig.root.scale.setScalar(0.97); }
+  }
   function make(e) {
-    var rig = herorig.createHeroRig('thug'), mark = new THREE.Group(), spikes = [], i;
+    var rig = herorig.createHeroRig(e.kind === 'thug' ? 'thug' : 'thug:' + e.kind), mark = new THREE.Group(), spikes = [], i;
     for (i = 0; i < 9; i++) {                                                  /* spikes fanned over the head, longer ones in the middle */
       var ang = (i - 4) * 0.36, piv = new THREE.Group(), sp = new THREE.Mesh(spikeGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false }));
       sp.renderOrder = 12; sp.rotation.x = Math.PI / 2; sp.position.y = 0.2; sp.scale.set(1, 1, 1 - Math.abs(i - 4) * 0.12);
@@ -41,8 +55,11 @@ function createEnemyView(scene) {
     mark.position.y = 2.1; mark.visible = false; rig.root.add(mark);
     var sh = new THREE.Mesh(shadowGeo, shadowMat); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.02; rig.root.add(sh);
     if (e.kind === 'stick') { var club = new THREE.Mesh(clubGeo, clubMat); club.position.set(0, -0.12, 0.1); rig.parts.R.wrist.add(club); rig.root.scale.setScalar(1.08); }
+    var bottle = null;
+    gear(e.kind, rig);
+    if (e.kind === 'thrower') { bottle = new THREE.Mesh(bottleGeo, bottleMat); scene.add(bottle); bottle.visible = false; }
     scene.add(rig.root);
-    return { rig: rig, mark: mark, spikes: spikes, shadow: sh, cur: posemath.named('stand'), face: e.face, t: Math.random() * 6, sink: 0 };
+    return { rig: rig, mark: mark, spikes: spikes, shadow: sh, cur: posemath.named('stand'), face: e.face, t: Math.random() * 6, sink: 0, bottle: bottle };
   }
   function pose(e, v, dt) {
     var K = enemies.KINDS[e.kind], mv = moves.MOVES[K.clip], base;
@@ -104,6 +121,13 @@ function createEnemyView(scene) {
           fx.mouth.visible = open; fx.blood.visible = (e.hitN || 0) >= 2;
         }
         if (e.st === 'dead' && e.t > 55) { v.sink = Math.min(1, (e.t - 55) / 45); v.rig.root.position.y = -v.sink * 0.9; }
+        /* the thrower's bottle flies from his hand to where Toofan stood as the throw lands */
+        if (v.bottle) {
+          var flying = e.st === 'strike' || (e.st === 'recover' && e.t < 10);
+          if (e.st === 'windup') { var reach = e.aimD || 5; v.from = { x: x, z: z }; v.to = { x: x + Math.sin(e.face) * reach, z: z + Math.cos(e.face) * reach }; }
+          v.bottle.visible = flying && !!v.from;
+          if (v.bottle.visible) { var uu = Math.min(1, (e.st === 'strike' ? e.t : 8 + e.t) / 12); v.bottle.position.set(v.from.x + (v.to.x - v.from.x) * uu, 1.5 + Math.sin(Math.PI * uu) * 1.2 - uu * 0.4, v.from.z + (v.to.z - v.from.z) * uu); v.bottle.rotation.x += 0.5; v.bottle.rotation.z += 0.3; }
+        }
         /* telegraph */
         var m = v.mark, K = enemies.KINDS[e.kind];
         if (e.st === 'windup') {
@@ -113,7 +137,7 @@ function createEnemyView(scene) {
         } else m.visible = false;
         v.shadow.visible = !lying || e.t < 60;
       }
-      for (var id in views) if (!seen[id]) { scene.remove(views[id].rig.root); delete views[id]; }
+      for (var id in views) if (!seen[id]) { scene.remove(views[id].rig.root); if (views[id].bottle) scene.remove(views[id].bottle); delete views[id]; }
     },
     /* world position of his mouth and eyes, and the way his face is pointing (for spit, blood and the close-up camera) */
     /* the blow drives his whole body along its direction, then he settles back */
@@ -126,7 +150,7 @@ function createEnemyView(scene) {
       return { fdx: f.x, fdy: f.y, fdz: f.z, mx: m.x, my: m.y, mz: m.z, ex: q.x, ey: q.y, ez: q.z, face: v.face };
     },
     count: function () { return Object.keys(views).length; },
-    dispose: function () { for (var id in views) scene.remove(views[id].rig.root); views = {}; }
+    dispose: function () { for (var id in views) { scene.remove(views[id].rig.root); if (views[id].bottle) scene.remove(views[id].bottle); } views = {}; }
   };
 }
 

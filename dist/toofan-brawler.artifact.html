@@ -359,7 +359,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 63',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 64',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -406,8 +406,29 @@ var KINDS = {
   /* street thug: throws a blockable punch; a clear telegraph before every attack */
   thug: { hp: 8.8, speed: 2.1, reach: 1.25, windup: 0.6, recover: 0.6, damage: 6, blockable: true, clip: 'cross', radius: 0.4, blockChance: 0.85 },
   /* brute with a stick: slower, tougher, his swing cannot be blocked (red telegraph) - move away or hit him first */
-  stick: { hp: 13, speed: 1.7, reach: 1.45, windup: 0.85, recover: 0.8, damage: 13, blockable: false, clip: 'hook', radius: 0.45, blockChance: 0.6 }
+  stick: { hp: 13, speed: 1.7, reach: 1.45, windup: 0.85, recover: 0.8, damage: 13, blockable: false, clip: 'hook', radius: 0.45, blockChance: 0.6 },
+  /* Phase 6 fighters (added alongside the two above; Toofan's moves are unchanged) */
+  /* chain swinger: the longest reach, a wide sweep that can be blocked; close in after his swing */
+  chain: { hp: 10, speed: 1.9, reach: 2.25, windup: 0.75, recover: 0.75, damage: 9, blockable: true, clip: 'hook', radius: 0.42, blockChance: 0.4 },
+  /* heavy: slow and very tough, shrugs off light blows, his grab cannot be blocked - step away from it, hit him after */
+  heavy: { hp: 24, speed: 1.25, reach: 1.4, windup: 1.0, recover: 1.0, damage: 16, blockable: false, clip: 'cross', radius: 0.55, blockChance: 0.2, mass: 2.2 },
+  /* kicker: fast, kicks twice in a row; block the second and counter */
+  kicker: { hp: 8, speed: 2.6, reach: 1.6, windup: 0.45, recover: 0.45, damage: 5, blockable: true, clip: 'kick', radius: 0.4, blockChance: 0.5, twice: true },
+  /* blocker: keeps his guard up against punches; a kick (or a counter) smashes it open */
+  blocker: { hp: 11, speed: 1.8, reach: 1.3, windup: 0.6, recover: 0.6, damage: 7, blockable: true, clip: 'jab', radius: 0.45, blockChance: 1.0, guardHits: 4, kickBreaks: true },
+  /* bottle thrower: hangs back and throws from range, backs off when Toofan closes in */
+  thrower: { hp: 7, speed: 2.2, reach: 7.0, windup: 0.9, recover: 0.8, damage: 6, blockable: true, clip: 'cross', radius: 0.4, blockChance: 0.2, ranged: true, keep: 5.0 }
 };
+
+/* which fighters a fight can have, by how many places Toofan has cleared before it (the difficulty ramp) */
+var RAMP = [
+  { n: 4, mix: { thug: 3, stick: 1 } },
+  { n: 5, mix: { thug: 3, stick: 1, kicker: 1 } },
+  { n: 5, mix: { thug: 2, stick: 1, kicker: 1, chain: 1 } },
+  { n: 6, mix: { thug: 2, stick: 1, kicker: 1, chain: 1, blocker: 1, thrower: 1 } },
+  { n: 7, mix: { thug: 1, stick: 2, kicker: 1, chain: 1, blocker: 1, thrower: 1, heavy: 1 } },
+  { n: 8, mix: { thug: 1, stick: 2, kicker: 2, chain: 1, blocker: 1, thrower: 1, heavy: 1 } }
+];
 
 /* arc = half-angle in degrees in front of the hero, 180 = all round. down = knocks the target over. */
 var STRIKES = {
@@ -433,7 +454,7 @@ var GUARD_HITS = 2, GUARD_COOLDOWN = 300, GUARD_BREAK = 55;
 
 var RAGE = { hit: 5, counterHit: 3, block: 3, timedBlock: 16, hurt: 2 };
 
-module.exports = { KINDS: KINDS, STRIKES: STRIKES, RAGE: RAGE, GUARD_HITS: GUARD_HITS, GUARD_COOLDOWN: GUARD_COOLDOWN, GUARD_BREAK: GUARD_BREAK };
+module.exports = { RAMP: RAMP, KINDS: KINDS, STRIKES: STRIKES, RAGE: RAGE, GUARD_HITS: GUARD_HITS, GUARD_COOLDOWN: GUARD_COOLDOWN, GUARD_BREAK: GUARD_BREAK };
 
 };
 defs["data/locations"]=function(module,exports,require){
@@ -1437,6 +1458,8 @@ var streamingMod = require('../sim/streaming');
 var arenagen = require('../sim/arenagen');
 var arenaview = require('../view/arenaview');
 var musicMod = require('../view/music');
+var lineupMod = require('../sim/lineup');
+var rngMod = require('../core/rng');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -1461,6 +1484,11 @@ function place(ctx, m) {
   p.hp = p.maxHp; p.down = false; p.stun = 0;
   w.mounted = false; w.bike.x = p.x + 4000; w.bike.z = p.z; w.bike.speed = 0;               /* Bijli is left on the road: not reachable during the fight */
   w.locs.cleared[best.key] = false; w.locs.active = null;
+  /* who turns up: the more places cleared on the ride, the bigger and tougher the crowd */
+  var level = 0; if (ctx.ride && ctx.ride.missions) Object.keys(ctx.ride.missions).forEach(function (k) { if (ctx.ride.missions[k] === 'cleared') level++; });
+  if (m.level !== undefined) level = m.level;
+  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)));
+  m.lineup = w.combat.lineup.slice();
   w.locs.next = { key: best.key, type: best.type, name: LOC.LOCATIONS[best.type].name, x: best.cx * S, z: best.cz * S, dist: 15 };
   w.streaming.update(p.x, p.z);
   m.brawlKey = best.key;
@@ -3380,7 +3408,7 @@ function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 function addRage(p, n) { p.rage = Math.min(100, p.rage + n); }
 
 function spawn(world, kind, x, z) {
-  var c = world.combat, K = KINDS[kind];
+  var c = world.combat, K = KINDS[kind] || KINDS.thug; if (!KINDS[kind]) kind = 'thug';
   c.enemies.push({ id: c.nextId++, kind: kind, x: x, z: z, px: x, pz: z, face: 0, hp: K.hp, maxHp: K.hp, st: 'approach', t: 0, cd: 20 + Math.floor(world.rng.next() * 60),
     kx: 0, kz: 0, phase: 0, canBlock: world.rng.next() < K.blockChance, guarding: false, guardHits: 0, guardCool: 0, guardTimer: 0, blockT: 99, lastMove: '', hitN: 0 });
 }
@@ -3401,7 +3429,9 @@ function startWave(world) {
 function startLocation(world, name, points, n, stick) {
   var c = world.combat, i;
   c.wave++; c.auto = false;
-  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, i >= n - stick ? 'stick' : 'thug', pt.x, pt.z); }
+  var kinds = c.lineup; c.lineup = null;                          /* a lineup set by the mission (fighter types, difficulty ramp) wins */
+  if (kinds && kinds.length) n = kinds.length;
+  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, kinds ? kinds[i] : (i >= n - stick ? 'stick' : 'thug'), pt.x + (i >= points.length ? 0.9 : 0), pt.z + (i >= points.length ? 0.6 : 0)); }
   c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
 }
 
@@ -3447,11 +3477,13 @@ function hurtEnemy(world, e, dmg, from, spec, label, last) {
   var c = world.combat, p = world.player;
   e.hp -= dmg; e.guarding = false; e.guardHits = 0; c.combo++; c.comboT = 150;
   var dx = e.x - from.x, dz = e.z - from.z, d = Math.hypot(dx, dz) || 1, k = (spec.down || e.hp <= 0 || last || spec.knock > 2) ? spec.knock * 3.2 * 0.45 : 0;
-  e.kx = dx / d * k / TPS * 0.8; e.kz = dz / d * k / TPS * 0.8;      /* he stays where he is and reacts; only the blow that drops him slides him a little */
+  var mass = (KINDS[e.kind] && KINDS[e.kind].mass) || 1;
+  e.kx = dx / d * k / TPS * 0.8 / mass; e.kz = dz / d * k / TPS * 0.8 / mass;      /* he stays where he is and reacts; only the blow that drops him slides him a little */
   e.lastMove = label; e.hitN = (e.hitN || 0) + 1; e.kd = 0;     /* initial knock speed (m per tick), decays */
   var killed = e.hp <= 0;
   if ((killed || last) && label !== 'counter' && e.st !== 'down') { e.kx = dx / d * 0.25; e.kz = dz / d * 0.25; e.thrown = true; }       /* the last blow of the string throws him to the ground */
   var floors = spec.down && label !== 'kick' && label !== 'roundhouse';      /* a kick in the string only drops him when it is the last blow */
+  if (mass > 1 && !killed && label !== 'counter' && e.hp > e.maxHp * 0.35) { floors = false; last = false; e.thrown = false; e.kx *= 0.3; e.kz *= 0.3; }   /* the heavy stays on his feet until he is worn down */
   e.st = (floors || killed || last) ? 'down' : 'hurt'; e.t = 0; e.dead = killed;
   if (c.seqId === e.id) { if (e.st === 'down') { c.seqId = 0; c.seqT = 0; } else c.seqT = 130; }
   addRage(p, RAGE.hit + (label === 'counter' ? RAGE.counterHit : 0));
@@ -3485,7 +3517,7 @@ function playerStrike(world, entry) {
   if (!best) return;
   if (!direct && best.guarding && Math.abs(angDiff(Math.atan2(p.x - best.x, p.z - best.z), best.face)) < 75 * Math.PI / 180) {     /* he sees it coming: the blow lands on his arms */
     best.guardHits++; best.blockT = 0; best.guardTimer = 0;
-    var broke = best.guardHits >= GH;
+    var KB = KINDS[best.kind], broke = best.guardHits >= (KB.guardHits || GH) || (KB.kickBreaks && (spec.down || /kick|roundhouse/i.test(move)));
     world.bus.emit('enemyBlock', { move: move, id: best.id, x: best.x, z: best.z, broke: broke, high: !!spec.high });
     var bx = best.x - p.x, bz = best.z - p.z, bl = Math.hypot(bx, bz) || 1; best.x += bx / bl * 0.06; best.z += bz / bl * 0.06;
     if (broke) { c.seqId = best.id; c.seqT = 170; best.st = 'guardbreak'; best.t = 0; best.guardHits = 0; best.guardCool = GCOOL; best.guarding = false; best.kx = bx / bl * 0.05; best.kz = bz / bl * 0.05; }
@@ -3498,6 +3530,7 @@ function enemyStrike(world, e, input) {
   var p = world.player, K = KINDS[e.kind], c = world.combat, s = input.state;
   if (p.invuln || p.down) return;
   if (dist(e, p) > K.reach + 0.35) { world.bus.emit('whiff', { id: e.id }); return; }
+  if (K.ranged) world.bus.emit('throw', { id: e.id, x: e.x, z: e.z, tx: p.x, tz: p.z });
   var toE = Math.atan2(e.x - p.x, e.z - p.z), front = Math.abs(angDiff(toE, p.face)) < 80 * Math.PI / 180;
   var guarding = !!p.guard && front && K.blockable;
   if (guarding) {
@@ -3538,7 +3571,8 @@ function stepEnemy(world, e, input) {
       var eng = !!c.engaged[e.id], want = K.reach * 0.8, sp;
       e.guarding = e.canBlock && e.guardCool <= 0 && d < 3.2 && !p.down;
       if (eng) {
-        if (d > want) { sp = K.speed / TPS; e.x += dx / d * sp; e.z += dz / d * sp; e.phase += sp; e.moving = true; } else e.moving = false;
+        if (K.keep && d < K.keep - 1.2) { sp = K.speed / TPS; e.x -= dx / d * sp; e.z -= dz / d * sp; e.phase += sp; e.moving = true; }   /* the thrower backs away to throw */
+        else if (d > (K.keep || want)) { sp = K.speed / TPS; e.x += dx / d * sp; e.z += dz / d * sp; e.phase += sp; e.moving = true; } else e.moving = false;
         if (e.cd > 0) e.cd--;
         else if (d <= K.reach && attackers(c) < limit(world) && c.windGap <= 0 && !p.down && !(e.guarding && world.attackLock && c.target === e.id)) {     /* a guarder keeps his arms up while the hero is swinging */ e.st = 'windup'; e.t = 0; c.windGap = 28 + Math.floor(world.rng.next() * 20); world.bus.emit('windup', { id: e.id, blockable: K.blockable }); }
       } else {
@@ -3553,10 +3587,15 @@ function stepEnemy(world, e, input) {
     }
     case 'windup':
       e.guarding = false;
-      e.face = Math.atan2(dx, dz);
+      e.face = Math.atan2(dx, dz); e.aimD = d;
       if (e.t >= K.windup * TPS) { e.st = 'strike'; e.t = 0; enemyStrike(world, e, input); }
       break;
-    case 'strike': if (e.t >= 8) { e.st = 'recover'; e.t = 0; } break;
+    case 'strike':
+      if (e.t >= 8) {
+        if (K.twice && !e.second && !p.down) { e.second = true; e.st = 'windup'; e.t = Math.floor(K.windup * TPS * 0.45); world.bus.emit('windup', { id: e.id, blockable: K.blockable, second: true }); }   /* the kicker's second kick comes quick */
+        else { e.second = false; e.st = 'recover'; e.t = 0; }
+      }
+      break;
     case 'recover': e.guarding = e.canBlock && e.guardCool <= 0 && e.t >= 14 && d < 3.2 && !p.down; if (e.t >= K.recover * TPS) { e.st = 'approach'; e.t = 0; e.cd = 10 + Math.floor(world.rng.next() * 28); } break;
     case 'hurt': if (e.t >= 34 && !held(c, e)) { e.st = 'approach'; e.t = 0; e.cd = 12 + Math.floor(world.rng.next() * 25); } break;
     case 'down':
@@ -3884,6 +3923,30 @@ function step(r, input) {
 }
 
 module.exports = { canStart: canStart, start: start, step: step, runAhead: runAhead, BIKE_MOVES: BIKE_MOVES, ROOF_MOVES: ROOF_MOVES };
+
+};
+defs["sim/lineup"]=function(module,exports,require){
+/* sim: who turns up to a fight. The difficulty ramp: each place Toofan has cleared makes the next fight bigger (4 men up to 8) and adds
+   tougher kinds of fighter; every fight has at least one lathi (stick) man. Seeded, so the same save gives the same fight. */
+'use strict';
+
+var D = require('../data/enemies');
+
+/* level: places cleared so far; rng: a seeded rng; returns a list of kinds, the toughest last (they arrive behind the others) */
+function lineup(level, rng) {
+  var R = D.RAMP[Math.max(0, Math.min(D.RAMP.length - 1, level | 0))], pool = [], out = [], k, i;
+  for (k in R.mix) for (i = 0; i < R.mix[k]; i++) pool.push(k);
+  if (pool.indexOf('stick') < 0) pool.push('stick');
+  for (i = 0; i < R.n; i++) {
+    if (i === 0) { out.push('stick'); continue; }                  /* the lathi man is always there */
+    out.push(pool[Math.floor(rng.next() * pool.length) % pool.length]);
+  }
+  var order = { thug: 0, kicker: 1, thrower: 2, stick: 3, chain: 4, blocker: 5, heavy: 6 };
+  out.sort(function (a, b) { return order[a] - order[b]; });
+  return out;
+}
+
+module.exports = { lineup: lineup };
 
 };
 defs["sim/ride"]=function(module,exports,require){
@@ -5680,8 +5743,22 @@ function createEnemyView(scene) {
   var views = {}, TPS = 60;
   var spikeGeo = new THREE.BoxGeometry(0.018, 0.018, 0.2), clubGeo = new THREE.BoxGeometry(0.07, 0.8, 0.07), clubMat = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
     var shadowGeo = new THREE.CircleGeometry(0.5, 20), shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
+  /* each kind of fighter carries his own gear on the rig: the chain, the heavy's bulk and belly, the kicker's headband, the blocker's
+     wrapped forearms, the thrower's bottle */
+  var gearMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: false }), M3 = {};
+  function mat(hex) { return M3[hex] || (M3[hex] = new THREE.MeshLambertMaterial({ color: hex })); }
+  function box(parent, w, h, d, x, y, z, hex) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(hex)); m.position.set(x, y, z); parent.add(m); return m; }
+  var bottleGeo = new THREE.BoxGeometry(0.07, 0.24, 0.07), bottleMat = new THREE.MeshLambertMaterial({ color: 0x2f8a3a, transparent: true, opacity: 0.9 });
+  function gear(kind, rig) {
+    var P = rig.parts, k;
+    if (kind === 'chain') { for (k = 0; k < 9; k++) box(P.R.wrist, 0.05, 0.075, 0.03 + (k % 2) * 0.03, 0, -0.1 - k * 0.075, 0.06 + Math.sin(k * 0.8) * 0.03, 0x9aa4ab); box(P.R.wrist, 0.09, 0.09, 0.09, 0, -0.1 - 9 * 0.075, 0.08, 0x6b747d); rig.root.scale.setScalar(1.04); }
+    if (kind === 'heavy') { rig.root.scale.set(1.3, 1.16, 1.3); box(rig.spine, 0.34, 0.26, 0.16, 0, 0.12, 0.13, 0x9a6440); box(rig.spine, 0.36, 0.06, 0.2, 0, -0.01, 0.1, 0x3a2414); }
+    if (kind === 'kicker') { box(rig.head, 0.27, 0.05, 0.27, 0, 0.1, 0, 0xffc21a); box(rig.head, 0.04, 0.12, 0.03, 0.05, 0.04, -0.15, 0xffc21a); }
+    if (kind === 'blocker') { ['L', 'R'].forEach(function (S) { box(P[S].elbow, 0.12, 0.2, 0.12, 0, -0.14, 0, 0xf2f2ee); box(P[S].wrist, 0.13, 0.1, 0.13, 0, -0.03, 0, 0xc8202a); }); box(rig.head, 0.28, 0.12, 0.28, 0, 0.12, 0, 0x2a4a8c); rig.root.scale.setScalar(1.05); }
+    if (kind === 'thrower') { box(P.R.wrist, 0.07, 0.22, 0.07, 0, -0.12, 0.05, 0x2f8a3a); box(rig.head, 0.26, 0.06, 0.26, 0, 0.12, 0.02, 0x5a7a2a); rig.root.scale.setScalar(0.97); }
+  }
   function make(e) {
-    var rig = herorig.createHeroRig('thug'), mark = new THREE.Group(), spikes = [], i;
+    var rig = herorig.createHeroRig(e.kind === 'thug' ? 'thug' : 'thug:' + e.kind), mark = new THREE.Group(), spikes = [], i;
     for (i = 0; i < 9; i++) {                                                  /* spikes fanned over the head, longer ones in the middle */
       var ang = (i - 4) * 0.36, piv = new THREE.Group(), sp = new THREE.Mesh(spikeGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false }));
       sp.renderOrder = 12; sp.rotation.x = Math.PI / 2; sp.position.y = 0.2; sp.scale.set(1, 1, 1 - Math.abs(i - 4) * 0.12);
@@ -5690,8 +5767,11 @@ function createEnemyView(scene) {
     mark.position.y = 2.1; mark.visible = false; rig.root.add(mark);
     var sh = new THREE.Mesh(shadowGeo, shadowMat); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.02; rig.root.add(sh);
     if (e.kind === 'stick') { var club = new THREE.Mesh(clubGeo, clubMat); club.position.set(0, -0.12, 0.1); rig.parts.R.wrist.add(club); rig.root.scale.setScalar(1.08); }
+    var bottle = null;
+    gear(e.kind, rig);
+    if (e.kind === 'thrower') { bottle = new THREE.Mesh(bottleGeo, bottleMat); scene.add(bottle); bottle.visible = false; }
     scene.add(rig.root);
-    return { rig: rig, mark: mark, spikes: spikes, shadow: sh, cur: posemath.named('stand'), face: e.face, t: Math.random() * 6, sink: 0 };
+    return { rig: rig, mark: mark, spikes: spikes, shadow: sh, cur: posemath.named('stand'), face: e.face, t: Math.random() * 6, sink: 0, bottle: bottle };
   }
   function pose(e, v, dt) {
     var K = enemies.KINDS[e.kind], mv = moves.MOVES[K.clip], base;
@@ -5753,6 +5833,13 @@ function createEnemyView(scene) {
           fx.mouth.visible = open; fx.blood.visible = (e.hitN || 0) >= 2;
         }
         if (e.st === 'dead' && e.t > 55) { v.sink = Math.min(1, (e.t - 55) / 45); v.rig.root.position.y = -v.sink * 0.9; }
+        /* the thrower's bottle flies from his hand to where Toofan stood as the throw lands */
+        if (v.bottle) {
+          var flying = e.st === 'strike' || (e.st === 'recover' && e.t < 10);
+          if (e.st === 'windup') { var reach = e.aimD || 5; v.from = { x: x, z: z }; v.to = { x: x + Math.sin(e.face) * reach, z: z + Math.cos(e.face) * reach }; }
+          v.bottle.visible = flying && !!v.from;
+          if (v.bottle.visible) { var uu = Math.min(1, (e.st === 'strike' ? e.t : 8 + e.t) / 12); v.bottle.position.set(v.from.x + (v.to.x - v.from.x) * uu, 1.5 + Math.sin(Math.PI * uu) * 1.2 - uu * 0.4, v.from.z + (v.to.z - v.from.z) * uu); v.bottle.rotation.x += 0.5; v.bottle.rotation.z += 0.3; }
+        }
         /* telegraph */
         var m = v.mark, K = enemies.KINDS[e.kind];
         if (e.st === 'windup') {
@@ -5762,7 +5849,7 @@ function createEnemyView(scene) {
         } else m.visible = false;
         v.shadow.visible = !lying || e.t < 60;
       }
-      for (var id in views) if (!seen[id]) { scene.remove(views[id].rig.root); delete views[id]; }
+      for (var id in views) if (!seen[id]) { scene.remove(views[id].rig.root); if (views[id].bottle) scene.remove(views[id].bottle); delete views[id]; }
     },
     /* world position of his mouth and eyes, and the way his face is pointing (for spit, blood and the close-up camera) */
     /* the blow drives his whole body along its direction, then he settles back */
@@ -5775,7 +5862,7 @@ function createEnemyView(scene) {
       return { fdx: f.x, fdy: f.y, fdz: f.z, mx: m.x, my: m.y, mz: m.z, ex: q.x, ey: q.y, ez: q.z, face: v.face };
     },
     count: function () { return Object.keys(views).length; },
-    dispose: function () { for (var id in views) scene.remove(views[id].rig.root); views = {}; }
+    dispose: function () { for (var id in views) { scene.remove(views[id].rig.root); if (views[id].bottle) scene.remove(views[id].bottle); } views = {}; }
   };
 }
 
@@ -5968,7 +6055,7 @@ function getTemplate(variant) {
     stats.voxels += a.voxels; stats.triangles += a.triangles; stats.bytes += a.bytes;
   });
   var face = null;
-  if (variant === 'thug') {                                   /* where the eyes and mouth sit on the head grid, so lids and blood can be laid over them */
+  if (/^thug/.test(variant)) {                                   /* where the eyes and mouth sit on the head grid, so lids and blood can be laid over them */
     var hg = parts.head.grid; face = { pivot: parts.head.pivot, fzL: vg.frontZ(hg, 3, 7), fzR: vg.frontZ(hg, 7, 7), fzM: vg.frontZ(hg, 5, 2) };
   }
   caches[variant] = { geo: geo, stats: stats, face: face, mat: new THREE.MeshLambertMaterial({ vertexColors: true }) };
@@ -5984,7 +6071,7 @@ function createHeroRig(variant) {
   }
   function M(parent, name) {
     if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
-      if (!((variant === 'thug' || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      if (!((/^thug/.test(variant || '') || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
       return null;
     }
     var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
@@ -5998,11 +6085,11 @@ function createHeroRig(variant) {
   for (var i = 0; i < 3; i++) { var sg = G(sp, i === 0 ? SK.hair : SK.hairStep, 'hair' + i); M(sg, 'hair' + i); hair.push(sg); sp = sg; }
   var beard = G(head, SK.beard, 'beard'); M(beard, 'beard');
   var guitar = new THREE.Group(); body.add(guitar); var guitarMesh = M(guitar, 'guitar');
-  if (variant === 'thug' || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
+  if (/^thug/.test(variant || '') || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
 
   /* a hurt thug's face: eyelids that squeeze shut, an open mouth, a smear of blood. Thin boxes just proud of the face, hidden until needed. */
   var faceFx = null;
-  if (variant === 'thug' && T.face) {
+  if (/^thug/.test(variant || '') && T.face) {
     var F = T.face;
     var fbox = function (w, h, d, col, gx, gy, gz) {
       var m = new THREE.Mesh(new THREE.BoxGeometry(w * VS, h * VS, d * VS), new THREE.MeshLambertMaterial({ color: col }));
@@ -6530,9 +6617,20 @@ var COP = { skin: h('#a8754e'), skinD: h('#8c5e3c'), skinL: h('#bd8659'), skinDD
   yel: h('#c9b27a'), yelD: h('#a99560'), blu: h('#c2a86c'), bluD: h('#a68e55'), bluL: h('#d6be84'),
   pants: h('#b59d64'), pantsD: h('#97824f'), pantsL: h('#c8b077'), belt: h('#3a2414'), shoe: h('#15110d'), shoeL: h('#2a221a') };
 
+/* each kind of fighter gets his own clothes over the thug's build: vest (yel), shirt (blu), trousers; and his own skin and hair */
+var KIND_PAL = {
+  stick:   { yel: h('#3b3a34'), yelD: h('#2a2925'), blu: h('#6b4a2a'), bluD: h('#52381f'), bluL: h('#7d5a36') },
+  chain:   { yel: h('#1d1d22'), yelD: h('#121216'), blu: h('#2c2c33'), bluD: h('#1c1c22'), bluL: h('#3a3a44'), pants: h('#24242a'), pantsD: h('#18181c'), pantsL: h('#303038') },
+  heavy:   { yel: h('#efe3c8'), yelD: h('#d6c8a8'), blu: h('#efe3c8'), bluD: h('#d6c8a8'), bluL: h('#fff6e0'), pants: h('#6b2d2a'), pantsD: h('#52211f'), pantsL: h('#7d3a36'), skin: h('#9a6440'), skinD: h('#7c4e30'), skinL: h('#ad7450') },
+  kicker:  { yel: h('#c8962a'), yelD: h('#a67a1e'), blu: h('#1f6b5a'), bluD: h('#165244'), bluL: h('#2a826e'), pants: h('#2d3d58'), pantsD: h('#202c40'), pantsL: h('#3a4d6e') },
+  blocker: { yel: h('#2a4a8c'), yelD: h('#1f386b'), blu: h('#2a4a8c'), bluD: h('#1f386b'), bluL: h('#3a5ca6'), pants: h('#3a3a3a'), pantsD: h('#2a2a2a'), pantsL: h('#4a4a4a') },
+  thrower: { yel: h('#5a7a2a'), yelD: h('#45601f'), blu: h('#d8d0b8'), bluD: h('#bfb69c'), bluL: h('#ebe4cf'), skin: h('#c08458'), skinD: h('#a06c44'), skinL: h('#d29466') }
+};
 function buildParts(variant) {
-  if (variant === 'thug' || variant === 'cop') {
-    var PAL = variant === 'cop' ? COP : THUG, save = {}, k; for (k in PAL) { save[k] = C[k]; C[k] = PAL[k]; }
+  if (/^thug/.test(variant || '') || variant === 'cop') {
+    var PAL = variant === 'cop' ? COP : THUG, kind = (variant || '').split(':')[1], save = {}, k;
+    if (kind && KIND_PAL[kind]) { var P2 = {}; for (k in THUG) P2[k] = THUG[k]; for (k in KIND_PAL[kind]) P2[k] = KIND_PAL[kind][k]; PAL = P2; }
+    for (k in PAL) { save[k] = C[k]; C[k] = PAL[k]; }
     TH = true;
     try { return buildPartsRaw(); } finally { TH = false; for (k in save) C[k] = save[k]; }
   }

@@ -16,6 +16,8 @@ var streamingMod = require('../sim/streaming');
 var arenagen = require('../sim/arenagen');
 var arenaview = require('../view/arenaview');
 var musicMod = require('../view/music');
+var lineupMod = require('../sim/lineup');
+var rngMod = require('../core/rng');
 
 function mod3(n) { return ((n % 3) + 3) % 3; }
 
@@ -40,6 +42,11 @@ function place(ctx, m) {
   p.hp = p.maxHp; p.down = false; p.stun = 0;
   w.mounted = false; w.bike.x = p.x + 4000; w.bike.z = p.z; w.bike.speed = 0;               /* Bijli is left on the road: not reachable during the fight */
   w.locs.cleared[best.key] = false; w.locs.active = null;
+  /* who turns up: the more places cleared on the ride, the bigger and tougher the crowd */
+  var level = 0; if (ctx.ride && ctx.ride.missions) Object.keys(ctx.ride.missions).forEach(function (k) { if (ctx.ride.missions[k] === 'cleared') level++; });
+  if (m.level !== undefined) level = m.level;
+  w.combat.lineup = lineupMod.lineup(level, rngMod.createRng(rngMod.hash32(w.seed ^ 0x51f1, best.cx * 7 + level, best.cz)));
+  m.lineup = w.combat.lineup.slice();
   w.locs.next = { key: best.key, type: best.type, name: LOC.LOCATIONS[best.type].name, x: best.cx * S, z: best.cz * S, dist: 15 };
   w.streaming.update(p.x, p.z);
   m.brawlKey = best.key;

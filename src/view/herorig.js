@@ -29,7 +29,7 @@ function getTemplate(variant) {
     stats.voxels += a.voxels; stats.triangles += a.triangles; stats.bytes += a.bytes;
   });
   var face = null;
-  if (variant === 'thug') {                                   /* where the eyes and mouth sit on the head grid, so lids and blood can be laid over them */
+  if (/^thug/.test(variant)) {                                   /* where the eyes and mouth sit on the head grid, so lids and blood can be laid over them */
     var hg = parts.head.grid; face = { pivot: parts.head.pivot, fzL: vg.frontZ(hg, 3, 7), fzR: vg.frontZ(hg, 7, 7), fzM: vg.frontZ(hg, 5, 2) };
   }
   caches[variant] = { geo: geo, stats: stats, face: face, mat: new THREE.MeshLambertMaterial({ vertexColors: true }) };
@@ -45,7 +45,7 @@ function createHeroRig(variant) {
   }
   function M(parent, name) {
     if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
-      if (!((variant === 'thug' || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      if (!((/^thug/.test(variant || '') || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
       return null;
     }
     var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
@@ -59,11 +59,11 @@ function createHeroRig(variant) {
   for (var i = 0; i < 3; i++) { var sg = G(sp, i === 0 ? SK.hair : SK.hairStep, 'hair' + i); M(sg, 'hair' + i); hair.push(sg); sp = sg; }
   var beard = G(head, SK.beard, 'beard'); M(beard, 'beard');
   var guitar = new THREE.Group(); body.add(guitar); var guitarMesh = M(guitar, 'guitar');
-  if (variant === 'thug' || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
+  if (/^thug/.test(variant || '') || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
 
   /* a hurt thug's face: eyelids that squeeze shut, an open mouth, a smear of blood. Thin boxes just proud of the face, hidden until needed. */
   var faceFx = null;
-  if (variant === 'thug' && T.face) {
+  if (/^thug/.test(variant || '') && T.face) {
     var F = T.face;
     var fbox = function (w, h, d, col, gx, gy, gz) {
       var m = new THREE.Mesh(new THREE.BoxGeometry(w * VS, h * VS, d * VS), new THREE.MeshLambertMaterial({ color: col }));

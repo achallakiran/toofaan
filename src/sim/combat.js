@@ -29,7 +29,7 @@ function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 function addRage(p, n) { p.rage = Math.min(100, p.rage + n); }
 
 function spawn(world, kind, x, z) {
-  var c = world.combat, K = KINDS[kind];
+  var c = world.combat, K = KINDS[kind] || KINDS.thug; if (!KINDS[kind]) kind = 'thug';
   c.enemies.push({ id: c.nextId++, kind: kind, x: x, z: z, px: x, pz: z, face: 0, hp: K.hp, maxHp: K.hp, st: 'approach', t: 0, cd: 20 + Math.floor(world.rng.next() * 60),
     kx: 0, kz: 0, phase: 0, canBlock: world.rng.next() < K.blockChance, guarding: false, guardHits: 0, guardCool: 0, guardTimer: 0, blockT: 99, lastMove: '', hitN: 0 });
 }
@@ -50,7 +50,9 @@ function startWave(world) {
 function startLocation(world, name, points, n, stick) {
   var c = world.combat, i;
   c.wave++; c.auto = false;
-  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, i >= n - stick ? 'stick' : 'thug', pt.x, pt.z); }
+  var kinds = c.lineup; c.lineup = null;                          /* a lineup set by the mission (fighter types, difficulty ramp) wins */
+  if (kinds && kinds.length) n = kinds.length;
+  for (i = 0; i < n; i++) { var pt = points[i % points.length]; spawn(world, kinds ? kinds[i] : (i >= n - stick ? 'stick' : 'thug'), pt.x + (i >= points.length ? 0.9 : 0), pt.z + (i >= points.length ? 0.6 : 0)); }
   c.banner = name; c.bannerT = 170; world.bus.emit('wave', { wave: c.wave, count: n, name: name });
 }
 
@@ -96,11 +98,13 @@ function hurtEnemy(world, e, dmg, from, spec, label, last) {
   var c = world.combat, p = world.player;
   e.hp -= dmg; e.guarding = false; e.guardHits = 0; c.combo++; c.comboT = 150;
   var dx = e.x - from.x, dz = e.z - from.z, d = Math.hypot(dx, dz) || 1, k = (spec.down || e.hp <= 0 || last || spec.knock > 2) ? spec.knock * 3.2 * 0.45 : 0;
-  e.kx = dx / d * k / TPS * 0.8; e.kz = dz / d * k / TPS * 0.8;      /* he stays where he is and reacts; only the blow that drops him slides him a little */
+  var mass = (KINDS[e.kind] && KINDS[e.kind].mass) || 1;
+  e.kx = dx / d * k / TPS * 0.8 / mass; e.kz = dz / d * k / TPS * 0.8 / mass;      /* he stays where he is and reacts; only the blow that drops him slides him a little */
   e.lastMove = label; e.hitN = (e.hitN || 0) + 1; e.kd = 0;     /* initial knock speed (m per tick), decays */
   var killed = e.hp <= 0;
   if ((killed || last) && label !== 'counter' && e.st !== 'down') { e.kx = dx / d * 0.25; e.kz = dz / d * 0.25; e.thrown = true; }       /* the last blow of the string throws him to the ground */
   var floors = spec.down && label !== 'kick' && label !== 'roundhouse';      /* a kick in the string only drops him when it is the last blow */
+  if (mass > 1 && !killed && label !== 'counter' && e.hp > e.maxHp * 0.35) { floors = false; last = false; e.thrown = false; e.kx *= 0.3; e.kz *= 0.3; }   /* the heavy stays on his feet until he is worn down */
   e.st = (floors || killed || last) ? 'down' : 'hurt'; e.t = 0; e.dead = killed;
   if (c.seqId === e.id) { if (e.st === 'down') { c.seqId = 0; c.seqT = 0; } else c.seqT = 130; }
   addRage(p, RAGE.hit + (label === 'counter' ? RAGE.counterHit : 0));
@@ -134,7 +138,7 @@ function playerStrike(world, entry) {
   if (!best) return;
   if (!direct && best.guarding && Math.abs(angDiff(Math.atan2(p.x - best.x, p.z - best.z), best.face)) < 75 * Math.PI / 180) {     /* he sees it coming: the blow lands on his arms */
     best.guardHits++; best.blockT = 0; best.guardTimer = 0;
-    var broke = best.guardHits >= GH;
+    var KB = KINDS[best.kind], broke = best.guardHits >= (KB.guardHits || GH) || (KB.kickBreaks && (spec.down || /kick|roundhouse/i.test(move)));
     world.bus.emit('enemyBlock', { move: move, id: best.id, x: best.x, z: best.z, broke: broke, high: !!spec.high });
     var bx = best.x - p.x, bz = best.z - p.z, bl = Math.hypot(bx, bz) || 1; best.x += bx / bl * 0.06; best.z += bz / bl * 0.06;
     if (broke) { c.seqId = best.id; c.seqT = 170; best.st = 'guardbreak'; best.t = 0; best.guardHits = 0; best.guardCool = GCOOL; best.guarding = false; best.kx = bx / bl * 0.05; best.kz = bz / bl * 0.05; }
@@ -147,6 +151,7 @@ function enemyStrike(world, e, input) {
   var p = world.player, K = KINDS[e.kind], c = world.combat, s = input.state;
   if (p.invuln || p.down) return;
   if (dist(e, p) > K.reach + 0.35) { world.bus.emit('whiff', { id: e.id }); return; }
+  if (K.ranged) world.bus.emit('throw', { id: e.id, x: e.x, z: e.z, tx: p.x, tz: p.z });
   var toE = Math.atan2(e.x - p.x, e.z - p.z), front = Math.abs(angDiff(toE, p.face)) < 80 * Math.PI / 180;
   var guarding = !!p.guard && front && K.blockable;
   if (guarding) {
@@ -187,7 +192,8 @@ function stepEnemy(world, e, input) {
       var eng = !!c.engaged[e.id], want = K.reach * 0.8, sp;
       e.guarding = e.canBlock && e.guardCool <= 0 && d < 3.2 && !p.down;
       if (eng) {
-        if (d > want) { sp = K.speed / TPS; e.x += dx / d * sp; e.z += dz / d * sp; e.phase += sp; e.moving = true; } else e.moving = false;
+        if (K.keep && d < K.keep - 1.2) { sp = K.speed / TPS; e.x -= dx / d * sp; e.z -= dz / d * sp; e.phase += sp; e.moving = true; }   /* the thrower backs away to throw */
+        else if (d > (K.keep || want)) { sp = K.speed / TPS; e.x += dx / d * sp; e.z += dz / d * sp; e.phase += sp; e.moving = true; } else e.moving = false;
         if (e.cd > 0) e.cd--;
         else if (d <= K.reach && attackers(c) < limit(world) && c.windGap <= 0 && !p.down && !(e.guarding && world.attackLock && c.target === e.id)) {     /* a guarder keeps his arms up while the hero is swinging */ e.st = 'windup'; e.t = 0; c.windGap = 28 + Math.floor(world.rng.next() * 20); world.bus.emit('windup', { id: e.id, blockable: K.blockable }); }
       } else {
@@ -202,10 +208,15 @@ function stepEnemy(world, e, input) {
     }
     case 'windup':
       e.guarding = false;
-      e.face = Math.atan2(dx, dz);
+      e.face = Math.atan2(dx, dz); e.aimD = d;
       if (e.t >= K.windup * TPS) { e.st = 'strike'; e.t = 0; enemyStrike(world, e, input); }
       break;
-    case 'strike': if (e.t >= 8) { e.st = 'recover'; e.t = 0; } break;
+    case 'strike':
+      if (e.t >= 8) {
+        if (K.twice && !e.second && !p.down) { e.second = true; e.st = 'windup'; e.t = Math.floor(K.windup * TPS * 0.45); world.bus.emit('windup', { id: e.id, blockable: K.blockable, second: true }); }   /* the kicker's second kick comes quick */
+        else { e.second = false; e.st = 'recover'; e.t = 0; }
+      }
+      break;
     case 'recover': e.guarding = e.canBlock && e.guardCool <= 0 && e.t >= 14 && d < 3.2 && !p.down; if (e.t >= K.recover * TPS) { e.st = 'approach'; e.t = 0; e.cd = 10 + Math.floor(world.rng.next() * 28); } break;
     case 'hurt': if (e.t >= 34 && !held(c, e)) { e.st = 'approach'; e.t = 0; e.cd = 12 + Math.floor(world.rng.next() * 25); } break;
     case 'down':
