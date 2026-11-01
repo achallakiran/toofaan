@@ -683,5 +683,18 @@ test('arenas: from the ride, the fight is in a closed arena: no traffic, nobody 
     assert(w.streaming === city && !w.bounds && !w.traffic.off, type + ': the city did not come back');
   });
 });
+test('ride: riding well away from the signal leaves it open for later and points to another; arriving there clears the skip', function () {
+  var rideMod2 = req('sim/ride'), R3 = req('data/ride'), ev = [], bus = { emit: function (n, e) { ev.push(n); } };
+  var r = rideMod2.createRide(9, bus), T = r.target, b = r.bike;
+  r.traffic = []; r.encCool = 1e9; r.nextEnc = null;
+  var inp = inputMod.createInput(); inp.tick(0); rideMod2.step(r, inp);
+  /* teleport far away from the signal along the same direction away from it */
+  var dx = b.x - T.x, dz = b.z - T.z, d = Math.hypot(dx, dz) || 1; r.tBest = Math.hypot(T.x - b.x, T.z - b.z);
+  r.tKey = T.key; r.tBest = -1000;
+  inp.tick(1); rideMod2.step(r, inp);
+  assert(ev.indexOf('ride:abandon') >= 0, 'no abandon event');
+  assert(r.target && r.target.key !== T.key, 'pointer did not move on');
+  assert.strictEqual(r.missions[T.key], 'open', 'the place should stay open');
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

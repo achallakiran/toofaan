@@ -58,8 +58,10 @@ function createRide(seed, bus) {
 /* the next signal: the nearest open trouble spot */
 function pickTarget(r) {
   var best = null, bd = 1e9;
+  var others = r.map.targets.some(function (t) { return r.missions[t.key] === 'open' && t.key !== r.skipped; });
   r.map.targets.forEach(function (t) {
     if (r.missions[t.key] !== 'open') return;
+    if (others && t.key === r.skipped) return;                      /* a place he rode away from waits until the next one is done */
     var d = Math.hypot(t.x - r.bike.x, t.z - r.bike.z); if (d < bd) { bd = d; best = t; }
   });
   r.target = best;
@@ -155,8 +157,15 @@ function step(r, input) {
     }
     /* arrival */
     var T = r.target;
+    /* riding away from the signal leaves it open for later: once he is well past his closest approach, the pointer moves on */
+    if (r.state === 'ride' && T && !r.enc) {
+      var dT = Math.hypot(T.x - b.x, T.z - b.z);
+      if (r.tKey !== T.key) { r.tKey = T.key; r.tBest = dT; }
+      else if (dT < r.tBest) r.tBest = dT;
+      else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
+    }
     if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
-      r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++;
+      r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
     /* road fights: after a while of riding, on a long straight */

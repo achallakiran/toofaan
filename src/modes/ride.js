@@ -85,6 +85,7 @@ function createRide() {
       scope.add(ctx.bus.on('enc:warn', function (e) { if (e.car) say('BLOCK when it swerves!', 1.2); }));
       scope.add(ctx.bus.on('enc:leap', function () { S.sfx.whoosh(1); word('JUMP!'); big('leap', 0, 1.2, 0.9); }));
       scope.add(ctx.bus.on('enc:spin', function () { S.sfx.crash(true); word('DHADAAM!'); big('spin', 0, 1.4, 1.0); }));
+      scope.add(ctx.bus.on('ride:abandon', function (e) { say('LEFT FOR LATER: ' + e.name.toUpperCase() + (e.next ? '  \u2192  ' + e.next.toUpperCase() : ''), 2.6); }));
       scope.add(ctx.bus.on('enc:police', function () { S.sfx.honk(); setTimeout(function () { S.sfx.honk(); }, 350); say('POLICE!', 1.6); }));
       scope.add(ctx.bus.on('enc:arrest', function () { cinecard.show({ title: 'ARRESTED!', sub: 'Police le gayi goondon ko', ms: 1500 }); }));
       scope.add(ctx.bus.on('enc:clear', function () { say('ROAD CLEAR!', 1.6); }));

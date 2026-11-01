@@ -49,14 +49,33 @@ function makeMark(color) {                            /* the warning flash: a bu
 
 /* poses for the new scenes */
 var CUFFED = { 'armA.sx': -38, 'armB.sx': -38, 'armA.sz': 8, 'armB.sz': 8, 'armA.e': 85, 'armB.e': 85, 'armA.pr': 50, 'armB.pr': 50, 'head.rx': 20, 'spine.rx': 10, 'neck.rx': 6 };
-var CLING = { 'armA.sx': 150, 'armB.sx': 150, 'armA.sz': 38, 'armB.sz': 38, 'armA.e': 30, 'armB.e': 30, 'head.rx': -58, 'neck.rx': -20, 'legA.hz': 10, 'legB.hz': 10, 'legA.k': 12, 'legB.k': 12, 'legA.a': -30, 'legB.a': -30 };
-var LEAN_OUT = { 'spine.rx': -18, 'hip.rx': -10, 'legA.hx': 70, 'legB.hx': 70, 'legA.k': 90, 'legB.k': 90, 'hip.y': -0.45, 'armA.sx': 40, 'armB.sx': 20, 'armA.e': 60, 'armB.e': 70 };
+/* flat on the roof, Spider-Man style: arms flung wide and forward, elbows bent, gripping both edges; legs splayed with knees bent; head up */
+var CLING = { 'armA.sx': 105, 'armB.sx': 105, 'armA.sz': 72, 'armB.sz': 72, 'armA.e': 55, 'armB.e': 55, 'armA.pr': -30, 'armB.pr': -30, 'head.rx': -62, 'neck.rx': -24, 'spine.rx': -8,
+              'legA.hx': 4, 'legB.hx': 4, 'legA.hz': 26, 'legB.hz': 26, 'legA.k': 14, 'legB.k': 14, 'legA.a': -25, 'legB.a': -25, 'hip.y': 0 };
+var LEAN_OUT = { 'spine.rx': -32, 'hip.rx': -14, 'legA.hx': 70, 'legB.hx': 70, 'legA.k': 90, 'legB.k': 90, 'hip.y': -0.45, 'armA.sx': 40, 'armB.sx': 20, 'armA.e': 60, 'armB.e': 70 };
 var SALUTE = { 'armB.sx': 150, 'armB.sz': 30, 'armB.e': 120, 'armB.pr': 30 };
+
+/* the goons' bandana: a cloth band tied round the forehead, a knot at the back and two tails hanging from it (one mesh) */
+function bandanaGeo() {
+  var parts = [[0, 0.11, 0.14, 0.29, 0.07, 0.025], [0, 0.11, -0.14, 0.29, 0.07, 0.025], [0.14, 0.11, 0, 0.025, 0.07, 0.29], [-0.14, 0.11, 0, 0.025, 0.07, 0.29],
+               [0, 0.12, -0.165, 0.07, 0.07, 0.05], [0.03, 0.03, -0.17, 0.045, 0.13, 0.02], [-0.035, 0.0, -0.18, 0.045, 0.16, 0.02],
+               [0, 0.16, 0.0, 0.25, 0.03, 0.25]];
+  var pos = [], idx = [], nor = [];
+  parts.forEach(function (q) {
+    var g = new THREE.BoxGeometry(q[3], q[4], q[5]); g.translate(q[0], q[1], q[2]);
+    var b = pos.length / 3, P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index.array, i;
+    for (i = 0; i < P.length; i++) { pos.push(P[i]); nor.push(N[i]); }
+    for (i = 0; i < I.length; i++) idx.push(I[i] + b);
+    g.dispose();
+  });
+  var out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); out.setIndex(idx);
+  return out;
+}
 
 function createEncView(root, heroRig, heroBike, blobUnder) {
   var S = R.SCALE, foes = {}, crew = {}, car = null, police = null, cops = [], cuffed = {}, ridePose = posemath.named('ride'), guard = posemath.named('guard');
   var clubGeo = new THREE.BoxGeometry(0.07, 0.8, 0.07), clubMat = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
-  var bandGeo = new THREE.BoxGeometry(0.27, 0.06, 0.27), bandMat = new THREE.MeshLambertMaterial({ color: 0xc8202a });
+  var bandGeo = bandanaGeo(), bandMat = new THREE.MeshLambertMaterial({ color: 0xc8202a });
   var goonMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   var seatV = new THREE.Vector3(), walkT = 0;
   /* aiming a limb: point an arm or leg (which hangs along -y from its joint) straight at a world point, blended over the posed rotation */
@@ -83,7 +102,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
     var rear = new THREE.Group(), front = new THREE.Group(); rear.position.set(0, T.axleY, T.rearZ); front.position.set(0, T.axleY, T.frontZ);
     rear.add(new THREE.Mesh(T.wheel, goonMat)); front.add(new THREE.Mesh(T.wheel, goonMat)); lean.add(rear); lean.add(front);
     lean.add(rig.root); rig.root.position.set(0, T.seat.y + 0.08 - 0.85, T.seat.z);
-    var band = new THREE.Mesh(bandGeo, bandMat); band.position.set(0, 0.17, 0); rig.head.add(band);       /* a red bandana */
+    var band = new THREE.Mesh(bandGeo, bandMat); band.position.set(0, 0.04, 0); rig.head.add(band);       /* a red bandana, tied at the back */
     rig.head.add(mark); mark.position.y = 0.55;
     if (o.kind === 'rod') { var club = new THREE.Mesh(clubGeo, clubMat); club.position.set(0, -0.12, 0.1); (o.lat < 0 ? rig.parts.L : rig.parts.R).wrist.add(club); }   /* in the hand toward Toofan */
     blobUnder(rootG, 0.9, 2.3); root.add(rootG);
@@ -248,7 +267,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
         var k2 = H.roof && e.phase === 'roof' ? 1 : H.leap, s2 = k2 * k2 * (3 - 2 * k2);
         rig.root.position.set(seatV.x + (rx - seatV.x) * s2, seatV.y + (ry - seatV.y) * s2 + Math.sin(Math.PI * k2) * 1.5 * (k2 < 1 ? 1 : 0), seatV.z + (rz - seatV.z) * s2);
         var flat = 1.42 * s2, rising = 0;
-        var p2 = posemath.layer(posemath.named('crouch'), CLING, s2, s2, s2, s2);
+        var p2 = posemath.layer(posemath.layer(posemath.named('crouch'), posemath.named('stand'), s2, s2, s2, s2), CLING, s2, s2, s2, s2);
         if (H.act && k2 >= 1) { rising = Math.sin(Math.PI * Math.min(1, H.act.t / H.act.len)); p2 = posemath.layer(p2, clip(H.act.counter ? 'counterCross' : 'hook', H.act.t / 60), 0, 1, 1, 1); }
         if (H.hurt > 0) p2 = posemath.layer(p2, posemath.named('hurt'), 0, 0.6, 0.6, 0.6);
         rig.applyPose(p2, { plant: false });

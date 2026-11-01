@@ -15,6 +15,7 @@ var RIDE = {
   SCALE: 1.4,              /* Toofan and Bijli are drawn this much bigger in ride mode, so they read well on a phone */
   CRASH_SPEED: 5,          /* slower bumps just stop the bike */
   FLY_TICKS: 42, RUN_SPEED: 5.2, GRACE_TICKS: 90,
+  ABANDON: 150,          /* riding this far past the closest approach to the signal leaves it open for later */
   ARRIVE_R: 9,
 
   CAM: { back: 8.5, height: 11, ahead: 5, fov: 46 },     /* chase camera, high behind the bike */
