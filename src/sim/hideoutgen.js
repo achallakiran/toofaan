@@ -34,7 +34,7 @@ var SOLIDS = [
 var STATIONS = [
   { id: 'bed', x: 1.55, z: -0.15, face: -2.4, label: 'SLEEP' },
   { id: 'chart', x: 5.1, z: -1.05, face: Math.PI, label: 'GANG CHART' },
-  { id: 'bench', x: 4.7, z: 7.8, face: 0, label: 'WORKBENCH' },
+  { id: 'bench', x: 4.7, z: 7.8, face: 0, label: 'TRAINING' },
   { id: 'gym', x: 10.0, z: 5.35, face: Math.PI, label: 'TRAIN' },
   { id: 'music', x: 11.45, z: -1.2, face: 0, label: 'PLAY GUITAR' },
   { id: 'bijli', x: 1.0, z: 5.0, face: 0, label: 'RIDE OUT' }
