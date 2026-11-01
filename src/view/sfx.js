@@ -73,6 +73,8 @@ function make() {
   var KICKS = { kick: 1, axeKick: 1, roundhouse: 1, knee: 0.6 };
   return {
     get on() { return on; },
+    /* true once the browser lets sound out (after a touch on phones) */
+    running: function () { return !!(on && ac && ac.state === 'running'); },
     /* the audio graph for the music player: the same context and master as the effects */
     audio: function () { var c = on ? ctx() : null; return c ? { ac: c, out: master } : null; },
     /* electric crackle for the logo: a buzz and sharp noise snaps */

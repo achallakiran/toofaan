@@ -86,10 +86,13 @@ function createMusic(sfx) {
   }
   return {
     BPM: BPM, BAR: BAR,
-    /* start a section: 'intro' (16-bar build for the opening video) or 'loop' (full band, repeating) */
-    play: function (name) {
+    /* start a section: 'intro' (16-bar build for the opening video) or 'loop' (full band, repeating); fromBeat joins part-way through */
+    play: function (name, fromBeat) {
       if (!graph()) return false;
-      section = name || 'loop'; barNo = 0; t0 = nextBar = A.ac.currentTime + 0.08; playing = true;
+      section = name || 'loop'; playing = true;
+      if (fromBeat > 0) {                                                /* join a video already running: come in on its next bar line */
+        t0 = A.ac.currentTime + 0.05 - fromBeat * SPB; barNo = Math.ceil(fromBeat / 4 + 0.01); nextBar = t0 + barNo * BAR;
+      } else { barNo = 0; t0 = nextBar = A.ac.currentTime + 0.08; }
       bus.gain.cancelScheduledValues(A.ac.currentTime); bus.gain.setValueAtTime(0.62, A.ac.currentTime);
       if (!timer) timer = setInterval(pump, 30); pump(); return true;
     },

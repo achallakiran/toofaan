@@ -4,18 +4,22 @@
 var path = require('path'), pw = require('playwright');
 var out = path.resolve(__dirname, '..', 'dist');
 (async function () {
-  var browser = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
+  var browser = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });   /* default autoplay rules, like a phone */
   async function run(vw, vh, tag, full) {
     var page = await (await browser.newContext({ viewport: { width: vw, height: vh }, hasTouch: tag === 'phone' })).newPage(), errs = [];
     page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
     await page.goto('file://' + path.join(out, 'toofan-brawler.html')); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(600);
     var mode = await page.evaluate(function () { return __game.modes.currentName(); });
     if (full) {
-      await page.screenshot({ path: path.join(out, 'title-0-tap-' + tag + '.png') });
-      await page.mouse.click(vw / 2, vh / 2);
-      await page.waitForTimeout(1500); await page.screenshot({ path: path.join(out, 'title-1-logo-' + tag + '.png') });
+      /* no tap: the opening is already running, silent with the sound chip until the first touch */
+      var open0 = await page.evaluate(function () { var c = Array.prototype.find.call(document.querySelectorAll('button'), function (b) { return /SOUND/.test(b.textContent); }); return { chip: c ? getComputedStyle(c).display : 'none' }; });
+      console.log(tag, 'opening without a tap:', JSON.stringify(open0));
+      await page.waitForTimeout(900); await page.screenshot({ path: path.join(out, 'title-1-logo-' + tag + '.png') });
       await page.waitForTimeout(3300); await page.screenshot({ path: path.join(out, 'title-2-presents-' + tag + '.png') });
-      for (var k = 0; k < 6; k++) { await page.waitForTimeout(k === 0 ? 2500 : 3600); await page.screenshot({ path: path.join(out, 'title-3-video' + k + '-' + tag + '.png') }); }
+      for (var k = 0; k < 6; k++) {
+        await page.waitForTimeout(k === 0 ? 2500 : 3600); await page.screenshot({ path: path.join(out, 'title-3-video' + k + '-' + tag + '.png') });
+        if (k === 1) { await page.mouse.click(vw / 2, vh / 2); await page.waitForTimeout(400); console.log(tag, 'after a touch mid-video, chip:', await page.evaluate(function () { var c = Array.prototype.find.call(document.querySelectorAll('button'), function (b) { return /SOUND/.test(b.textContent); }); return c ? getComputedStyle(c).display : 'gone'; })); }
+      }
       await page.click('text=SKIP');
     } else {
       await page.mouse.click(vw / 2, vh / 2); await page.waitForTimeout(500); await page.click('text=SKIP');
