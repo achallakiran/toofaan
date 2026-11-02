@@ -1,6 +1,6 @@
 /* view: Toofan's hideout as something to look at. Takes sim/hideoutgen's data and builds: the lit room (one Lambert mesh), the glowing
    screens and neon (unlit, always bright), the blinking indicator lights (one instanced mesh whose colours change every frame by pattern)
-   and a handful of coloured point lights that hum and flicker. While it is up, the scene's daylight is turned right down so the hideout is
+   and a handful of coloured point lights that breathe softly. While it is up, the scene's daylight is turned right down so the hideout is
    dark and the glows carry it; everything is put back on dispose. */
 'use strict';
 
@@ -54,7 +54,8 @@ function createHideout(view, data, opts) {
         c.copy(base[i]).multiplyScalar(v); inst.setColorAt(i, c);
       }
       if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-      points.forEach(function (q, k) { q.p.intensity = q.l.intensity * 1.6 * (q.l.flicker ? (hash(Math.floor(t * 9) + k * 13) > 0.08 ? 0.92 + 0.08 * Math.sin(t * 40 + k) : 0.35) : (0.94 + 0.06 * Math.sin(t * 2.3 + k))); });
+      /* lamps breathe slowly; a 'flicker' lamp wavers a little more, like an old bulb, but never strobes (hard drops read as the picture shaking) */
+      points.forEach(function (q, k) { var w = q.l.flicker ? 0.9 + 0.06 * Math.sin(t * 1.7 + k) + 0.04 * Math.sin(t * 4.3 + k * 2.1) : 0.94 + 0.06 * Math.sin(t * 2.3 + k); q.p.intensity = q.l.intensity * 1.6 * w; });
     },
     dispose: function () {
       scene.remove(group); made.forEach(function (x) { x.dispose(); }); inst.dispose && inst.dispose();

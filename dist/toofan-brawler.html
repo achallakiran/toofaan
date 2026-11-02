@@ -328,7 +328,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 71',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 72',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -3744,7 +3744,7 @@ function build(seed, opts) {
   K.b(-1.75, 0, -1.6, -1.25, 0.55, -1.1, C.WOOD); K.b(-1.73, 0.1, -1.08, -1.27, 0.5, -1.06, C.WOOD2);
   K.b(-1.6, 0.55, -1.45, -1.45, 0.6, -1.3, C.STEEL); K.b(-1.56, 0.6, -1.41, -1.49, 0.85, -1.34, C.STEEL); K.g(-1.66, 0.85, -1.5, -1.39, 1.0, -1.25, 0xffb050);
   K.lamp(-1.5, 1.1, -1.0, 0xffa040, 1.5, 4.5, true);
-  K.b(-1.4, 0.016, -0.3, 1.3, 0.03, 0.9, C.BRICK2); K.b(-1.3, 0.03, -0.2, 1.2, 0.035, 0.8, C.OLIVE);
+  K.b(-1.4, 0.016, -0.3, 1.3, 0.04, 0.9, C.BRICK2); K.b(-1.3, 0.04, -0.2, 1.2, 0.05, 0.8, C.OLIVE);     /* the rug sits above the planks (no shared top face) */
   K.b(-2.6, 0, 0.2, -2.0, 1.8, 1.0, C.SLATE); K.b(-2.55, 0.9, 0.25, -2.05, 0.95, 0.95, C.STEEL); K.b(-2.55, 1.9, 0.3, -2.1, 2.1, 0.9, C.CHAR);
   K.b(-2.6, 1.4, -1.6, -2.58, 2.3, -0.4, C.CRIMSON); K.b(-2.58, 1.55, -1.45, -2.57, 2.15, -0.55, C.BLACK); K.b(-2.6, 1.0, -2.3, -2.58, 1.9, -1.8, C.MARIGOLD);   /* posters */
   for (k = 0; k < 5; k++) K.b(1.3 + k * 0.12, 0, -2.3, 1.42 + k * 0.12, 0.25 + (k % 3) * 0.08, -2.0, [C.NAVY, C.CRIMSON, C.STONE, C.OLIVE, C.CHAR][k]);   /* a stack of books and boxes */
@@ -6349,7 +6349,7 @@ module.exports = { buildParts: buildParts, COLORS: C };
 defs["view/hideoutview"]=function(module,exports,require){
 /* view: Toofan's hideout as something to look at. Takes sim/hideoutgen's data and builds: the lit room (one Lambert mesh), the glowing
    screens and neon (unlit, always bright), the blinking indicator lights (one instanced mesh whose colours change every frame by pattern)
-   and a handful of coloured point lights that hum and flicker. While it is up, the scene's daylight is turned right down so the hideout is
+   and a handful of coloured point lights that breathe softly. While it is up, the scene's daylight is turned right down so the hideout is
    dark and the glows carry it; everything is put back on dispose. */
 'use strict';
 
@@ -6403,7 +6403,8 @@ function createHideout(view, data, opts) {
         c.copy(base[i]).multiplyScalar(v); inst.setColorAt(i, c);
       }
       if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-      points.forEach(function (q, k) { q.p.intensity = q.l.intensity * 1.6 * (q.l.flicker ? (hash(Math.floor(t * 9) + k * 13) > 0.08 ? 0.92 + 0.08 * Math.sin(t * 40 + k) : 0.35) : (0.94 + 0.06 * Math.sin(t * 2.3 + k))); });
+      /* lamps breathe slowly; a 'flicker' lamp wavers a little more, like an old bulb, but never strobes (hard drops read as the picture shaking) */
+      points.forEach(function (q, k) { var w = q.l.flicker ? 0.9 + 0.06 * Math.sin(t * 1.7 + k) + 0.04 * Math.sin(t * 4.3 + k * 2.1) : 0.94 + 0.06 * Math.sin(t * 2.3 + k); q.p.intensity = q.l.intensity * 1.6 * w; });
     },
     dispose: function () {
       scene.remove(group); made.forEach(function (x) { x.dispose(); }); inst.dispose && inst.dispose();
