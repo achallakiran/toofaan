@@ -106,10 +106,13 @@ function createEnemyView(scene) {
     } else if (e.st === 'down' || e.st === 'dead') {
       var dw = Math.min(1, e.t / 12); out = posemath.layer(base, posemath.named('down'), dw, dw, dw, dw);
     } else if (e.st === 'awe') {
-      /* amazed: the spark from the sky - a step back, leaning away, hands thrown up or clapped to his head, staring */
-      var aw = Math.min(1, e.t / 10), hands = (e.id % 3) === 0, out2 = posemath.layer(base, hands ? { 'armA.sx': 150, 'armB.sx': 150, 'armA.sz': 25, 'armB.sz': 25, 'armA.e': 120, 'armB.e': 120, 'spine.rx': -14, 'head.rx': -16 }
-                        : { 'armA.sx': 70, 'armB.sx': 60, 'armA.sz': 40, 'armB.sz': 45, 'armA.e': 20, 'armB.e': 30, 'spine.rx': -18, 'head.rx': -20, 'legB.hx': -12 }, aw, aw, aw, aw);
-      out = out2;
+      /* frightened by the spark from the sky: they flinch and cower, shield their faces or clutch their heads, trembling, backing away */
+      var aw = Math.min(1, e.t / 8), kind2 = e.id % 3, shake = Math.sin(v.t * 38 + e.id) * 4 * aw, fright;
+      if (kind2 === 0) fright = { 'armA.sx': 150, 'armB.sx': 150, 'armA.sz': 25, 'armB.sz': 25, 'armA.e': 125, 'armB.e': 125, 'spine.rx': 30, 'head.rx': 25, 'legA.hx': 35, 'legA.k': 60, 'legB.hx': 20, 'legB.k': 55 };   /* hands on his head, ducking */
+      else if (kind2 === 1) fright = { 'armA.sx': 95, 'armB.sx': 80, 'armA.sz': -5, 'armB.sz': 5, 'armA.e': 110, 'armB.e': 120, 'spine.rx': -16, 'head.rx': 18, 'head.ry': 30, 'legB.hx': -18 };                     /* arms across his face, turning away */
+      else fright = { 'armA.sx': 60, 'armB.sx': 55, 'armA.sz': 45, 'armB.sz': 50, 'armA.e': 25, 'armB.e': 30, 'spine.rx': -22, 'head.rx': -22, 'legA.hx': 15, 'legB.hx': -25, 'legB.k': 30 };              /* thrown back, hands up, staring */
+      fright['spine.rz'] = (fright['spine.rz'] || 0) + shake; fright['head.rz'] = shake * 0.8;
+      out = posemath.layer(base, fright, aw, aw, aw, aw);
     } else if (e.st === 'getup') {
       /* a real get-up: roll onto his side, push up on one hand, up to one knee, rise, shake his head, guard back up */
       var gu = Math.min(1, e.t / 72); out = posemath.keyed(getupKeys(base), gu);

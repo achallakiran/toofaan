@@ -424,12 +424,24 @@ console.log('ride mode (Phase 4)');
         if (smart) { var o = (e.foes || []).concat(e.crew || []).filter(function (q) { return q.st === 'windup'; })[0];
           if (o && o.t === RD2.ENC.WIND - 6) blk = true; else if (e.car && e.car.st === 'windup' && e.car.t === RD2.ENC.CAR_WIND - 6) blk = true; else atk = i % 20 === 0; }
         inp.setButton('attack', atk); inp.setButton('block', blk); inp.tick(r.tick); rideMod.step(r, inp);
+        if (r.enc && r.enc.phase === 'down' && r.enc.t > 30) req('sim/encounter').revive(r);      /* SAVE TOOFAN */
       }
       return { r: r, log: log, ticks: i };
     }
     test('road fight, bike goons: punching and kicking beats them, then the ride goes on; their blows cost hearts', function () {
       var f = fight('bikes', true); assert.strictEqual(f.r.state, 'ride'); assert(f.log.indexOf('enc:ko') >= 0 && f.log.indexOf('enc:end') >= 0, f.log.join(','));
-      var g = fight('bikes', false); assert(g.log.indexOf('enc:hurt') >= 0 && g.log.indexOf('enc:fail') >= 0 && g.log.indexOf('enc:retry') >= 0, 'idle hero loses hearts and the fight restarts');
+      var g = fight('bikes', false); assert(g.log.indexOf('enc:hurt') >= 0 && g.log.indexOf('enc:down') >= 0 && g.log.indexOf('enc:spark') >= 0 && g.log.indexOf('enc:resume') >= 0, 'idle hero goes down, Maa saves him, the fight goes on: ' + g.log.filter(function (k) { return /down|rise|spark|resume/.test(k); }).join(','));
+    });
+    test('road fight: down on the road, everything waits for Maa; revive gives full hearts, the goons swerve away, then the same fight goes on', function () {
+      var ENC = req('sim/encounter'), log = [], r = rideMod.createRide(5, { emit: function (n) { log.push(n); } }), inp = inputMod.createInput(), e = rideMod.startEncounter(r, 'bikes'), i;
+      e.phase = 'fight'; r.hearts = 0; inp.tick(r.tick); rideMod.step(r, inp); assert.strictEqual(e.phase, 'down'); assert(e.hero.down && log.indexOf('enc:down') >= 0);
+      for (i = 0; i < 400; i++) { inp.tick(r.tick); rideMod.step(r, inp); } assert.strictEqual(e.phase, 'down', 'waits for Maa'); assert.strictEqual(r.bike.speed, 0, 'Bijli coasts to a stop');
+      var men = e.foes.length, lat0 = e.foes.map(function (o) { return Math.abs(o.lat); });
+      assert(ENC.revive(r)); assert.strictEqual(r.hearts, 3); assert.strictEqual(e.phase, 'rise');
+      for (i = 0; i < ENC.SPARK + 45; i++) { inp.tick(r.tick); rideMod.step(r, inp); }
+      assert(log.indexOf('enc:spark') >= 0); e.foes.forEach(function (o, k) { assert(Math.abs(o.lat) > lat0[k] + 0.8, 'swerved away'); });
+      for (i = 0; i < ENC.RISE; i++) { inp.tick(r.tick); rideMod.step(r, inp); if (log.indexOf('enc:resume') >= 0) break; }
+      assert(log.indexOf('enc:resume') >= 0 && e.phase === 'fight' && !e.hero.rise && e.foes.length === men, 'the same fight goes on');
     });
     test('road fight, car gang: a timed block leaps onto the roof, the crew are beaten, the car spins out and the police arrest them', function () {
       var f = fight('car', true), L = f.log;

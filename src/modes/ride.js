@@ -12,6 +12,9 @@ var cinecard = require('../view/cinecard');
 var musicMod = require('../view/music');
 var fullmap = require('../view/fullmap');
 var GANGS = require('../data/gangs');
+var encSim = require('../sim/encounter');
+var thappadMod = require('./thappad');
+var skybolt = require('../view/skybolt');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -103,9 +106,38 @@ function createRide() {
       scope.add(ctx.bus.on('enc:police', function () { S.sfx.honk(); setTimeout(function () { S.sfx.honk(); }, 350); say('POLICE!', 1.6); }));
       scope.add(ctx.bus.on('enc:arrest', function () { S.music.setTrack('sting'); cinecard.show({ title: 'ARRESTED!', sub: 'Police le gayi goondon ko', ms: 1500 }); }));
       scope.add(ctx.bus.on('enc:clear', function () { say('ROAD CLEAR!', 1.6); }));
-      scope.add(ctx.bus.on('enc:fail', function () { say('TOOFAN IS DOWN!', 1.8); }));
-      scope.add(ctx.bus.on('enc:retry', function () { say('AGAIN!', 1.2); }));
+      /* down on the road: Maa ka Thappad, then the rock stand by the roadside, the spark, the goons swerving away, back on Bijli */
+      var white = document.createElement('div'); white.style.cssText = 'position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff;opacity:0;transition:opacity .9s'; document.body.appendChild(white);
+      var bolt = skybolt.create(ctx.view), tmr = [];
+      scope.add(function () { white.remove(); bolt.dispose(); tmr.forEach(clearTimeout); if (S.thp) { S.thp.dispose(); S.thp = null; } });
+      var tapK = function (e) { if (S.thp && (e.code === 'Space' || e.code === 'KeyJ' || e.code === 'Enter') && !e.repeat) S.thp.tap(); };
+      var ab = ctx.touchRoot.querySelector('#btnAttack'), tapP = function () { if (S.thp) S.thp.tap(); };
+      window.addEventListener('keydown', tapK); if (ab) ab.addEventListener('pointerdown', tapP);
+      scope.add(function () { window.removeEventListener('keydown', tapK); if (ab) ab.removeEventListener('pointerdown', tapP); });
+      scope.add(ctx.bus.on('enc:down', function () {
+        say('TOOFAN IS DOWN!', 1.6); S.sfx.crash(true); S.shake = 0.4; S.sfx.engineOff && S.sfx.engineOff();
+        tmr.push(setTimeout(function () {
+          if (!S.r.enc || S.r.enc.phase !== 'down') return;
+          S.music.setTrack('thappad');
+          S.thp = ctx.debug.thp = thappadMod.createThappad(ctx, { sfx: S.sfx, onGiveUp: function () {
+            cinecard.show({ title: 'GAME OVER', sub: 'Toofan fell on the road', ms: 2600 });
+            tmr.push(setTimeout(function () { ctx.ride = null; ctx.go('title', { menu: true }); }, 2800));
+          }, onDone: function () {
+            white.style.transition = 'none'; white.style.opacity = 1;
+            if (S.thp) { S.thp.dispose(); S.thp = null; }
+            encSim.revive(S.r); S.msgT = 0; S.ui.msg.style.opacity = 0;
+            requestAnimationFrame(function () { white.style.transition = 'opacity .9s'; white.style.opacity = 0; });
+          } });
+        }, 1300));
+      }));
+      scope.add(ctx.bus.on('enc:spark', function () {
+        var e = S.r.enc, b = S.r.bike; if (!e) return;
+        bolt.strike(b.x + e.f.x * -0.8 + e.l.x * -1.7, b.z + e.f.z * -0.8 + e.l.z * -1.7, 1.9 * R.SCALE); S.sfx.bolt(); S.shake = 0.3;
+        white.style.transition = 'none'; white.style.opacity = 0.55; requestAnimationFrame(function () { white.style.transition = 'opacity .5s'; white.style.opacity = 0; });
+      }));
+      scope.add(ctx.bus.on('enc:resume', function () { var e = S.r.enc; S.music.setTrack(e && e.kind === 'car' ? 'boss' : 'road'); say('TOOFAN IS BACK!', 1.4); S.sfx.start && S.sfx.start(); }));
       scope.add(ctx.bus.on('enc:end', function (e) { if (S.music.track() !== 'sting') S.music.setTrack('ride'); if (e.kind !== 'bikes') { var T = S.r.target; cinecard.show({ title: 'TOOFAN IS BACK!', sub: T ? 'Next: ' + T.name : 'All clear', ms: 1400 }); } }));
+      ctx.debug.rideMode = S;
       ctx.debug.rideStart = function (k) { if (S.r.state === 'ride') rideSim.startEncounter(S.r, k); };     /* for the test tools */
       if (S.r.target && !(args && args.after)) say('Signal: ' + S.r.target.name, 2.2);
     },
@@ -120,6 +152,7 @@ function createRide() {
     },
     render: function (ctx, alpha) {
       var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
+      if (S.thp) { S.thp.render(dt); return; }                                  /* Maa's world has the screen */
       var r = S.r, b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha;
       S.v.sync(r, alpha, dt, S.t);
       var near = (ctx.view.canvas.clientHeight || 700) < 520 ? 0.82 : 1;

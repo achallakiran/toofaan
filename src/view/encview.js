@@ -8,6 +8,7 @@ var vg = require('./voxgrid');
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
+var rockstand = require('./rockstand');
 
 var ridevox = require('./ridevox');
 var ROOF_Y = 1.42, HALF_W = 0.9;                    /* the gang car's roof height and half width, before scaling (from its model) */
@@ -178,6 +179,10 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
         if (o.st === 'windup') pose = posemath.layer(ridePose, clip(hk, Math.min(1, o.t / E.WIND) * 0.19), 0, 1, 1, 1);
         else if (o.st === 'recover') pose = posemath.layer(ridePose, clip(hk, 0.19 + Math.min(1, o.t / 26) * 0.35), 0, 1 - o.t / 26, 1 - o.t / 26, 1 - o.t / 26);
         else if (o.st === 'hurt') pose = posemath.layer(ridePose, posemath.named('hurt'), 0, 0.6 * Math.max(0, 1 - o.t / 20), 0.6, 0.6);
+        else if (o.st === 'awe') {                                        /* frightened by the spark: leaning away, an arm up over his face */
+          var fw2 = Math.min(1, o.t / 8), sh2 = Math.sin(t * 38 + o.id) * 4;
+          pose = posemath.layer(ridePose, { 'spine.rx': -18, 'spine.rz': (o.lat > 0 ? 14 : -14) + sh2, 'head.rx': 15, 'head.ry': o.lat > 0 ? 30 : -30, 'armA.sx': 100, 'armA.e': 115, 'armA.sz': -5 }, 0, fw2, fw2, 0);
+        }
         F.rig.applyPose(pose, { plant: false });
         F.rig.body.rotation.z = o.st === 'hurt' ? 0.3 * Math.exp(-o.t / 10) : 0;
         if (o.st === 'recover' && o.t < 14) {                               /* the blow lands: his fist (or rod) goes to Toofan's face */
@@ -237,7 +242,20 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
 
       /* ---- Toofan ---- */
       var rig = heroRig;
-      if (!H.roof && H.leap <= 0) {
+      if (H.down || H.rise) {
+        /* thrown off Bijli onto the road beside her; after Maa's slaps he rises there in his rock stand, then jumps back on */
+        if (rig.root.parent !== root) { root.add(rig.root); rig.root.scale.setScalar(R.SCALE); }
+        var dt0 = e.t / 60, side = -1.7, fly = H.down ? Math.min(1, e.t / 30) : 1;
+        if (H.down) {
+          place(rig.root, bx, bz, e, -0.8 * fly, side * fly, Math.sin(Math.PI * fly) * 0.9 * (1 - fly * 0.3));
+          rig.root.rotation.set(0, hd + Math.PI / 2, 0); rig.applyPose(posemath.named('down'), { plant: true }); rig.body.rotation.set(0, 0, 0);
+        } else {
+          var rs = rockstand.at(dt0), remount = Math.max(0, (e.t - (R.ENC.RISE_AT || 260)) / 40);
+          place(rig.root, bx, bz, e, -0.8 * (1 - remount), side * (1 - remount), rs.lift + Math.sin(Math.PI * Math.min(1, remount)) * 0.8);
+          rig.root.rotation.set(0, hd + Math.PI / 2 * (1 - Math.min(1, remount)), 0); rig.applyPose(rs.pose, { plant: true }); rig.body.rotation.set(0, 0, 0);
+        }
+        headOf(rig, heroHead);
+      } else if (!H.roof && H.leap <= 0) {
         if (rig.root.parent !== heroBike.pitch) seated(rig, heroBike);
         rig.root.rotation.set(0, 0, 0);
         var pose = ridePose;

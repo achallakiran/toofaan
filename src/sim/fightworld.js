@@ -49,7 +49,7 @@ function pushOut(o, fw) {
 /* Maa ka Thappad: knocked out, the fight stops ('thappad') until the view has played Maa's slaps and calls revive(). Then he rises
    ('rise', RISE ticks): his rock stand, the spark from the sky at SPARK, every goon still standing steps back a pace and stares. Nobody
    fights while that plays. Then the fight carries on, and for GRACE ticks nothing can hurt him. */
-var DOWN_BEAT = 40, RISE = 180, SPARK = 48, GRACE = 60;
+var DOWN_BEAT = 40, RISE = 300, SPARK = 96, GRACE = 60;      /* the comeback takes its time: 5 s from his feet to the fight */
 function revive(fw) {
   if (fw.state !== 'thappad') return false;
   var p = fw.player, c = fw.combat, i;
@@ -59,17 +59,17 @@ function revive(fw) {
     var e = c.enemies[i]; if (e.dead || e.st === 'dead') continue;
     var dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1;
     if (e.st !== 'down' && e.st !== 'getup') { e.st = 'awe'; e.t = 0; e.guarding = false; e.kx = 0; e.kz = 0; }
-    fw.awe.push({ id: e.id, ux: dx / d, uz: dz / d, back: Math.max(0, 2.6 - d) + 1.0 });
+    fw.awe.push({ id: e.id, ux: dx / d, uz: dz / d, back: Math.max(0, 3.0 - d) + 1.6 });
   }
   fw.bus.emit('fight:rise', {}); return true;
 }
 function riseStep(fw) {
   var p = fw.player, c = fw.combat, k = fw.riseT, i, j;
   if (k === SPARK) fw.bus.emit('fight:spark', { x: p.x, z: p.z });
-  if (k > SPARK && k <= SPARK + 30) {                                /* the spark knocks them back a pace, and they stare */
+  if (k > SPARK && k <= SPARK + 40) {                                /* the spark drives them back, frightened */
     for (i = 0; i < fw.awe.length; i++) for (j = 0; j < c.enemies.length; j++) {
       var a = fw.awe[i], e = c.enemies[j]; if (e.id !== a.id || e.st !== 'awe') continue;
-      e.px = e.x; e.pz = e.z; e.x += a.ux * a.back / 30; e.z += a.uz * a.back / 30; e.face = Math.atan2(p.x - e.x, p.z - e.z); pushOut(e, fw);
+      e.px = e.x; e.pz = e.z; e.x += a.ux * a.back / 40; e.z += a.uz * a.back / 40; e.face = Math.atan2(p.x - e.x, p.z - e.z); pushOut(e, fw);
     }
   }
   for (j = 0; j < c.enemies.length; j++) { var q = c.enemies[j]; if (q.st === 'awe') { q.t++; q.px = q.x; q.pz = q.z; } }

@@ -16,6 +16,7 @@ var C = {
 };
 
 var TH = false;   /* true while building the thug variant: plain cropped hair, bare face, no guitar */
+var MAA = false;  /* true while building Maa: full white sleeves down to the wrists (only her face and hands show) */
 var HOME = false; /* true while building Toofan at home: no costume, no goggles - a robe over loose pyjamas, bare eyes */
 
 function lerpAt(tbl, y) { return vg.interp(tbl, y); }
@@ -225,14 +226,15 @@ function buildUpperArm(s) {
   var tbl = [[0, 2.7, 2.7], [2, 3.0, 3.0], [6, 3.4, 3.4], [9, 3.7, 3.6], [12, 4.3, 4.3], [14, 4.5, 4.5], [16, 3.8, 3.8], [18, 2.5, 2.5]];
   function col(x, y, z) {
     var dz = z + 0.5 - cz;
+    if (MAA) return dz < -2.5 ? C.bluD : C.blu;                                       /* her sleeve */
     if (y === 2 && dz > 0) return C.skinD;                                           /* elbow crease */
     if (dz < -3.0 && y >= 4 && y <= 11) return C.skinD;                              /* triceps shade */
     return C.skin;
   }
   vg.limb(g, tbl, cx, cz, 0, 17, col);
-  vg.ellipsoid(g, cx, 8.4, cz + 1.6, 2.7, 3.4, 2.3, function () { return C.skinL; }); /* biceps */
+  if (!MAA) vg.ellipsoid(g, cx, 8.4, cz + 1.6, 2.7, 3.4, 2.3, function () { return C.skinL; }); /* biceps */
   vg.ellipsoid(g, cx, 14.4, cz, 4.1, 3.0, 3.9, col);                                 /* deltoid */
-  vg.limb(g, tbl, cx, cz, 8, 9, C.yel, 0.45);                                        /* armband */
+  if (!MAA) vg.limb(g, tbl, cx, cz, 8, 9, C.yel, 0.45);                                        /* armband */
   return { grid: g, pivot: { x: cx, y: 14.0, z: cz } };
 }
 
@@ -240,14 +242,15 @@ function buildForearm(s) {
   var g = vg.createGrid(9, 14, 9), cx = 4.5, cz = 4.5;
   var tbl = [[0, 2.2, 2.0], [1, 2.3, 2.1], [3, 2.6, 2.4], [6, 3.2, 3.0], [8, 3.5, 3.3], [11.5, 3.3, 3.3], [13, 2.8, 2.8], [14, 2.0, 2.0]];
   function col(x, y, z) {
-    if (y <= 4) return (y === 4) ? C.gloveL : C.glove;                               /* wrist guard */
     var dz = z + 0.5 - cz;
+    if (MAA) return y <= 1 ? C.bluD : (dz < -2.0 ? C.bluD : C.blu);                   /* her sleeve to the wrist */
+    if (y <= 4) return (y === 4) ? C.gloveL : C.glove;                               /* wrist guard */
     if (dz < -2.2 && y >= 6) return C.skinD;
     if (y >= 7 && y <= 9 && dz > 1.6) return C.skinL;                                /* forearm muscle */
     return C.skin;
   }
   vg.limb(g, tbl, cx, cz, 0, 13, col);
-  vg.limb(g, tbl, cx, cz, 1, 3, function () { return C.glove; }, 0.35);
+  if (!MAA) vg.limb(g, tbl, cx, cz, 1, 3, function () { return C.glove; }, 0.35);
   return { grid: g, pivot: { x: cx, y: 11.5, z: cz } };
 }
 
@@ -361,8 +364,8 @@ var MAA_PAL = { skin: h('#b98b66'), skinD: h('#9c7252'), skinL: h('#c99c78'), sk
 function buildParts(variant) {
   if (variant === 'maa') {
     var saveM = {}, km; for (km in MAA_PAL) { saveM[km] = C[km]; C[km] = MAA_PAL[km]; }
-    TH = true;
-    try { return buildPartsRaw(); } finally { TH = false; for (km in saveM) C[km] = saveM[km]; }
+    TH = true; MAA = true;
+    try { return buildPartsRaw(); } finally { TH = false; MAA = false; for (km in saveM) C[km] = saveM[km]; }
   }
   if (variant === 'home') {
     var saveH = {}, kh; for (kh in HOME_PAL) { saveH[kh] = C[kh]; C[kh] = HOME_PAL[kh]; }

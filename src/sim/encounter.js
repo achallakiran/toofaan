@@ -3,7 +3,9 @@
    toward them, Block guards, and Block pressed just before a blow lands counters. Each blow that gets through costs a heart.
    A car fight: the car pulls alongside and swerves at him; Block at the right moment makes Toofan leap onto its roof, where its crew
    climb out one at a time (a warning flash before each blow, counter or hit them). Beaten, the car spins out and the police arrive.
-   No hearts left: the fight starts again with full hearts. Plain data; the view only reads it. */
+   No hearts left: Toofan is thrown off Bijli onto the road ('down'), the bikes coast to a stop and everything waits for Maa ka Thappad.
+   revive() brings him back: the rock stand by the road, the spark from the sky, the goons swerving away frightened ('rise'), then he is
+   back in the saddle and the same fight goes on with full hearts. Plain data; the view only reads it. */
 'use strict';
 
 var R = require('../data/ride');
@@ -11,6 +13,7 @@ var MOVES = require('../data/moves').MOVES;
 var mapMod = require('./ridemap');
 
 var E = R.ENC, DT = 1 / 60;
+var RISE = 300, SPARK = 96;                         /* the comeback on the road, matched to the fights' */
 var BIKE_MOVES = ['bkJabL', 'bkCrossL', 'bkHookL', 'bkElbowL', 'bkKickL'];
 var ROOF_MOVES = ['jab', 'cross', 'hook', 'kick'];
 
@@ -204,12 +207,14 @@ function step(r, input) {
   b.px = b.x; b.pz = b.z; b.ph = b.h; e.t++;
   /* the road keeps rolling; at the map's edge everyone comes to a stop and the fight goes on */
   var roll = runAhead(r.map, b.x, b.z, b.h) > 8 ? e.speed : 0;
+  if (e.phase === 'down') roll = Math.max(0, e.speed * (1 - e.t / 50)); else if (e.phase === 'rise') roll = e.t > RISE - 40 ? e.speed * (e.t - (RISE - 40)) / 40 : 0;
   if (e.phase === 'police') roll = e.kind === 'arrest' ? 0 : Math.max(0, E.SPEED * (1 - e.t / 60));
   b.speed = roll; b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT;
 
   if (e.kind === 'arrest') { stepArrest(r, e, roll); if (e.t > e.arrestEnd) finish(r); return; }
   if (e.phase === 'intro') { if (e.t > 70) { e.phase = 'fight'; e.t = 0; } if (e.kind === 'car') stepCar(r, e); else stepFoes(r, e); return; }
-  if (e.phase === 'fail') { if (e.t > 120) { var k = e.kind; r.state = 'ride'; r.enc = null; start(r, k); r.bus.emit('enc:retry', {}); } return; }
+  if (e.phase === 'down') return;                                    /* lying on the road: everything waits for Maa */
+  if (e.phase === 'rise') { stepRise(r, e); return; }
 
   if (e.kind === 'bikes') {
     if (e.phase === 'fight') heroStrike(r, e, input, e.foes, E.REACH);
@@ -225,7 +230,31 @@ function step(r, input) {
       if (e.t > e.arrestEnd) finish(r);
     }
   }
-  if (r.hearts <= 0 && e.phase !== 'fail') { e.phase = 'fail'; e.t = 0; H.act = null; r.bus.emit('enc:fail', {}); }
+  if (r.hearts <= 0 && e.phase !== 'down' && e.phase !== 'rise') {
+    e.resume = e.phase === 'roof' || e.phase === 'leap' ? 'fight' : e.phase; e.phase = 'down'; e.t = 0; H.act = null; H.guard = false; H.roof = false; H.leap = 0; H.down = true;
+    r.bus.emit('enc:down', { kind: e.kind });
+  }
 }
 
-module.exports = { canStart: canStart, start: start, step: step, runAhead: runAhead, BIKE_MOVES: BIKE_MOVES, ROOF_MOVES: ROOF_MOVES };
+/* Maa ka Thappad on the road: full hearts, and he rises by the roadside */
+function revive(r) {
+  var e = r.enc; if (!e || e.phase !== 'down') return false;
+  r.hearts = 3; e.phase = 'rise'; e.t = 0; e.hero.down = false; e.hero.rise = true; e.hero.inv = 0; e.hero.hurt = 0;
+  (e.foes || []).forEach(function (o) { if (o.st !== 'down') { o.st = 'awe'; o.t = 0; } });
+  (e.crew || []).forEach(function (o) { if (o.st !== 'down' && o.st !== 'out') { o.awe = true; } });
+  r.bus.emit('enc:rise', {}); return true;
+}
+function stepRise(r, e) {
+  if (e.t === SPARK) r.bus.emit('enc:spark', {});
+  if (e.t > SPARK && e.t <= SPARK + 40) {                             /* the spark: the goons swerve away, frightened */
+    (e.foes || []).forEach(function (o) { if (o.st !== 'awe') return; o.lat += (o.lat >= 0 ? 1 : -1) * 0.03; o.u += (o.u >= 0 ? 1 : -1) * 0.05; o.t++; });
+    if (e.car) e.car.lat += 0.03;
+  } else (e.foes || []).forEach(function (o) { if (o.st === 'awe') o.t++; });
+  if (e.t >= RISE) {
+    (e.foes || []).forEach(function (o) { if (o.st === 'awe') { o.st = 'approach'; o.t = 0; o.cd = 40; } });
+    (e.crew || []).forEach(function (o) { o.awe = false; });
+    e.hero.rise = false; e.phase = e.resume || 'fight'; e.t = 0; e.token = 60; r.bus.emit('enc:resume', {});
+  }
+}
+
+module.exports = { revive: revive, RISE: RISE, SPARK: SPARK, canStart: canStart, start: start, step: step, runAhead: runAhead, BIKE_MOVES: BIKE_MOVES, ROOF_MOVES: ROOF_MOVES };
