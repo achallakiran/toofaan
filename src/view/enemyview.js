@@ -4,6 +4,20 @@
    (pulled-back arm, weight shift). No rings, dots or lock markers: the lock and the guard are shown by pose alone. */
 'use strict';
 
+/* the get-up, as keyframes from lying on his back to standing in his guard (base) */
+function getupKeys(base) {
+  var pm = require('./posemath'), D = pm.named('down');
+  function k(over) { return pm.layer(pm.named('stand'), over, 1, 1, 1, 1); }
+  return [
+    [0.0, D],
+    [0.22, k({ 'hip.rx': -70, 'hip.rz': 35, 'spine.rx': 25, 'spine.rz': 10, 'head.rx': 15, 'armA.sx': -35, 'armA.sz': 45, 'armA.e': 15, 'armB.sx': 40, 'armB.sz': 10, 'armB.e': 70, 'legA.hx': 55, 'legA.k': 95, 'legB.hx': 30, 'legB.k': 60 })],
+    [0.45, k({ 'hip.rx': -35, 'hip.rz': 15, 'spine.rx': 45, 'head.rx': 20, 'armA.sx': -10, 'armA.sz': 30, 'armA.e': 5, 'armB.sx': 30, 'armB.e': 60, 'legA.hx': 85, 'legA.k': 110, 'legB.hx': -5, 'legB.k': 115 })],
+    [0.68, k({ 'hip.rx': -5, 'spine.rx': 38, 'head.rx': 15, 'armA.sx': 45, 'armA.sz': 12, 'armA.e': 55, 'armB.sx': 10, 'armB.e': 30, 'legA.hx': 75, 'legA.k': 90, 'legB.hx': -15, 'legB.k': 105 })],
+    [0.86, k({ 'spine.rx': 18, 'head.rx': 8, 'armA.sx': 15, 'armA.e': 35, 'armB.sx': 10, 'armB.e': 35, 'legA.hx': 25, 'legA.k': 30, 'legB.hx': 5, 'legB.k': 25 })],
+    [1.0, base]
+  ];
+}
+
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
@@ -91,8 +105,15 @@ function createEnemyView(scene) {
       if (v.daze > 0.01) addTo(out, DAZED, v.daze); addTo(out, REACT[e.lastMove] || REACT.jab, jt * 1.35); addTo(out, { 'armA.sx': -20, 'armB.sx': -14, 'armA.sz': 14, 'armB.sz': 12, 'hip.y': -0.03 }, jt);
     } else if (e.st === 'down' || e.st === 'dead') {
       var dw = Math.min(1, e.t / 12); out = posemath.layer(base, posemath.named('down'), dw, dw, dw, dw);
+    } else if (e.st === 'awe') {
+      /* amazed: the spark from the sky - a step back, leaning away, hands thrown up or clapped to his head, staring */
+      var aw = Math.min(1, e.t / 10), hands = (e.id % 3) === 0, out2 = posemath.layer(base, hands ? { 'armA.sx': 150, 'armB.sx': 150, 'armA.sz': 25, 'armB.sz': 25, 'armA.e': 120, 'armB.e': 120, 'spine.rx': -14, 'head.rx': -16 }
+                        : { 'armA.sx': 70, 'armB.sx': 60, 'armA.sz': 40, 'armB.sz': 45, 'armA.e': 20, 'armB.e': 30, 'spine.rx': -18, 'head.rx': -20, 'legB.hx': -12 }, aw, aw, aw, aw);
+      out = out2;
     } else if (e.st === 'getup') {
-      var gw = 1 - Math.min(1, e.t / 30); out = posemath.layer(base, posemath.named('down'), gw, gw, gw, gw);
+      /* a real get-up: roll onto his side, push up on one hand, up to one knee, rise, shake his head, guard back up */
+      var gu = Math.min(1, e.t / 72); out = posemath.keyed(getupKeys(base), gu);
+      if (gu > 0.72) { var sh = (gu - 0.72) / 0.28; out['head.ry'] = (out['head.ry'] || 0) + Math.sin(sh * Math.PI * 4) * 22 * (1 - sh); out['neck.ry'] = (out['neck.ry'] || 0) + Math.sin(sh * Math.PI * 4) * 8 * (1 - sh); }
     }
     posemath.approach(v.cur, out, 22, dt);
     return v.cur;

@@ -100,5 +100,12 @@ function layer(base, over, wLower, wUpper, wArmA, wArmB) {
   return out;
 }
 
-module.exports = { layer: layer, blend: blend, copy: copy, named: named, approach: approach, idlePose: idlePose, walkPose: walkPose,
+/* a pose from keyframes: keys = [[u, pose], ...] with u rising 0..1; smooth between neighbours */
+function keyed(keys, u) {
+  if (u <= keys[0][0]) return copy(keys[0][1]);
+  for (var i = 0; i < keys.length - 1; i++) if (u <= keys[i + 1][0]) return blend(keys[i][1], keys[i + 1][1], smooth((u - keys[i][0]) / (keys[i + 1][0] - keys[i][0])));
+  return copy(keys[keys.length - 1][1]);
+}
+
+module.exports = { keyed: keyed, layer: layer, blend: blend, copy: copy, named: named, approach: approach, idlePose: idlePose, walkPose: walkPose,
   sequencePose: sequencePose, sequenceDuration: sequenceDuration, smooth: smooth };

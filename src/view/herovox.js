@@ -353,7 +353,17 @@ var KIND_PAL = {
 /* Toofan at home: a deep maroon robe with a pale tie and trim, loose dark pyjamas, bare hands, worn chappals */
 var HOME_PAL = { yel: h('#c9a46a'), yelD: h('#a8854c'), blu: h('#5a2328'), bluD: h('#41181c'), bluL: h('#6e2d33'),
   pants: h('#2c2a33'), pantsD: h('#201f26'), pantsL: h('#38363f'), glove: h('#9a5f38'), gloveL: h('#b4733f'), shoe: h('#4a3424'), shoeL: h('#5e4430'), belt: h('#41181c'), buckle: h('#5a2328'), buckleD: h('#41181c') };
+/* Maa (the Thappad scene): a plain white sari blouse over the body, white hair, an older warm skin; the sari itself is draped on in view/maavox */
+var MAA_PAL = { skin: h('#b98b66'), skinD: h('#9c7252'), skinL: h('#c99c78'), skinDD: h('#7d5a40'), hair: h('#ebe8e1'),
+  yel: h('#f2efe7'), yelD: h('#d8d2c4'), blu: h('#f2efe7'), bluD: h('#d8d2c4'), bluL: h('#faf8f2'),
+  pants: h('#eeeae0'), pantsD: h('#d6d0c2'), pantsL: h('#f7f4ec'), belt: h('#e6e0d2'), shoe: h('#9c7252'), shoeL: h('#b98b66'),
+  glove: h('#b98b66'), gloveL: h('#c99c78'), buckle: h('#e6e0d2'), buckleD: h('#d6d0c2') };
 function buildParts(variant) {
+  if (variant === 'maa') {
+    var saveM = {}, km; for (km in MAA_PAL) { saveM[km] = C[km]; C[km] = MAA_PAL[km]; }
+    TH = true;
+    try { return buildPartsRaw(); } finally { TH = false; for (km in saveM) C[km] = saveM[km]; }
+  }
   if (variant === 'home') {
     var saveH = {}, kh; for (kh in HOME_PAL) { saveH[kh] = C[kh]; C[kh] = HOME_PAL[kh]; }
     HOME = true;

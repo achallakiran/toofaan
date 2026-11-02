@@ -194,7 +194,7 @@ function stepEnemy(world, e, input) {
       if (e.t >= (e.dead ? 70 : 78)) { if (e.dead) { e.st = 'dead'; e.t = 0; } else { e.st = 'getup'; e.t = 0; } }
       break;
     case 'guardbreak': e.guarding = false; if (e.t >= GBREAK && !held(c, e)) { e.st = 'approach'; e.t = 0; e.cd = 14; } break;
-    case 'getup': e.thrown = false; if (e.t >= 30) { e.st = 'approach'; e.t = 0; e.cd = 30; } break;
+    case 'getup': e.thrown = false; if (e.t >= 72) {          /* a full get-up: side, hand, knee, up, shake it off (1.2 s) */ e.st = 'approach'; e.t = 0; e.cd = 30; } break;
     case 'dead': break;
   }
 }

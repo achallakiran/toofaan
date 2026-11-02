@@ -1,7 +1,7 @@
 /* sim: one fight at one trouble spot. Only the arena, that gang's men and Toofan on foot: no bike, no city, no traffic, no waves.
    The fighting itself is sim/combat, stepped exactly as it always was for Toofan on foot (walk, lock while a move plays or Block is held,
    blows, guards, counters, the finisher). Around it: the arena's walls and props keep everybody in, and the fight ends when the last man is
-   down (cleared) or when Toofan has been down long enough (lost). Plain data, seeded; no graphics, no DOM. */
+   down (cleared). Toofan knocked out is never the end: Maa ka Thappad (see revive) puts him back on his feet in the same fight. Plain data, seeded; no graphics, no DOM. */
 'use strict';
 
 var CONFIG = require('../data/config');
@@ -18,7 +18,7 @@ function create(opts) {
     type: type, name: LOC.LOCATIONS[type].name, arena: spec, bounds: spec.bounds,
     player: { x: spec.start.x, z: spec.start.z, px: spec.start.x, pz: spec.start.z, face: Math.PI, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
     combat: combatMod.createCombat(), pendingStrikes: [], counters: { attacks: 0, blocks: 0, finishers: 0 },
-    attackLock: false, invuln: false, state: 'fight'                   /* fight | cleared | lost */
+    attackLock: false, invuln: false, graceT: 0, state: 'fight'                   /* fight | thappad | rise | cleared */
   };
   /* the fight as the brawler always started it at a place: the combat is switched on, then this place's men walk in (one fight, so the
      engagement rules see it as the second wave, as they did when a fight followed the street's opening wave) */
@@ -46,15 +46,50 @@ function pushOut(o, fw) {
   o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
 }
 
+/* Maa ka Thappad: knocked out, the fight stops ('thappad') until the view has played Maa's slaps and calls revive(). Then he rises
+   ('rise', RISE ticks): his rock stand, the spark from the sky at SPARK, every goon still standing steps back a pace and stares. Nobody
+   fights while that plays. Then the fight carries on, and for GRACE ticks nothing can hurt him. */
+var DOWN_BEAT = 40, RISE = 180, SPARK = 48, GRACE = 60;
+function revive(fw) {
+  if (fw.state !== 'thappad') return false;
+  var p = fw.player, c = fw.combat, i;
+  p.hp = p.maxHp; p.down = false; p.stun = 0; p.guard = false; c.downT = 0; c.seqId = 0; c.seqT = 0; c.target = 0; fw.pendingStrikes.length = 0;
+  fw.state = 'rise'; fw.riseT = 0; fw.awe = [];
+  for (i = 0; i < c.enemies.length; i++) {
+    var e = c.enemies[i]; if (e.dead || e.st === 'dead') continue;
+    var dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1;
+    if (e.st !== 'down' && e.st !== 'getup') { e.st = 'awe'; e.t = 0; e.guarding = false; e.kx = 0; e.kz = 0; }
+    fw.awe.push({ id: e.id, ux: dx / d, uz: dz / d, back: Math.max(0, 2.6 - d) + 1.0 });
+  }
+  fw.bus.emit('fight:rise', {}); return true;
+}
+function riseStep(fw) {
+  var p = fw.player, c = fw.combat, k = fw.riseT, i, j;
+  if (k === SPARK) fw.bus.emit('fight:spark', { x: p.x, z: p.z });
+  if (k > SPARK && k <= SPARK + 30) {                                /* the spark knocks them back a pace, and they stare */
+    for (i = 0; i < fw.awe.length; i++) for (j = 0; j < c.enemies.length; j++) {
+      var a = fw.awe[i], e = c.enemies[j]; if (e.id !== a.id || e.st !== 'awe') continue;
+      e.px = e.x; e.pz = e.z; e.x += a.ux * a.back / 30; e.z += a.uz * a.back / 30; e.face = Math.atan2(p.x - e.x, p.z - e.z); pushOut(e, fw);
+    }
+  }
+  for (j = 0; j < c.enemies.length; j++) { var q = c.enemies[j]; if (q.st === 'awe') { q.t++; q.px = q.x; q.pz = q.z; } }
+  if (++fw.riseT >= RISE) {
+    for (j = 0; j < c.enemies.length; j++) { var r = c.enemies[j]; if (r.st === 'awe') { r.st = 'approach'; r.t = 0; r.cd = 40 + j * 12; } }
+    fw.state = 'fight'; fw.graceT = GRACE; fw.bus.emit('fight:resume', {});
+  }
+}
+
 function step(fw, input) {
+  if (fw.state === 'rise') { riseStep(fw); fw.tick++; return; }
   if (fw.state !== 'fight') { fw.tick++; return; }
   var p = fw.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ, c = fw.combat;
-  /* down too long: the fight is lost (the combat's own reset would start a new street wave, which a fight never has) */
-  if (p.down && c.downT >= 170) { fw.state = 'lost'; fw.bus.emit('fight:lost', { type: fw.type, name: fw.name }); fw.tick++; return; }
+  if (fw.graceT > 0) fw.graceT--;
+  /* knocked out: a short beat on the floor, then the screen goes black and Maa comes */
+  if (p.down && c.downT >= DOWN_BEAT) { fw.state = 'thappad'; fw.thappads = (fw.thappads || 0) + 1; fw.bus.emit('fight:thappad', { type: fw.type, name: fw.name }); fw.tick++; return; }
   p.px = p.x; p.pz = p.z;
   var mx = s.mx, mz = -s.my, m = Math.sqrt(mx * mx + mz * mz);       /* stick up = away from camera = -z */
   var locked = !!fw.attackLock || !!(s.held && s.held.block) || p.stun > 0 || p.down;   /* committed: no walking while a move plays or Block is held */
-  p.invuln = !!fw.invuln;
+  p.invuln = !!fw.invuln || fw.graceT > 0;
   p.moving = !locked && m > 0.1;
   if (p.moving) { p.x += mx * v; p.z += mz * v; p.face = Math.atan2(mx, mz); }
   if (s.pressed.attack) { fw.counters.attacks++; fw.bus.emit('action', { type: 'attack' }); }
@@ -80,4 +115,4 @@ function hash(fw) {
   return h >>> 0;
 }
 
-module.exports = { create: create, step: step, hash: hash };
+module.exports = { create: create, step: step, hash: hash, revive: revive, RISE: RISE, SPARK: SPARK, DOWN_BEAT: DOWN_BEAT };

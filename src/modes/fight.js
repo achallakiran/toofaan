@@ -22,12 +22,30 @@ var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
 var arenaview = require('../view/arenaview');
 var cinecard = require('../view/cinecard');
+var thappadMod = require('./thappad');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
 function groupCentre(fw, hx, hz) {
   var sx = 0, sz = 0, n = 0, list = fw.combat.enemies;
   for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.dead || e.st === 'dead') continue; if (Math.hypot(e.x - hx, e.z - hz) < 7) { sx += e.x; sz += e.z; n++; } }
   return n ? { x: sx / n, z: sz / n } : null;
+}
+
+/* Toofan's rock stand: a wide power stance, leaning back, head thrown back, the guitar swung up neck-high */
+function rockPose() {
+  return posemath.layer(posemath.named('stand'), { 'legA.hz': 20, 'legB.hz': 20, 'legA.hx': 12, 'legB.hx': -6, 'legA.k': 22, 'legB.k': 16, 'spine.rx': -14, 'neck.rx': -10, 'head.rx': -26,
+    'gtr.on': 1, 'gtr.gy': 14, 'gtr.ya': 14, 'gtr.yb': -2, 'gtr.px': 10, 'gtr.py': 12, 'gtr.pz': 14, 'gtr.rx': 0, 'gtr.ry': -23, 'gtr.rz': -45 }, 1, 1, 1, 1);
+}
+/* from flat on the floor: knees to chest, kick up, land in a crouch, rise into the stand (u 0..1 over 1.2 s) */
+function rockKeys(rock) {
+  function k(over) { return posemath.layer(posemath.named('stand'), over, 1, 1, 1, 1); }
+  return [
+    [0.0, posemath.named('down')],
+    [0.3, k({ 'hip.rx': -95, 'spine.rx': -10, 'head.rx': 20, 'legA.hx': 120, 'legA.k': 130, 'legB.hx': 115, 'legB.k': 130, 'armA.sx': 165, 'armA.e': 80, 'armB.sx': 165, 'armB.e': 80 })],
+    [0.55, k({ 'hip.rx': -25, 'spine.rx': -28, 'head.rx': -18, 'legA.hx': 20, 'legA.k': 30, 'legB.hx': 10, 'legB.k': 25, 'armA.sx': 120, 'armA.sz': 40, 'armB.sx': 120, 'armB.sz': 40 })],
+    [0.75, k({ 'legA.hz': 22, 'legB.hz': 22, 'legA.hx': 45, 'legA.k': 75, 'legB.hx': 40, 'legB.k': 70, 'spine.rx': 25, 'armA.sx': 35, 'armB.sx': 35, 'armA.sz': 30, 'armB.sz': 30, 'gtr.on': 0.5 })],
+    [1.0, rock]
+  ];
 }
 
 /* how many places are cleared on the ride: the more, the bigger and tougher the crowd */
@@ -126,9 +144,56 @@ function createFight() {
         timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));
         timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride', { after: 'arrest', key: S.type }); } }, 2100));
       }));
-      scope.add(ctx.bus.on('fight:lost', function () {
-        timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride'); } }, 400));
+      /* knocked out: Maa ka Thappad. Black, Maa, the slaps; then the rock stand, the spark from the sky, everyone amazed, and on */
+      S.thp = null; S.rise = false;
+      var white = document.createElement('div'); white.style.cssText = 'position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff;opacity:0;transition:opacity .9s'; document.body.appendChild(white);
+      scope.add(function () { white.remove(); if (S.thp) { S.thp.dispose(); S.thp = null; } });
+      var tapK = function (e) { if (S.thp && (e.code === 'Space' || e.code === 'KeyJ' || e.code === 'Enter') && !e.repeat) S.thp.tap(); };
+      var ab = ctx.touchRoot.querySelector('#btnAttack'), tapP = function () { if (S.thp) S.thp.tap(); };
+      window.addEventListener('keydown', tapK); if (ab) ab.addEventListener('pointerdown', tapP);
+      scope.add(function () { window.removeEventListener('keydown', tapK); if (ab) ab.removeEventListener('pointerdown', tapP); });
+      scope.add(ctx.bus.on('fight:thappad', function () {
+        S.mp.cancel(); S.music.setTrack('thappad'); S.ui.show(false);
+        S.thp = thappadMod.createThappad(ctx, { sfx: S.sfx, onDone: function () {
+          white.style.transition = 'none'; white.style.opacity = 1;
+          if (S.thp) { S.thp.dispose(); S.thp = null; }
+          fightworld.revive(fw);
+          requestAnimationFrame(function () { white.style.transition = 'opacity .9s'; white.style.opacity = 0; });
+        } });
       }));
+      scope.add(ctx.bus.on('fight:rise', function () { S.rise = true; S.riseYaw = S.face; S.downW = 0; S.hurtW = 0; S.sfx.whoosh(0.8); }));
+      scope.add(ctx.bus.on('fight:spark', function (e) { spark(e.x, e.z); }));
+      scope.add(ctx.bus.on('fight:resume', function () { S.rise = false; S.music.setTrack('arena'); S.cur = posemath.named('guard') || posemath.named('stand'); }));
+      /* the spark from the sky: a white bolt into him, a ring of light on the ground, a flash. Built once with the fight (adding a light
+         later would make every material recompile: a hitch at the big moment), parked out of sight until it strikes. */
+      var SEGS = 9, bolt = new THREE.Group(), bmat = new THREE.MeshBasicMaterial({ color: 0xffffff }), segs = [], k0;
+      for (k0 = 0; k0 < SEGS; k0++) { var sg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1, 0.18), bmat); bolt.add(sg); segs.push(sg); }
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.06, 6, 28), new THREE.MeshBasicMaterial({ color: 0xe8f4ff, transparent: true }));
+      ring.rotation.x = Math.PI / 2; bolt.add(ring);
+      var blight = new THREE.PointLight(0xffffff, 0, 14); ctx.view.scene.add(blight);
+      bolt.position.y = -200; ctx.view.scene.add(bolt);
+      var sparkT = -1;
+      var offSpark = ctx.view.onFrame(function () {
+        if (sparkT < 0) return;
+        var u = (performance.now() - sparkT) / 1000;
+        segs.forEach(function (c) { c.visible = u < 0.6 && (u < 0.25 || Math.sin(u * 70) > -0.3); });
+        ring.scale.setScalar(1 + u * 6); ring.material.opacity = Math.max(0, 1 - u / 0.7); blight.intensity = Math.max(0, 4 * (1 - u / 0.7));
+        if (u > 1.0) { sparkT = -1; bolt.position.y = -200; blight.intensity = 0; }
+      });
+      scope.add(function () { offSpark(); ctx.view.scene.remove(bolt); ctx.view.scene.remove(blight); segs.forEach(function (c) { c.geometry.dispose(); }); bmat.dispose(); ring.geometry.dispose(); ring.material.dispose(); });
+      function spark(x, z) {
+        var y = 14, px = 0, pz = 0, k;
+        bolt.position.set(x, 0, z); blight.position.set(x, 3, z);
+        for (k = 0; k < SEGS; k++) {
+          var ny = k === SEGS - 1 ? 1.9 : y - 1.35 - Math.random() * 0.4, nx = k < SEGS - 1 ? (Math.random() - 0.5) * 0.9 : 0, nz = k < SEGS - 1 ? (Math.random() - 0.5) * 0.9 : 0;
+          var len = Math.hypot(nx - px, ny - y, nz - pz), c = segs[k];
+          c.scale.set(1, len, 1); c.position.set((px + nx) / 2, (y + ny) / 2, (pz + nz) / 2); c.lookAt(x + nx, ny, z + nz); c.rotateX(Math.PI / 2); c.visible = true;
+          px = nx; y = ny; pz = nz;
+        }
+        ring.position.set(0, 0.05, 0); sparkT = performance.now();
+        S.sfx.bolt(); S.cine.shake(0.22, 0.6);
+        white.style.transition = 'none'; white.style.opacity = 0.55; requestAnimationFrame(function () { white.style.transition = 'opacity .5s'; white.style.opacity = 0; });
+      }
     },
     step: function (ctx, tick) {
       var fw = S.fw, cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
@@ -139,6 +204,7 @@ function createFight() {
     },
     render: function (ctx, alpha) {
       var fw = S.fw, now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; var real = dt;
+      if (S.thp) { S.thp.render(real); return; }                                          /* Maa's world has the screen */
       /* the broken-guard sequence plays in gentle slow motion while the camera closes on his face; it lingers to follow the throw */
       var cb = fw.combat, seqNow = cb.seqId; if (seqNow) { S.seqLast = seqNow; S.seqLinger = 1.0; } else if (S.seqLinger > 0) S.seqLinger -= real;
       var seqOn = !!seqNow || S.seqLinger > 0; S.seqW += ((seqOn ? 1 : 0) - S.seqW) * (1 - Math.exp(-(seqOn ? 8 : 5) * real));
@@ -160,10 +226,18 @@ function createFight() {
       if (S.blockW > 0.01) { var bw = posemath.smooth(S.blockW); pose = posemath.layer(pose, posemath.named('block'), bw * 0.85, bw); }
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
-      S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(true);
+      var riseLift = 0;
+      if (S.rise && fw.state === 'rise') {                                                /* the rock stand: kip up from the floor and hold it */
+        var rt = fw.riseT / 60, ru = Math.min(1, rt / 1.2), rock = rockPose();
+        pose = posemath.keyed(rockKeys(rock), ru);
+        if (rt > 2.2) pose = posemath.blend(rock, posemath.named('guard') || posemath.named('stand'), posemath.smooth((rt - 2.2) / 0.8));
+        riseLift = ru > 0.35 && ru < 0.75 ? Math.sin(Math.PI * (ru - 0.35) / 0.4) * 0.45 : 0;
+        S.cur = posemath.copy(pose);
+      }
+      S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(fw.state === 'fight' || fw.state === 'cleared');
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face;
+      S.rig.root.position.set(x, riseLift, z); S.rig.root.rotation.y = S.face;
       S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
@@ -189,6 +263,11 @@ function createFight() {
         shot = o;
       } else if (S.seqW <= 0.01) S.seqCam = null;
       ctx.view.updateLod(x, z, ctx.view.tier.lod);
+      if (S.rise && fw.state === 'rise') {
+        var ra = S.riseYaw + Math.PI * 2 * posemath.smooth(fw.riseT / 180), rr = 4.6 - 0.8 * Math.sin(Math.PI * fw.riseT / 180);
+        shot = { x: x + Math.sin(ra) * rr, y: 1.6 + 0.8 * Math.sin(Math.PI * fw.riseT / 180), z: z + Math.cos(ra) * rr, lx: x, ly: 1.25, lz: z, fov: 50 };
+        if (S.cine.shakeT > 0) { var sk3 = S.cine.shakeT / (S.cine.dur || 1), amp3 = S.cine.shakeA * sk3 * sk3 * 0.6; shot.x += Math.sin(S.t * 83) * amp3; shot.y += Math.sin(S.t * 97 + 1) * amp3; }
+      }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;

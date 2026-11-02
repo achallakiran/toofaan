@@ -111,6 +111,17 @@ function make() {
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4); o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + 1.45);
     },
     /* the big ones: a sub drop you feel, a long rumbling tail, a crack on top, and an echo so it fills the street */
+    /* Maa's slap: a sharp crack of skin on skin with a low thump under it; `big` adds a long echo */
+    slap: function (power, big) {
+      if (!on || !ctx()) return; var p = power || 1;
+      burst(0.035, 0.55 * p, 'highpass', 2600, 1800, 0, 1.4); burst(0.06, 0.4 * p, 'bandpass', 1400, 900, 0.004, 2.5); thump(160, 70, 0.09, 0.45 * p, 0.002);
+      if (big) { var k; for (k = 1; k <= 4; k++) { burst(0.05, 0.4 / (k + 0.5), 'bandpass', 1500, 1000, k * 0.16, 2); } thump(60, 25, 0.6, 1.0, 0.01); }
+    },
+    /* the spark from the sky: a crack of lightning and a deep roll */
+    bolt: function () {
+      if (!on || !ctx()) return;
+      this.zap(1.6); burst(0.12, 0.9, 'highpass', 4000, 2000, 0, 1); thump(90, 22, 0.9, 1.3, 0.03); burst(1.1, 0.5, 'lowpass', 900, 80, 0.08, 0.7);
+    },
     boom: function () {
       if (!on || !ctx()) return;
       thump(70, 18, 1.1, 1.6); thump(140, 30, 0.5, 1.2, 0.01); burst(0.9, 0.9, 'lowpass', 1800, 60, 0, 0.7); burst(0.12, 0.9, 'highpass', 2800, 1200, 0);

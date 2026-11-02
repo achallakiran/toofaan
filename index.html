@@ -328,7 +328,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 72',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 73',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1136,12 +1136,30 @@ var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
 var arenaview = require('../view/arenaview');
 var cinecard = require('../view/cinecard');
+var thappadMod = require('./thappad');
 
 /* the middle of the men within reach of the hero: special-move cameras lean toward them so the move and its victims share the frame */
 function groupCentre(fw, hx, hz) {
   var sx = 0, sz = 0, n = 0, list = fw.combat.enemies;
   for (var i = 0; i < list.length; i++) { var e = list[i]; if (e.dead || e.st === 'dead') continue; if (Math.hypot(e.x - hx, e.z - hz) < 7) { sx += e.x; sz += e.z; n++; } }
   return n ? { x: sx / n, z: sz / n } : null;
+}
+
+/* Toofan's rock stand: a wide power stance, leaning back, head thrown back, the guitar swung up neck-high */
+function rockPose() {
+  return posemath.layer(posemath.named('stand'), { 'legA.hz': 20, 'legB.hz': 20, 'legA.hx': 12, 'legB.hx': -6, 'legA.k': 22, 'legB.k': 16, 'spine.rx': -14, 'neck.rx': -10, 'head.rx': -26,
+    'gtr.on': 1, 'gtr.gy': 14, 'gtr.ya': 14, 'gtr.yb': -2, 'gtr.px': 10, 'gtr.py': 12, 'gtr.pz': 14, 'gtr.rx': 0, 'gtr.ry': -23, 'gtr.rz': -45 }, 1, 1, 1, 1);
+}
+/* from flat on the floor: knees to chest, kick up, land in a crouch, rise into the stand (u 0..1 over 1.2 s) */
+function rockKeys(rock) {
+  function k(over) { return posemath.layer(posemath.named('stand'), over, 1, 1, 1, 1); }
+  return [
+    [0.0, posemath.named('down')],
+    [0.3, k({ 'hip.rx': -95, 'spine.rx': -10, 'head.rx': 20, 'legA.hx': 120, 'legA.k': 130, 'legB.hx': 115, 'legB.k': 130, 'armA.sx': 165, 'armA.e': 80, 'armB.sx': 165, 'armB.e': 80 })],
+    [0.55, k({ 'hip.rx': -25, 'spine.rx': -28, 'head.rx': -18, 'legA.hx': 20, 'legA.k': 30, 'legB.hx': 10, 'legB.k': 25, 'armA.sx': 120, 'armA.sz': 40, 'armB.sx': 120, 'armB.sz': 40 })],
+    [0.75, k({ 'legA.hz': 22, 'legB.hz': 22, 'legA.hx': 45, 'legA.k': 75, 'legB.hx': 40, 'legB.k': 70, 'spine.rx': 25, 'armA.sx': 35, 'armB.sx': 35, 'armA.sz': 30, 'armB.sz': 30, 'gtr.on': 0.5 })],
+    [1.0, rock]
+  ];
 }
 
 /* how many places are cleared on the ride: the more, the bigger and tougher the crowd */
@@ -1240,9 +1258,56 @@ function createFight() {
         timers.push(setTimeout(function () { cinecard.show({ title: 'POLICE AA GAYI!', sub: e.name + ' cleared', ms: 2400 }); }, 1600));
         timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride', { after: 'arrest', key: S.type }); } }, 2100));
       }));
-      scope.add(ctx.bus.on('fight:lost', function () {
-        timers.push(setTimeout(function () { if (!S.done) { S.done = true; ctx.go('ride'); } }, 400));
+      /* knocked out: Maa ka Thappad. Black, Maa, the slaps; then the rock stand, the spark from the sky, everyone amazed, and on */
+      S.thp = null; S.rise = false;
+      var white = document.createElement('div'); white.style.cssText = 'position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff;opacity:0;transition:opacity .9s'; document.body.appendChild(white);
+      scope.add(function () { white.remove(); if (S.thp) { S.thp.dispose(); S.thp = null; } });
+      var tapK = function (e) { if (S.thp && (e.code === 'Space' || e.code === 'KeyJ' || e.code === 'Enter') && !e.repeat) S.thp.tap(); };
+      var ab = ctx.touchRoot.querySelector('#btnAttack'), tapP = function () { if (S.thp) S.thp.tap(); };
+      window.addEventListener('keydown', tapK); if (ab) ab.addEventListener('pointerdown', tapP);
+      scope.add(function () { window.removeEventListener('keydown', tapK); if (ab) ab.removeEventListener('pointerdown', tapP); });
+      scope.add(ctx.bus.on('fight:thappad', function () {
+        S.mp.cancel(); S.music.setTrack('thappad'); S.ui.show(false);
+        S.thp = thappadMod.createThappad(ctx, { sfx: S.sfx, onDone: function () {
+          white.style.transition = 'none'; white.style.opacity = 1;
+          if (S.thp) { S.thp.dispose(); S.thp = null; }
+          fightworld.revive(fw);
+          requestAnimationFrame(function () { white.style.transition = 'opacity .9s'; white.style.opacity = 0; });
+        } });
       }));
+      scope.add(ctx.bus.on('fight:rise', function () { S.rise = true; S.riseYaw = S.face; S.downW = 0; S.hurtW = 0; S.sfx.whoosh(0.8); }));
+      scope.add(ctx.bus.on('fight:spark', function (e) { spark(e.x, e.z); }));
+      scope.add(ctx.bus.on('fight:resume', function () { S.rise = false; S.music.setTrack('arena'); S.cur = posemath.named('guard') || posemath.named('stand'); }));
+      /* the spark from the sky: a white bolt into him, a ring of light on the ground, a flash. Built once with the fight (adding a light
+         later would make every material recompile: a hitch at the big moment), parked out of sight until it strikes. */
+      var SEGS = 9, bolt = new THREE.Group(), bmat = new THREE.MeshBasicMaterial({ color: 0xffffff }), segs = [], k0;
+      for (k0 = 0; k0 < SEGS; k0++) { var sg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1, 0.18), bmat); bolt.add(sg); segs.push(sg); }
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.06, 6, 28), new THREE.MeshBasicMaterial({ color: 0xe8f4ff, transparent: true }));
+      ring.rotation.x = Math.PI / 2; bolt.add(ring);
+      var blight = new THREE.PointLight(0xffffff, 0, 14); ctx.view.scene.add(blight);
+      bolt.position.y = -200; ctx.view.scene.add(bolt);
+      var sparkT = -1;
+      var offSpark = ctx.view.onFrame(function () {
+        if (sparkT < 0) return;
+        var u = (performance.now() - sparkT) / 1000;
+        segs.forEach(function (c) { c.visible = u < 0.6 && (u < 0.25 || Math.sin(u * 70) > -0.3); });
+        ring.scale.setScalar(1 + u * 6); ring.material.opacity = Math.max(0, 1 - u / 0.7); blight.intensity = Math.max(0, 4 * (1 - u / 0.7));
+        if (u > 1.0) { sparkT = -1; bolt.position.y = -200; blight.intensity = 0; }
+      });
+      scope.add(function () { offSpark(); ctx.view.scene.remove(bolt); ctx.view.scene.remove(blight); segs.forEach(function (c) { c.geometry.dispose(); }); bmat.dispose(); ring.geometry.dispose(); ring.material.dispose(); });
+      function spark(x, z) {
+        var y = 14, px = 0, pz = 0, k;
+        bolt.position.set(x, 0, z); blight.position.set(x, 3, z);
+        for (k = 0; k < SEGS; k++) {
+          var ny = k === SEGS - 1 ? 1.9 : y - 1.35 - Math.random() * 0.4, nx = k < SEGS - 1 ? (Math.random() - 0.5) * 0.9 : 0, nz = k < SEGS - 1 ? (Math.random() - 0.5) * 0.9 : 0;
+          var len = Math.hypot(nx - px, ny - y, nz - pz), c = segs[k];
+          c.scale.set(1, len, 1); c.position.set((px + nx) / 2, (y + ny) / 2, (pz + nz) / 2); c.lookAt(x + nx, ny, z + nz); c.rotateX(Math.PI / 2); c.visible = true;
+          px = nx; y = ny; pz = nz;
+        }
+        ring.position.set(0, 0.05, 0); sparkT = performance.now();
+        S.sfx.bolt(); S.cine.shake(0.22, 0.6);
+        white.style.transition = 'none'; white.style.opacity = 0.55; requestAnimationFrame(function () { white.style.transition = 'opacity .5s'; white.style.opacity = 0; });
+      }
     },
     step: function (ctx, tick) {
       var fw = S.fw, cm0 = S.mp.current(), mv0 = cm0 && moveData.MOVES[cm0];
@@ -1253,6 +1318,7 @@ function createFight() {
     },
     render: function (ctx, alpha) {
       var fw = S.fw, now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; var real = dt;
+      if (S.thp) { S.thp.render(real); return; }                                          /* Maa's world has the screen */
       /* the broken-guard sequence plays in gentle slow motion while the camera closes on his face; it lingers to follow the throw */
       var cb = fw.combat, seqNow = cb.seqId; if (seqNow) { S.seqLast = seqNow; S.seqLinger = 1.0; } else if (S.seqLinger > 0) S.seqLinger -= real;
       var seqOn = !!seqNow || S.seqLinger > 0; S.seqW += ((seqOn ? 1 : 0) - S.seqW) * (1 - Math.exp(-(seqOn ? 8 : 5) * real));
@@ -1274,10 +1340,18 @@ function createFight() {
       if (S.blockW > 0.01) { var bw = posemath.smooth(S.blockW); pose = posemath.layer(pose, posemath.named('block'), bw * 0.85, bw); }
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
-      S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(true);
+      var riseLift = 0;
+      if (S.rise && fw.state === 'rise') {                                                /* the rock stand: kip up from the floor and hold it */
+        var rt = fw.riseT / 60, ru = Math.min(1, rt / 1.2), rock = rockPose();
+        pose = posemath.keyed(rockKeys(rock), ru);
+        if (rt > 2.2) pose = posemath.blend(rock, posemath.named('guard') || posemath.named('stand'), posemath.smooth((rt - 2.2) / 0.8));
+        riseLift = ru > 0.35 && ru < 0.75 ? Math.sin(Math.PI * (ru - 0.35) / 0.4) * 0.45 : 0;
+        S.cur = posemath.copy(pose);
+      }
+      S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(fw.state === 'fight' || fw.state === 'cleared');
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, 0, z); S.rig.root.rotation.y = S.face;
+      S.rig.root.position.set(x, riseLift, z); S.rig.root.rotation.y = S.face;
       S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
@@ -1303,6 +1377,11 @@ function createFight() {
         shot = o;
       } else if (S.seqW <= 0.01) S.seqCam = null;
       ctx.view.updateLod(x, z, ctx.view.tier.lod);
+      if (S.rise && fw.state === 'rise') {
+        var ra = S.riseYaw + Math.PI * 2 * posemath.smooth(fw.riseT / 180), rr = 4.6 - 0.8 * Math.sin(Math.PI * fw.riseT / 180);
+        shot = { x: x + Math.sin(ra) * rr, y: 1.6 + 0.8 * Math.sin(Math.PI * fw.riseT / 180), z: z + Math.cos(ra) * rr, lx: x, ly: 1.25, lz: z, fov: 50 };
+        if (S.cine.shakeT > 0) { var sk3 = S.cine.shakeT / (S.cine.dur || 1), amp3 = S.cine.shakeA * sk3 * sk3 * 0.6; shot.x += Math.sin(S.t * 83) * amp3; shot.y += Math.sin(S.t * 97 + 1) * amp3; }
+      }
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;
@@ -1837,6 +1916,129 @@ function createStudio() {
 }
 
 module.exports = { createStudio: createStudio };
+
+};
+defs["modes/thappad"]=function(module,exports,require){
+/* modes (helper for the fight): Maa ka Thappad. Toofan is knocked out: the screen goes black. Out of the dark Maa walks into a pool of
+   light, seen from where he lies (the camera is his eyes, looking up), stops over him and says her line, and raises her hand. Every tap
+   is a slap at the camera, one cheek then the other, each one quicker than the last until her hand is a blur; then the big one on its
+   own: slow, a white flash, THAPPAD! and an echo. onDone() is called with the screen white, and the fight takes it from there.
+   Its own small scene and camera, built here and freed after. */
+'use strict';
+
+var maavox = require('../view/maavox');
+var posemath = require('../view/posemath');
+
+var LINE = 'UTH JA, BETA!';                           /* Maa's words (placeholder until Ravi gives hers) */
+var SLAPS = 12;                                       /* quick slaps before the big one */
+function slapLen(n) { return Math.max(0.075, 0.42 * Math.pow(0.8, n)); }
+function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
+
+function createThappad(ctx, opts) {
+  var renderer = ctx.view.renderer, scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(60, 1, 0.05, 60), made = [];
+  scene.background = new THREE.Color(0x000000);
+  scene.add(new THREE.HemisphereLight(0xd9d2e4, 0x2a2018, 0.75));
+  var fill = new THREE.DirectionalLight(0xfff2e0, 1.05); fill.position.set(0.4, 1.2, 3); scene.add(fill);       /* a soft light from where he lies, on her face */
+  var spot = new THREE.SpotLight(0xfff0d8, 1.9, 14, 0.42, 0.65, 1.2); spot.position.set(0.3, 6.5, -0.6); scene.add(spot); scene.add(spot.target); spot.target.position.set(0, 0, -1.1);
+  /* the pool of light on the floor */
+  var cv = document.createElement('canvas'); cv.width = cv.height = 128; var g2 = cv.getContext('2d'), gr = g2.createRadialGradient(64, 64, 4, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(120,110,100,0.85)'); gr.addColorStop(0.55, 'rgba(50,44,40,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g2.fillStyle = gr; g2.fillRect(0, 0, 128, 128);
+  var tex = new THREE.CanvasTexture(cv), pool = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0 }));
+  pool.rotation.x = -Math.PI / 2; pool.position.set(0, 0.001, -1.1); scene.add(pool); made.push(tex, pool.geometry, pool.material);
+  /* motes of dust drifting up through the light: the otherworld */
+  var MOTES = 60, motes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: 0xd9cfbf, transparent: true, opacity: 0 }), MOTES), m4 = new THREE.Matrix4(), seeds = [];
+  for (var i = 0; i < MOTES; i++) seeds.push([Math.sin(i * 12.9) * 2.0, ((i * 0.37) % 1) * 3.2, -2.2 - Math.abs(Math.cos(i * 7.1)) * 1.6, 0.08 + ((i * 0.13) % 0.12)]);   /* behind her, never in front of his eyes */
+  scene.add(motes); made.push(motes.geometry, motes.material);
+  /* Maa */
+  var maa = maavox.createMaa(); scene.add(maa.root);
+  /* words on screen */
+  function el(css) { var d = document.createElement('div'); d.style.cssText = css; document.body.appendChild(d); return d; }
+  var line = el('position:fixed;left:0;right:0;bottom:20%;z-index:44;text-align:center;pointer-events:none;color:#fff5e0;font-size:clamp(20px,6vw,34px);letter-spacing:.16em;text-shadow:0 0 12px #000,0 2px 2px #000;opacity:0;transition:opacity .5s');
+  line.textContent = LINE;
+  var prompt = el('position:fixed;left:0;right:0;bottom:12%;z-index:44;text-align:center;pointer-events:none;color:#ffd21f;font-size:clamp(16px,4.5vw,24px);letter-spacing:.2em;text-shadow:0 0 10px #000;opacity:0');
+  prompt.textContent = '✊ TAP TAP TAP!';
+  var flash = el('position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff;opacity:0');
+  var words = el('position:fixed;inset:0;z-index:45;pointer-events:none;overflow:hidden');
+  function word(big) {
+    var w = document.createElement('div'); w.className = 'comic'; w.textContent = 'THAPPAD!';
+    var x = big ? 50 : 20 + Math.random() * 60, y = big ? 42 : 18 + Math.random() * 55, rot = (Math.random() - 0.5) * (big ? 10 : 40), sz = big ? 'clamp(54px,16vw,150px)' : 'clamp(22px,6vw,46px)';
+    w.style.cssText = 'position:absolute;left:' + x + '%;top:' + y + '%;transform:translate(-50%,-50%) rotate(' + rot + 'deg) scale(.4);font:900 ' + sz + '/1 "Arial Black",Impact,sans-serif;color:#ffd21f;-webkit-text-stroke:' + (big ? 4 : 2) + 'px #000;text-shadow:' + (big ? 7 : 3) + 'px ' + (big ? 7 : 3) + 'px 0 #b0102a;transition:transform .12s ease-out,opacity .5s';
+    words.appendChild(w); requestAnimationFrame(function () { w.style.transform = 'translate(-50%,-50%) rotate(' + rot + 'deg) scale(1)'; });
+    setTimeout(function () { w.style.opacity = 0; }, big ? 1400 : 380); setTimeout(function () { w.remove(); }, big ? 2000 : 900);
+  }
+
+  var S = { t: 0, phase: 'dark', queue: 0, n: 0, slap: null, kickY: 0, kickR: 0, side: 1, done: false, final: null };
+  var stand = posemath.named('stand');
+  function maaPose(dt) {
+    var t = S.t, p, walkT = 1.4, arrive = 4.0;
+    if (t < arrive) {                                                           /* walking out of the dark, slow, a little bent */
+      var u = ease((t - walkT) / (arrive - walkT)); maa.root.position.set(0, 0, -7 + 5.9 * u);
+      p = posemath.layer(t > walkT && u < 1 ? posemath.walkPose(t * 0.55, 0.55) : stand, { 'spine.rx': 12, 'head.rx': 6, 'neck.rx': 4 }, 0, 1, 0.6, 0.6);
+      return p;
+    }
+    /* over him: bent down to look at him */
+    p = posemath.layer(stand, { 'spine.rx': 24, 'neck.rx': 14, 'head.rx': 26, 'armA.sx': 8, 'armB.sx': 8, 'armA.sz': 10, 'armB.sz': 10, 'legA.hx': 10, 'legB.hx': -4 }, 1, 1, 1, 1);
+    var raise = ease((t - 4.4) / 0.5);
+    var arm = S.side > 0 ? 'armA' : 'armB', other = S.side > 0 ? 'armB' : 'armA', up = {}, hit = {};
+    up[arm + '.sx'] = 100; up[arm + '.sz'] = 62; up[arm + '.e'] = 100;         /* hand raised beside her head */
+    hit[arm + '.sx'] = 78; hit[arm + '.sz'] = -28; hit[arm + '.e'] = 12; hit['spine.ry'] = -S.side * 24; hit[other + '.sx'] = 20;
+    var sl = S.final || S.slap;
+    if (sl) {
+      var k = sl.t / sl.len, w = k < 0.35 ? 0 : ease((k - 0.35) / 0.35) * (k > 0.8 ? 1 - (k - 0.8) / 0.2 * 0.6 : 1);
+      p = posemath.layer(p, up, 0, 1, 1, 1); p = posemath.layer(p, hit, 0, w, w, w);
+    } else p = posemath.layer(p, up, 0, raise, raise, raise);
+    return p;
+  }
+  function hitNow(big) {
+    S.kickY = S.side * (big ? 0.6 : 0.32); S.kickR = -S.side * (big ? 0.35 : 0.18);
+    opts.sfx.slap(big ? 1.4 : 0.8 + Math.random() * 0.3, big); word(big);
+    if (big) { flash.style.transition = 'none'; flash.style.opacity = 1; }
+  }
+  var api = {
+    tap: function () { if (S.phase === 'ready' || S.phase === 'slaps') { if (S.queue < 2) S.queue++; } },
+    render: function (dt) {
+      S.t += dt; var t = S.t;
+      if (S.phase === 'dark' && t > 4.6) { S.phase = 'ready'; prompt.style.opacity = 1; }
+      line.style.opacity = t > 4.0 && !S.final ? 1 : 0;
+      pool.material.opacity = Math.min(1, Math.max(0, (t - 1.0) / 1.2));
+      motes.material.opacity = 0.5 * pool.material.opacity;
+      prompt.style.transform = 'scale(' + (1 + Math.sin(t * 9) * 0.06) + ')';
+      /* the slaps: one at a time, each quicker than the last */
+      if (!S.slap && !S.final && S.queue > 0 && (S.phase === 'ready' || S.phase === 'slaps')) { S.queue--; S.phase = 'slaps'; S.slap = { t: 0, len: slapLen(S.n), hit: false }; }
+      if (S.slap) {
+        S.slap.t += dt; if (!S.slap.hit && S.slap.t >= S.slap.len * 0.6) { S.slap.hit = true; hitNow(false); }
+        if (S.slap.t >= S.slap.len) { S.slap = null; S.n++; S.side = -S.side; if (S.n >= SLAPS) { S.final = { t: 0, len: 1.3, hit: false }; S.phase = 'final'; prompt.style.opacity = 0; S.queue = 0; } }
+      }
+      if (S.final) {
+        S.final.t += dt * (S.final.hit ? 1 : 0.55);                          /* the big one comes slow */
+        if (!S.final.hit && S.final.t >= S.final.len * 0.6) { S.final.hit = true; hitNow(true); }
+        if (S.final.hit && S.final.t >= S.final.len * 0.6 + 0.55 && !S.done) { S.done = true; if (opts.onDone) opts.onDone(); }
+      }
+      prompt.style.opacity = S.phase === 'ready' || (S.phase === 'slaps' && S.n < SLAPS) ? 1 : 0;
+      /* Maa */
+      maa.rig.applyPose(maaPose(dt), { plant: true }); maa.sync();
+      for (var j = 0; j < MOTES; j++) { var sd = seeds[j], yy = (sd[1] + t * sd[3]) % 3.2; m4.makeTranslation(sd[0] + Math.sin(t * 0.4 + j) * 0.1, yy, sd[2]); motes.setMatrixAt(j, m4); }
+      motes.instanceMatrix.needsUpdate = true;
+      /* his eyes: low on the floor, looking up at her; knocked aside by each slap */
+      S.kickY *= Math.exp(-9 * dt); S.kickR *= Math.exp(-9 * dt);
+      var my = maa.root.position.z, cw = renderer.domElement.clientWidth || 800, ch = renderer.domElement.clientHeight || 600;
+      cam.aspect = cw / ch; cam.fov = ch > cw ? 72 : 58; cam.updateProjectionMatrix();
+      cam.position.set(0, 0.32 + Math.sin(t * 1.3) * 0.01, 0.55);
+      cam.lookAt(0, (t < 4.0 ? 1.15 : 1.3) + (ch > cw ? 0.25 : 0), Math.min(my, -0.9) - 0.2);
+      cam.rotateY(S.kickY); cam.rotateZ(S.kickR);
+      var ac = renderer.autoClear; renderer.autoClear = true; renderer.setClearColor(0x000000, 1); renderer.render(scene, cam); renderer.autoClear = ac;
+    },
+    slapsDone: function () { return S.n; },
+    dispose: function () {
+      scene.remove(maa.root); maa.dispose(); made.forEach(function (x) { x.dispose(); });
+      [line, prompt, flash, words].forEach(function (d) { d.remove(); });
+    },
+    flashEl: flash
+  };
+  return api;
+}
+
+module.exports = { createThappad: createThappad, LINE: LINE, SLAPS: SLAPS };
 
 };
 defs["modes/title"]=function(module,exports,require){
@@ -3269,7 +3471,7 @@ function stepEnemy(world, e, input) {
       if (e.t >= (e.dead ? 70 : 78)) { if (e.dead) { e.st = 'dead'; e.t = 0; } else { e.st = 'getup'; e.t = 0; } }
       break;
     case 'guardbreak': e.guarding = false; if (e.t >= GBREAK && !held(c, e)) { e.st = 'approach'; e.t = 0; e.cd = 14; } break;
-    case 'getup': e.thrown = false; if (e.t >= 30) { e.st = 'approach'; e.t = 0; e.cd = 30; } break;
+    case 'getup': e.thrown = false; if (e.t >= 72) {          /* a full get-up: side, hand, knee, up, shake it off (1.2 s) */ e.st = 'approach'; e.t = 0; e.cd = 30; } break;
     case 'dead': break;
   }
 }
@@ -3587,7 +3789,7 @@ defs["sim/fightworld"]=function(module,exports,require){
 /* sim: one fight at one trouble spot. Only the arena, that gang's men and Toofan on foot: no bike, no city, no traffic, no waves.
    The fighting itself is sim/combat, stepped exactly as it always was for Toofan on foot (walk, lock while a move plays or Block is held,
    blows, guards, counters, the finisher). Around it: the arena's walls and props keep everybody in, and the fight ends when the last man is
-   down (cleared) or when Toofan has been down long enough (lost). Plain data, seeded; no graphics, no DOM. */
+   down (cleared). Toofan knocked out is never the end: Maa ka Thappad (see revive) puts him back on his feet in the same fight. Plain data, seeded; no graphics, no DOM. */
 'use strict';
 
 var CONFIG = require('../data/config');
@@ -3604,7 +3806,7 @@ function create(opts) {
     type: type, name: LOC.LOCATIONS[type].name, arena: spec, bounds: spec.bounds,
     player: { x: spec.start.x, z: spec.start.z, px: spec.start.x, pz: spec.start.z, face: Math.PI, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
     combat: combatMod.createCombat(), pendingStrikes: [], counters: { attacks: 0, blocks: 0, finishers: 0 },
-    attackLock: false, invuln: false, state: 'fight'                   /* fight | cleared | lost */
+    attackLock: false, invuln: false, graceT: 0, state: 'fight'                   /* fight | thappad | rise | cleared */
   };
   /* the fight as the brawler always started it at a place: the combat is switched on, then this place's men walk in (one fight, so the
      engagement rules see it as the second wave, as they did when a fight followed the street's opening wave) */
@@ -3632,15 +3834,50 @@ function pushOut(o, fw) {
   o.x = Math.max(B.x0, Math.min(B.x1, o.x)); o.z = Math.max(B.z0, Math.min(B.z1, o.z));
 }
 
+/* Maa ka Thappad: knocked out, the fight stops ('thappad') until the view has played Maa's slaps and calls revive(). Then he rises
+   ('rise', RISE ticks): his rock stand, the spark from the sky at SPARK, every goon still standing steps back a pace and stares. Nobody
+   fights while that plays. Then the fight carries on, and for GRACE ticks nothing can hurt him. */
+var DOWN_BEAT = 40, RISE = 180, SPARK = 48, GRACE = 60;
+function revive(fw) {
+  if (fw.state !== 'thappad') return false;
+  var p = fw.player, c = fw.combat, i;
+  p.hp = p.maxHp; p.down = false; p.stun = 0; p.guard = false; c.downT = 0; c.seqId = 0; c.seqT = 0; c.target = 0; fw.pendingStrikes.length = 0;
+  fw.state = 'rise'; fw.riseT = 0; fw.awe = [];
+  for (i = 0; i < c.enemies.length; i++) {
+    var e = c.enemies[i]; if (e.dead || e.st === 'dead') continue;
+    var dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz) || 1;
+    if (e.st !== 'down' && e.st !== 'getup') { e.st = 'awe'; e.t = 0; e.guarding = false; e.kx = 0; e.kz = 0; }
+    fw.awe.push({ id: e.id, ux: dx / d, uz: dz / d, back: Math.max(0, 2.6 - d) + 1.0 });
+  }
+  fw.bus.emit('fight:rise', {}); return true;
+}
+function riseStep(fw) {
+  var p = fw.player, c = fw.combat, k = fw.riseT, i, j;
+  if (k === SPARK) fw.bus.emit('fight:spark', { x: p.x, z: p.z });
+  if (k > SPARK && k <= SPARK + 30) {                                /* the spark knocks them back a pace, and they stare */
+    for (i = 0; i < fw.awe.length; i++) for (j = 0; j < c.enemies.length; j++) {
+      var a = fw.awe[i], e = c.enemies[j]; if (e.id !== a.id || e.st !== 'awe') continue;
+      e.px = e.x; e.pz = e.z; e.x += a.ux * a.back / 30; e.z += a.uz * a.back / 30; e.face = Math.atan2(p.x - e.x, p.z - e.z); pushOut(e, fw);
+    }
+  }
+  for (j = 0; j < c.enemies.length; j++) { var q = c.enemies[j]; if (q.st === 'awe') { q.t++; q.px = q.x; q.pz = q.z; } }
+  if (++fw.riseT >= RISE) {
+    for (j = 0; j < c.enemies.length; j++) { var r = c.enemies[j]; if (r.st === 'awe') { r.st = 'approach'; r.t = 0; r.cd = 40 + j * 12; } }
+    fw.state = 'fight'; fw.graceT = GRACE; fw.bus.emit('fight:resume', {});
+  }
+}
+
 function step(fw, input) {
+  if (fw.state === 'rise') { riseStep(fw); fw.tick++; return; }
   if (fw.state !== 'fight') { fw.tick++; return; }
   var p = fw.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ, c = fw.combat;
-  /* down too long: the fight is lost (the combat's own reset would start a new street wave, which a fight never has) */
-  if (p.down && c.downT >= 170) { fw.state = 'lost'; fw.bus.emit('fight:lost', { type: fw.type, name: fw.name }); fw.tick++; return; }
+  if (fw.graceT > 0) fw.graceT--;
+  /* knocked out: a short beat on the floor, then the screen goes black and Maa comes */
+  if (p.down && c.downT >= DOWN_BEAT) { fw.state = 'thappad'; fw.thappads = (fw.thappads || 0) + 1; fw.bus.emit('fight:thappad', { type: fw.type, name: fw.name }); fw.tick++; return; }
   p.px = p.x; p.pz = p.z;
   var mx = s.mx, mz = -s.my, m = Math.sqrt(mx * mx + mz * mz);       /* stick up = away from camera = -z */
   var locked = !!fw.attackLock || !!(s.held && s.held.block) || p.stun > 0 || p.down;   /* committed: no walking while a move plays or Block is held */
-  p.invuln = !!fw.invuln;
+  p.invuln = !!fw.invuln || fw.graceT > 0;
   p.moving = !locked && m > 0.1;
   if (p.moving) { p.x += mx * v; p.z += mz * v; p.face = Math.atan2(mx, mz); }
   if (s.pressed.attack) { fw.counters.attacks++; fw.bus.emit('action', { type: 'attack' }); }
@@ -3666,7 +3903,7 @@ function hash(fw) {
   return h >>> 0;
 }
 
-module.exports = { create: create, step: step, hash: hash };
+module.exports = { create: create, step: step, hash: hash, revive: revive, RISE: RISE, SPARK: SPARK, DOWN_BEAT: DOWN_BEAT };
 
 };
 defs["sim/hideoutgen"]=function(module,exports,require){
@@ -5260,6 +5497,20 @@ defs["view/enemyview"]=function(module,exports,require){
    (pulled-back arm, weight shift). No rings, dots or lock markers: the lock and the guard are shown by pose alone. */
 'use strict';
 
+/* the get-up, as keyframes from lying on his back to standing in his guard (base) */
+function getupKeys(base) {
+  var pm = require('./posemath'), D = pm.named('down');
+  function k(over) { return pm.layer(pm.named('stand'), over, 1, 1, 1, 1); }
+  return [
+    [0.0, D],
+    [0.22, k({ 'hip.rx': -70, 'hip.rz': 35, 'spine.rx': 25, 'spine.rz': 10, 'head.rx': 15, 'armA.sx': -35, 'armA.sz': 45, 'armA.e': 15, 'armB.sx': 40, 'armB.sz': 10, 'armB.e': 70, 'legA.hx': 55, 'legA.k': 95, 'legB.hx': 30, 'legB.k': 60 })],
+    [0.45, k({ 'hip.rx': -35, 'hip.rz': 15, 'spine.rx': 45, 'head.rx': 20, 'armA.sx': -10, 'armA.sz': 30, 'armA.e': 5, 'armB.sx': 30, 'armB.e': 60, 'legA.hx': 85, 'legA.k': 110, 'legB.hx': -5, 'legB.k': 115 })],
+    [0.68, k({ 'hip.rx': -5, 'spine.rx': 38, 'head.rx': 15, 'armA.sx': 45, 'armA.sz': 12, 'armA.e': 55, 'armB.sx': 10, 'armB.e': 30, 'legA.hx': 75, 'legA.k': 90, 'legB.hx': -15, 'legB.k': 105 })],
+    [0.86, k({ 'spine.rx': 18, 'head.rx': 8, 'armA.sx': 15, 'armA.e': 35, 'armB.sx': 10, 'armB.e': 35, 'legA.hx': 25, 'legA.k': 30, 'legB.hx': 5, 'legB.k': 25 })],
+    [1.0, base]
+  ];
+}
+
 var herorig = require('./herorig');
 var posemath = require('./posemath');
 var moveplayer = require('./moveplayer');
@@ -5347,8 +5598,15 @@ function createEnemyView(scene) {
       if (v.daze > 0.01) addTo(out, DAZED, v.daze); addTo(out, REACT[e.lastMove] || REACT.jab, jt * 1.35); addTo(out, { 'armA.sx': -20, 'armB.sx': -14, 'armA.sz': 14, 'armB.sz': 12, 'hip.y': -0.03 }, jt);
     } else if (e.st === 'down' || e.st === 'dead') {
       var dw = Math.min(1, e.t / 12); out = posemath.layer(base, posemath.named('down'), dw, dw, dw, dw);
+    } else if (e.st === 'awe') {
+      /* amazed: the spark from the sky - a step back, leaning away, hands thrown up or clapped to his head, staring */
+      var aw = Math.min(1, e.t / 10), hands = (e.id % 3) === 0, out2 = posemath.layer(base, hands ? { 'armA.sx': 150, 'armB.sx': 150, 'armA.sz': 25, 'armB.sz': 25, 'armA.e': 120, 'armB.e': 120, 'spine.rx': -14, 'head.rx': -16 }
+                        : { 'armA.sx': 70, 'armB.sx': 60, 'armA.sz': 40, 'armB.sz': 45, 'armA.e': 20, 'armB.e': 30, 'spine.rx': -18, 'head.rx': -20, 'legB.hx': -12 }, aw, aw, aw, aw);
+      out = out2;
     } else if (e.st === 'getup') {
-      var gw = 1 - Math.min(1, e.t / 30); out = posemath.layer(base, posemath.named('down'), gw, gw, gw, gw);
+      /* a real get-up: roll onto his side, push up on one hand, up to one knee, rise, shake his head, guard back up */
+      var gu = Math.min(1, e.t / 72); out = posemath.keyed(getupKeys(base), gu);
+      if (gu > 0.72) { var sh = (gu - 0.72) / 0.28; out['head.ry'] = (out['head.ry'] || 0) + Math.sin(sh * Math.PI * 4) * 22 * (1 - sh); out['neck.ry'] = (out['neck.ry'] || 0) + Math.sin(sh * Math.PI * 4) * 8 * (1 - sh); }
     }
     posemath.approach(v.cur, out, 22, dt);
     return v.cur;
@@ -5753,7 +6011,7 @@ function createHeroRig(variant) {
   }
   function M(parent, name) {
     if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
-      if (!((/^thug/.test(variant || '') || variant === 'cop') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      if (!((/^thug/.test(variant || '') || variant === 'cop' || variant === 'maa') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
       return null;
     }
     var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
@@ -5767,7 +6025,7 @@ function createHeroRig(variant) {
   for (var i = 0; i < 3; i++) { var sg = G(sp, i === 0 ? SK.hair : SK.hairStep, 'hair' + i); M(sg, 'hair' + i); hair.push(sg); sp = sg; }
   var beard = G(head, SK.beard, 'beard'); M(beard, 'beard');
   var guitar = new THREE.Group(); body.add(guitar); var guitarMesh = M(guitar, 'guitar');
-  if (/^thug/.test(variant || '') || variant === 'cop') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
+  if (/^thug/.test(variant || '') || variant === 'cop' || variant === 'maa') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
 
   /* a hurt thug's face: eyelids that squeeze shut, an open mouth, a smear of blood. Thin boxes just proud of the face, hidden until needed. */
   var faceFx = null;
@@ -6317,7 +6575,17 @@ var KIND_PAL = {
 /* Toofan at home: a deep maroon robe with a pale tie and trim, loose dark pyjamas, bare hands, worn chappals */
 var HOME_PAL = { yel: h('#c9a46a'), yelD: h('#a8854c'), blu: h('#5a2328'), bluD: h('#41181c'), bluL: h('#6e2d33'),
   pants: h('#2c2a33'), pantsD: h('#201f26'), pantsL: h('#38363f'), glove: h('#9a5f38'), gloveL: h('#b4733f'), shoe: h('#4a3424'), shoeL: h('#5e4430'), belt: h('#41181c'), buckle: h('#5a2328'), buckleD: h('#41181c') };
+/* Maa (the Thappad scene): a plain white sari blouse over the body, white hair, an older warm skin; the sari itself is draped on in view/maavox */
+var MAA_PAL = { skin: h('#b98b66'), skinD: h('#9c7252'), skinL: h('#c99c78'), skinDD: h('#7d5a40'), hair: h('#ebe8e1'),
+  yel: h('#f2efe7'), yelD: h('#d8d2c4'), blu: h('#f2efe7'), bluD: h('#d8d2c4'), bluL: h('#faf8f2'),
+  pants: h('#eeeae0'), pantsD: h('#d6d0c2'), pantsL: h('#f7f4ec'), belt: h('#e6e0d2'), shoe: h('#9c7252'), shoeL: h('#b98b66'),
+  glove: h('#b98b66'), gloveL: h('#c99c78'), buckle: h('#e6e0d2'), buckleD: h('#d6d0c2') };
 function buildParts(variant) {
+  if (variant === 'maa') {
+    var saveM = {}, km; for (km in MAA_PAL) { saveM[km] = C[km]; C[km] = MAA_PAL[km]; }
+    TH = true;
+    try { return buildPartsRaw(); } finally { TH = false; for (km in saveM) C[km] = saveM[km]; }
+  }
   if (variant === 'home') {
     var saveH = {}, kh; for (kh in HOME_PAL) { saveH[kh] = C[kh]; C[kh] = HOME_PAL[kh]; }
     HOME = true;
@@ -6681,6 +6949,99 @@ function createLettering() {
 }
 
 module.exports = { createLettering: createLettering, WORDS: WORDS };
+
+};
+defs["view/maavox"]=function(module,exports,require){
+/* view: Maa, for the Thappad scene. An old lady with white hair in a full white sari: the body is the shared rig in her colours
+   (herovox 'maa': white blouse, white hair, older skin); the sari is draped on as voxel pieces fixed to her joints: a long skirt to the
+   ankles on the hips, the pallu over her head (wrapped round the head's own voxels, framing her face, falling behind to the shoulders)
+   and across her chest from the left shoulder, with a thin border; a small red bindi. */
+'use strict';
+
+var vg = require('./voxgrid');
+var hv = require('./herovox');
+var herorig = require('./herorig');
+var SK = require('../data/skeleton');
+
+var WHITE = vg.hex('#f3f0e8'), FOLD = vg.hex('#dfd9cc'), DEEP = vg.hex('#cfc7b6'), BORDER = vg.hex('#c9a65a'), BINDI = vg.hex('#c4232b');
+
+/* the skirt: a flared drape from the waist to the ankles, round the hips joint (grid y 0 = the ground) */
+function skirt() {
+  var W = 29, H = 39, g = vg.createGrid(W, H, W), c = 14, x, y, z;
+  for (y = 0; y < H; y++) {
+    var u = y / (H - 1), r = 12.2 - 5.0 * Math.pow(u, 0.8), rz = r * 0.84;
+    for (x = 0; x < W; x++) for (z = 0; z < W; z++) {
+      var dx = (x - c) / r, dz = (z - c - 0.8) / rz, d = Math.sqrt(dx * dx + dz * dz), inner = 1 - 2.2 / r;
+      if (d > 1 || (d < inner && y > 1 && y < H - 2)) continue;
+      var a = Math.atan2(dz, dx), fold = Math.sin(a * 9) > 0.45;
+      vg.set(g, x, y, z, y <= 2 ? BORDER : (y === 3 ? DEEP : (fold ? FOLD : WHITE)));
+    }
+  }
+  return { grid: g, pivot: { x: c + 0.5, y: SK.hipY, z: c + 0.5 } };
+}
+
+/* the pallu over her head: the head's own voxels grown by a shell, open at the face, falling behind to the shoulders */
+function hood(head) {
+  var hg = head.grid, P = 4, W = hg.W + P * 2, H = hg.H + P + 12, D = hg.D + P * 2, g = vg.createGrid(W, H, D), x, y, z, dx, dy, dz;
+  var OY = 12;                                     /* grid y = head y + OY: room below the jaw for the drape */
+  function headSolid(x2, y2, z2) { return vg.solid(hg, x2, y2, z2); }
+  for (z = 0; z < D; z++) for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    var hx = x - P, hy = y - OY, hz = z - P;
+    if (headSolid(hx, hy, hz)) continue;
+    var near = false;
+    for (dx = -2; dx <= 2 && !near; dx++) for (dy = -2; dy <= 2 && !near; dy++) for (dz = -2; dz <= 2 && !near; dz++) if (dx * dx + dy * dy + dz * dz <= 5 && headSolid(hx + dx, hy + dy, hz + dz)) near = true;
+    var front = hz >= 8, side = hx <= 0 || hx >= hg.W - 1;
+    var keep = near && hy >= 2 && (!front || hy >= 14 || (side && hz <= 10));
+    var drape = hy < 4 && hy >= -11 && hz <= 5 && hz >= -2 && Math.abs(hx - 5) <= 6 - (hz < 0 ? 1 : 0);   /* falls behind the neck to the shoulders */
+    if (!keep && !drape) continue;
+    vg.set(g, x, y, z, (hy === 14 && front) ? BORDER : (((x * 3 + y * 5 + z) % 11 === 0) ? FOLD : WHITE));      /* plain white, a thin edge over the brow */
+  }
+  /* the bindi on her forehead */
+  var fz = vg.frontZ(hg, 5, 11); if (fz >= 0) vg.set(g, 5 + P, 11 + OY, fz + 1 + P, BINDI);
+  return { grid: g, pivot: { x: head.pivot.x + P, y: head.pivot.y + OY, z: head.pivot.z + P } };
+}
+
+/* the pallu across her chest: a band from the left shoulder down to the right of the waist, over the blouse, and down her back */
+function sash(torso) {
+  var tg = torso.grid, W = tg.W, H = tg.H, D = tg.D + 4, g = vg.createGrid(W, H, D), x, y;
+  for (y = 0; y < H; y++) {
+    var u = y / (H - 1), cx = 6 + u * 13, half = 3;
+    for (x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+      var fz = vg.frontZ(tg, x, y); if (fz < 0) continue;
+      var edge = x === Math.round(cx - half) || x === Math.round(cx + half);
+      vg.set(g, x, y, fz + 1 + 2, edge ? BORDER : (((x + y) % 4 === 0) ? FOLD : WHITE));
+      vg.set(g, x, y, fz + 2 + 2, edge ? BORDER : WHITE);
+    }
+    for (x = 16; x <= 21; x++) {                                        /* behind: the end of the pallu hanging down her back */
+      var bz = vg.backZ(tg, x, y); if (bz < 0 || y < 2) continue;
+      vg.set(g, x, y, Math.max(0, bz - 1 + 2), x === 16 || x === 21 ? BORDER : WHITE);
+    }
+  }
+  return { grid: g, pivot: { x: torso.pivot.x, y: torso.pivot.y, z: torso.pivot.z + 2 } };
+}
+
+function mesh(part, mat) {
+  var a = vg.meshGrid(part.grid, part.pivot, SK.VS, { jitter: 0.03, seed: 7 }), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1));
+  return new THREE.Mesh(g, mat);
+}
+
+function createMaa() {
+  var rig = herorig.createHeroRig('maa'), parts = hv.buildParts('maa'), mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  var sk = mesh(skirt(), mat), hd = mesh(hood(parts.head), mat), sh = mesh(sash(parts.torso), mat);
+  rig.body.add(sk);                                 /* the skirt hangs from the waist but stays upright, so it is held by the body, at the hips' height */
+  rig.head.add(hd); rig.spine.add(sh);
+  rig.root.scale.set(0.86, 0.93, 0.88);             /* a smaller, older frame */
+  return {
+    rig: rig, root: rig.root,
+    /* the skirt follows the hips' sway a little */
+    sync: function () { sk.position.set(rig.hips.position.x, SK.hipY * SK.VS, rig.hips.position.z); sk.rotation.y = rig.hips.rotation.y * 0.6; },
+    dispose: function () { [sk, hd, sh].forEach(function (m) { m.geometry.dispose(); }); mat.dispose(); }
+  };
+}
+
+module.exports = { createMaa: createMaa };
 
 };
 defs["view/moveplayer"]=function(module,exports,require){
@@ -7224,7 +7585,14 @@ function layer(base, over, wLower, wUpper, wArmA, wArmB) {
   return out;
 }
 
-module.exports = { layer: layer, blend: blend, copy: copy, named: named, approach: approach, idlePose: idlePose, walkPose: walkPose,
+/* a pose from keyframes: keys = [[u, pose], ...] with u rising 0..1; smooth between neighbours */
+function keyed(keys, u) {
+  if (u <= keys[0][0]) return copy(keys[0][1]);
+  for (var i = 0; i < keys.length - 1; i++) if (u <= keys[i + 1][0]) return blend(keys[i][1], keys[i + 1][1], smooth((u - keys[i][0]) / (keys[i + 1][0] - keys[i][0])));
+  return copy(keys[keys.length - 1][1]);
+}
+
+module.exports = { keyed: keyed, layer: layer, blend: blend, copy: copy, named: named, approach: approach, idlePose: idlePose, walkPose: walkPose,
   sequencePose: sequencePose, sequenceDuration: sequenceDuration, smooth: smooth };
 
 };
@@ -7869,6 +8237,17 @@ function make() {
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4); o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + 1.45);
     },
     /* the big ones: a sub drop you feel, a long rumbling tail, a crack on top, and an echo so it fills the street */
+    /* Maa's slap: a sharp crack of skin on skin with a low thump under it; `big` adds a long echo */
+    slap: function (power, big) {
+      if (!on || !ctx()) return; var p = power || 1;
+      burst(0.035, 0.55 * p, 'highpass', 2600, 1800, 0, 1.4); burst(0.06, 0.4 * p, 'bandpass', 1400, 900, 0.004, 2.5); thump(160, 70, 0.09, 0.45 * p, 0.002);
+      if (big) { var k; for (k = 1; k <= 4; k++) { burst(0.05, 0.4 / (k + 0.5), 'bandpass', 1500, 1000, k * 0.16, 2); } thump(60, 25, 0.6, 1.0, 0.01); }
+    },
+    /* the spark from the sky: a crack of lightning and a deep roll */
+    bolt: function () {
+      if (!on || !ctx()) return;
+      this.zap(1.6); burst(0.12, 0.9, 'highpass', 4000, 2000, 0, 1); thump(90, 22, 0.9, 1.3, 0.03); burst(1.1, 0.5, 'lowpass', 900, 80, 0.08, 0.7);
+    },
     boom: function () {
       if (!on || !ctx()) return;
       thump(70, 18, 1.1, 1.6); thump(140, 30, 0.5, 1.2, 0.01); burst(0.9, 0.9, 'lowpass', 1800, 60, 0, 0.7); burst(0.12, 0.9, 'highpass', 2800, 1200, 0);

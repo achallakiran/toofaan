@@ -102,9 +102,11 @@ function replay(type, ti, atkP) {
   }
   return [fw.state, fw.combat.kills, fw.player.hp, fwMod.hash(fw)];
 }
-test('fight replay: recorded fights play out exactly as they did in the old brawler (won, lost and still going)', function () {
-  var GOLD = { market: [['cleared', 6, 74, 383987282], ['lost', 1, 0, 3421740356]], temple: [['cleared', 6, 88, 3458210680], ['fight', 3, 16, 478999363]],
-    toll: [['cleared', 6, 26, 3243150521], ['lost', 1, 0, 2497604353]], railway: [['cleared', 6, 87, 2495508288], ['lost', 1, 0, 778287865]], warehouse: [['cleared', 6, 64, 3390784540], ['lost', 1, 0, 1644809001]] };
+test('fight replay: recorded fights play out exactly as recorded (won, knocked out and still going)', function () {
+  /* re-recorded for build 73 after checking that, with the old get-up length (30 ticks) and the old loss delay, these same replays still
+     give the old values exactly: the only changes are the goons' longer get-up and Maa ka Thappad instead of a lost fight */
+  var GOLD = { market: [['cleared', 6, 87, 3461885993], ['thappad', 0, 0, 2957785086]], temple: [['cleared', 6, 63, 2953749483], ['fight', 2, 29, 3658513791]],
+    toll: [['thappad', 2, 0, 3833356648], ['thappad', 1, 0, 858132002]], railway: [['cleared', 6, 100, 1145781783], ['thappad', 2, 0, 3226667411]], warehouse: [['cleared', 6, 15, 989297316], ['thappad', 1, 0, 96181121]] };
   Object.keys(GOLD).forEach(function (type, i) { assert.deepStrictEqual([replay(type, i, 0.3), replay(type, i, 0.03)], GOLD[type], type); });
 });
 test('fight: identical inputs from the same seed give identical hashes; different input changes it', function () {
@@ -129,7 +131,7 @@ function fightWorld() {
   var bus = busMod.createBus(), w = fwMod.create({ seed: 7, bus: bus, type: 'market' }), inp = inputMod.createInput(), t = 0, ev = [];
   w.combat.enemies.length = 0; w.hadMen = false; w.arena = { solids: [], ox: 0, oz: 0 }; w.bounds = { x0: -60, z0: -60, x1: 60, z1: 60 };
   var p = w.player; p.x = p.px = 0; p.z = p.pz = 0; p.face = 0;
-  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown', 'fight:clear', 'fight:lost'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
+  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown', 'fight:clear', 'fight:lost', 'fight:thappad', 'fight:rise', 'fight:spark', 'fight:resume'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
   return { w: w, inp: inp, ev: ev, tick: function (n) { for (var i = 0; i < (n || 1); i++) { inp.tick(t++); fwMod.step(w, inp); } },
     count: function (n) { return ev.filter(function (e) { return e[0] === n; }).length; } };
 }
@@ -182,9 +184,26 @@ test('fight: the finisher whirl clears everybody around; the place is cleared an
   for (var h = 0; h < 6; h++) f.w.pendingStrikes.push('finisherWhirl'); f.tick(1);
   assert.strictEqual(f.count('ko'), 4); f.tick(400); assert.strictEqual(f.count('fight:clear'), 1); assert.strictEqual(f.count('wave'), 0); assert.strictEqual(f.w.state, 'cleared');
 });
-test('fight: down too long and the fight is lost (no street wave starts round him)', function () {
-  var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.0); var e = f.w.combat.enemies[0]; e.cd = 0; f.w.player.hp = 1;
-  f.tick(400); assert.strictEqual(f.w.state, 'lost'); assert.strictEqual(f.count('fight:lost'), 1); assert.strictEqual(f.count('wave'), 0); assert.strictEqual(f.w.combat.enemies.length, 1);
+test('fight: knocked out, Maa ka Thappad: the fight holds (never back to the ride) until revive', function () {
+  var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.0); combatMod.spawn(f.w, 'thug', 5, 5); var e = f.w.combat.enemies[0]; e.cd = 0; f.w.player.hp = 1;
+  f.tick(200); assert.strictEqual(f.w.state, 'thappad'); assert.strictEqual(f.count('fight:thappad'), 1); assert.strictEqual(f.count('fight:lost'), 0);
+  var snap = JSON.stringify(f.w.combat.enemies.map(function (q) { return [q.x, q.z, q.st, q.hp]; })); f.tick(600);
+  assert.strictEqual(JSON.stringify(f.w.combat.enemies.map(function (q) { return [q.x, q.z, q.st, q.hp]; })), snap, 'nobody moves while Maa is there');
+});
+test('fight: revive: full health, the rock stand and the spark, the goons step back amazed, then the fight goes on and can be won', function () {
+  var f = fightWorld(), RISE = fwMod.RISE; combatMod.spawn(f.w, 'thug', 0, 0.9); combatMod.spawn(f.w, 'thug', -0.8, -0.6); var c = f.w.combat;
+  c.enemies.forEach(function (q) { q.cd = 0; }); f.w.player.hp = 1; f.tick(200); assert.strictEqual(f.w.state, 'thappad');
+  var d0 = c.enemies.map(function (q) { return Math.hypot(q.x - f.w.player.x, q.z - f.w.player.z); });
+  assert(fwMod.revive(f.w)); assert.strictEqual(f.w.state, 'rise'); assert.strictEqual(f.w.player.hp, 100); assert(!f.w.player.down);
+  f.tick(fwMod.SPARK + 2); assert.strictEqual(f.count('fight:spark'), 1); assert(c.enemies.every(function (q) { return q.st === 'awe'; }), 'everyone amazed');
+  f.tick(40); c.enemies.forEach(function (q, i) { assert(Math.hypot(q.x - f.w.player.x, q.z - f.w.player.z) > d0[i] + 0.8, 'stepped back'); });
+  var guard = 0; while (f.w.state === 'rise' && guard++ < RISE) f.tick(1); assert.strictEqual(f.w.state, 'fight'); assert.strictEqual(f.count('fight:resume'), 1); assert.strictEqual(c.enemies.length, 2, 'the same men');
+  var hp = f.w.player.hp; c.enemies.forEach(function (q) { q.x = f.w.player.x; q.z = f.w.player.z + 1; q.st = 'windup'; q.t = 999; }); f.tick(3); assert.strictEqual(f.w.player.hp, hp, 'a moment where he cannot be hurt');
+  c.enemies.forEach(function (q) { q.dead = true; q.st = 'dead'; q.t = 0; }); f.tick(2); assert.strictEqual(f.w.state, 'cleared');
+});
+test('fight: a knocked-down goon takes a proper get-up (1.2 s) before he fights again', function () {
+  var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 2); var e = f.w.combat.enemies[0]; e.st = 'down'; e.t = 78; e.hp = 5; f.w.player.hp = 1e6;
+  f.tick(1); assert.strictEqual(e.st, 'getup'); f.tick(60); assert.strictEqual(e.st, 'getup'); f.tick(14); assert.strictEqual(e.st, 'approach');
 });
 test('fight: an unguarded thug takes six blows of the string before he falls, and stays where he stands', function () {
   var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.1); var e = f.w.combat.enemies[0]; e.cd = 9999; f.w.player.face = 0;
