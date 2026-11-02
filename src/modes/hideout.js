@@ -93,7 +93,7 @@ function createHideoutMode() {
       if (S.msgT > 0) { S.msgT -= dt; if (S.msgT <= 0) S.ui.msg.style.opacity = 0; }
       /* ---- walking ---- */
       var busy = S.mapOpen || S.train.active() || S.files.isOpen(), mx = inp.mx, my = inp.my, m = Math.hypot(mx, my), moving = m > 0.15 && !busy;
-      if (moving && S.use && S.use.id !== 'chart') { if (S.use.id === 'music') S.music.setTrack('hideout'); S.use = null; S.mp.cancel(); S.rig.guitar.visible = false; }
+      if (moving && S.use && S.use.id !== 'chart') { if (S.use.id === 'music') { S.music.stop(0.25); S.music.play('hideout'); }      /* out of the music corner: the song stops at once */ S.use = null; S.mp.cancel(); S.rig.guitar.visible = false; }
       if (moving && !S.use) {
         var sp = SPEED * Math.min(1, m); p.x += mx / m * sp * Math.min(1, m) * dt; p.z -= my / m * sp * Math.min(1, m) * dt; collide(p);
         p.face = angTo(p.face, Math.atan2(mx, -my), 1 - Math.exp(-12 * dt)); S.phase += sp * dt / 1.6;
@@ -124,7 +124,7 @@ function createHideoutMode() {
         }
         if (st.id === 'bench') { p.x = 4.6; p.z = 6.5; p.face = 0; S.msgT = 0; S.ui.msg.style.opacity = 0; S.train.open(); }
         if (st.id === 'gym') { S.say('HEAVY BAG', 1.4); S.mp.press(); }
-        if (st.id === 'music') { S.rig.guitar.visible = true; S.music.setTrack('menu'); S.say('TOOFAAN... TOOFAAN!', 2.4); }
+        if (st.id === 'music') { S.rig.guitar.visible = true; S.music.play('jam'); S.say('TOOFAAN... TOOFAAN!', 2.4); }
       }
       if (S.mapOpen && !S.map.isOpen()) { S.mapOpen = false; S.use = null; }
       if (S.use && S.use.id === 'chart' && !S.mapOpen && !S.files.isOpen()) S.use = null;        /* the map closed (picked a place, or the close button) */

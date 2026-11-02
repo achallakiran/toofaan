@@ -83,7 +83,7 @@ function createFight() {
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
       scope.add(function () { S.txt.dispose(); });
-      S.music = musicMod.createMusic(S.sfx); S.music.setTrack('arena');
+      S.music = musicMod.createMusic(S.sfx); S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove */
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -163,7 +163,7 @@ function createFight() {
       }));
       scope.add(ctx.bus.on('fight:rise', function () { S.rise = true; S.riseYaw = S.face; S.downW = 0; S.hurtW = 0; S.sfx.whoosh(0.8); }));
       scope.add(ctx.bus.on('fight:spark', function (e) { spark(e.x, e.z); }));
-      scope.add(ctx.bus.on('fight:resume', function () { S.rise = false; S.music.setTrack('arena'); S.cur = posemath.named('guard') || posemath.named('stand'); }));
+      scope.add(ctx.bus.on('fight:resume', function () { S.rise = false; S.music.setTrack(S.arenaTrack); S.cur = posemath.named('guard') || posemath.named('stand'); }));
       /* the spark from the sky: a white bolt into him, a ring of light on the ground, a flash. Built once with the fight (adding a light
          later would make every material recompile: a hitch at the big moment), parked out of sight until it strikes. */
       var SEGS = 9, bolt = new THREE.Group(), bmat = new THREE.MeshBasicMaterial({ color: 0xffffff }), segs = [], k0;

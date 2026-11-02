@@ -6,7 +6,9 @@
      intro   - the 16-bar build under the opening video        menu    - full band with the vocal
      ride    - lighter cruising groove, vocal every 16 bars    road    - fast and heavy for the road fights, vocal chops
      arena   - the heaviest riff for the fight areas            boss    - arena at full tilt with the lead and chops
-     hideout - laid-back clean guitar                           thappad - dreamy pad, far-away vocal
+     hideout - laid-back clean guitar                           thappad - dreamy pad and bells
+     jam     - the hideout's music corner: the full band WITH Ravi's vocal (the only track that sings)
+     arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
@@ -19,6 +21,13 @@ var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;
 var CHANT = ['K', '', 'S', '', 'T', '', 'T', 't', 'K', '', 'K', 't', 't', '', 'S', ''];
 var DOUBLE = ['K', '', 'K', '', 'S', '', 'K', 'K', 'K', '', 'K', '', 'S', '', 'K', 'K'];
 var HALF = ['K', '', '', '', '', '', 'K', '', 'S', '', '', '', '', '', 'K', ''];
+/* the gangs' grooves for their fight areas (same voices: K kick, S snare, T tom, t rim tick) */
+var MACHINE = ['K', 't', 't', 'K', 'S', 't', 'K', 't', 'K', 't', 'K', 't', 'S', 't', 't', 'S'];   /* Antu Automatic: a machine shop, every step ticking */
+var STOMP = ['K', '', '', '', 'S', '', '', 'K', 'K', '', '', '', 'S', '', 'K', ''];                 /* Kalia Lootera: slow heavy stomp */
+var DHOL = ['T', '', 't', 'T', 'K', '', 'T', 't', 'T', '', 't', 'T', 'S', 'T', 'T', 't'];           /* Bhairav Kalari: dhol and tabla toms */
+var BLAST = ['K', 'K', 'S', 'K', 'K', 'K', 'S', 'K', 'K', 'K', 'S', 'K', 'K', 'S', 'S', 'K'];       /* Teja Talwar: blades, double kick */
+var BREAK = ['K', '', '', 'K', 'S', '', 'K', '', '', 'K', 'K', '', 'S', '', '', 'K'];               /* Rocket Raju: a racing breakbeat */
+var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't', ''];             /* the ride's second groove */
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -37,11 +46,18 @@ var TRACKS = {
     return { drums: CHANT, hats: 16, gtr: 'riff', bass: 'saw', lead: m % 2 === 1, fill: m === 15, vox: m === 12 ? 0 : m === 14 ? 1 : null, crash: m === 10 };
   },
   menu: function (n) { var m = n % 16; return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m >= 8 && m % 2 === 1, fill: m % 8 === 7, vox: m < 8 && m % 2 === 0 ? m / 2 : null, crash: m % 8 === 0 }; },
-  ride: function (n) { var m = n % 16; return { drums: m < 2 ? SOFT : CHANT, hats: 8, gtr: m >= 4 ? 'chug' : null, bass: 'saw', lead: m >= 12 && m % 2 === 1, fill: m === 15, vox: m === 8 ? 0 : m === 10 ? 1 : null, vol: 0.85 }; },
+  ride: function (n) { var m = n % 32; return { drums: m < 2 ? SOFT : (m >= 16 ? CRUISE : CHANT), hats: 8, gtr: m >= 4 ? 'chug' : null, bass: 'saw', lead: m >= 12 && m % 2 === 1, fill: m === 15, vox: m === 8 ? 0 : m === 10 ? 1 : null, vol: 0.85 }; },
   road: function (n) { var m = n % 8; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0, chop: m % 2 === 0 ? (n >> 1) % 4 : null }; },
   arena: function (n) { var m = n % 8; return { drums: m < 4 ? HALF : DOUBLE, hats: m < 4 ? 8 : 16, gtr: 'open', bass: 'dist', lead: m >= 6, fill: m === 7, crash: m === 0 || m === 4, vox: m === 4 ? (n >> 3) % 4 : null }; },
   boss: function (n) { var m = n % 4; return { drums: DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: true, fill: m === 3, crash: true, chop: m % 2 === 0 ? n % 4 : null }; },
-  hideout: function (n) { var m = n % 16; return { drums: m >= 4 ? SOFT : null, hats: m >= 8 ? 8 : 0, gtr: 'clean', bass: 'sub', vol: 0.7, vox: m === 12 ? 1 : null, voxSoft: true }; },
+  hideout: function (n) { var m = n % 16; return { drums: m >= 4 ? SOFT : null, hats: m >= 8 ? 8 : 0, gtr: 'clean', bass: 'sub', vol: 0.7 }; },
+  /* the music corner in the hideout: the full band with Ravi's vocal - the only place the singing plays */
+  jam: function (n) { var m = n % 16; return { drums: CHANT, hats: 8, gtr: 'riff', bass: 'saw', lead: m >= 8 && m % 2 === 1, fill: m % 8 === 7, vox: m < 8 && m % 2 === 0 ? m / 2 : null, crash: m % 8 === 0 }; },
+  'arena:antu': function (n) { var m = n % 8; return { drums: MACHINE, hats: 16, gtr: m < 4 ? 'chug' : 'riff', bass: 'dist', lead: m === 7, fill: m === 7, crash: m === 0 }; },
+  'arena:kalia': function (n) { var m = n % 8; return { drums: STOMP, hats: 8, gtr: 'open', bass: 'dist', fill: m === 7, crash: m % 4 === 0, vol: 1.05 }; },
+  'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
+  'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
+  'arena:raju': function (n) { var m = n % 8; return { drums: BREAK, hats: 16, gtr: m % 2 ? 'chug' : 'riff', bass: 'saw', lead: m >= 4, fill: m === 7, crash: m === 0 || m === 4 }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },
   sting: function (n) { return { sting: n }; }
@@ -155,8 +171,9 @@ function createMusic(sfx) {
     if (P.lead) lead(t + STEP * 8, LEAD_HOLD[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
     if (P.pad) pad(t, root, BAR);
-    if (P.vox !== null && P.vox !== undefined) vox(t, P.vox, VOCAL.SLOT, P.voxSoft);
-    if (P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
+    var sing = name === 'jam';                                          /* Ravi's vocal: only in the hideout's music corner */
+    if (sing && P.vox !== null && P.vox !== undefined) vox(t, P.vox, VOCAL.SLOT, P.voxSoft);
+    if (sing && P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
   }
   var startBar = {};
