@@ -51,7 +51,7 @@ function createHideoutMode() {
       if (blk) { blk.addEventListener('pointerdown', bd); scope.add(function () { blk.removeEventListener('pointerdown', bd); }); }
       S.sfx = sfxmod.createSfx(); S.music = musicMod.createMusic(S.sfx); S.music.setTrack('hideout');
       S.hide = hideoutview.createHideout(view, hideout.build(7, { cutaway: true }));
-      S.rig = herorig.createHeroRig('home'); S.rig.guitar.visible = false; view.scene.add(S.rig.root);
+      S.rig = herorig.createHeroRig(from === 'shop' ? undefined : 'home');      /* home from a ride: still in costume */ S.rig.guitar.visible = false; view.scene.add(S.rig.root);
       S.key = new THREE.PointLight(0xc8d6ff, 0.9, 5, 1.4); view.scene.add(S.key);
       S.dog = dogvox.createDog(); view.scene.add(S.dog.root);
       S.bike = bikevox.createBike(); S.bike.root.position.set(1.1, 0.2, 6.6); S.bike.root.rotation.y = Math.PI / 2; view.scene.add(S.bike.root);
@@ -69,7 +69,8 @@ function createHideoutMode() {
       document.body.appendChild(ui); document.body.appendChild(tag);
       S.ui = { msg: ui.querySelector('#hoMsg'), use: ui.querySelector('#hoUse') };
       S.say = function (t, sec) { S.ui.msg.textContent = t; S.ui.msg.style.opacity = 1; S.msgT = sec || 2.2; };
-      S.say('STICK / WASD TO WALK  ·  ✊ / SPACE TO USE', 4);
+      S.say(from === 'shop' ? 'GHAR. RAKA IS WAITING' : 'STICK / WASD TO WALK  ·  ✊ / SPACE TO USE', from === 'shop' ? 2.6 : 4);
+      if (from === 'shop') { S.d = { x: -0.9, z: 3.6, face: Math.PI, st: 'stand' }; S.sfx.bark && setTimeout(function () { S.sfx.bark(); }, 700); }
       /* a dark fade for the bed */
       var fade = document.createElement('div'); fade.style.cssText = 'position:fixed;inset:0;z-index:7;pointer-events:none;background:#000;opacity:0;transition:opacity .6s'; document.body.appendChild(fade); S.fade = fade;
       S.map = fullmap.createFullMap();
@@ -113,7 +114,7 @@ function createHideoutMode() {
       }
       function use(st) {
         if (st.id === 'raka') { S.d.st = 'lick'; S.d.until = t + 1.4; S.d.face = Math.atan2(p.x - S.d.x, p.z - S.d.z); S.sfx.bark(); S.say('RAKA WAGS HIS TAIL', 1.6); return; }
-        if (st.id === 'bijli') { S.say('BIJLI, CHAL!', 1); S.sfx.start(); S.leaving = now + 900; return; }
+        if (st.id === 'bijli') { S.say('BIJLI, CHAL!', 1); S.sfx.start(); S.leaving = now + 900; rideSim.leaveHome(rideMode.ensureRide(ctx)); return; }
         p.x = st.x; p.z = st.z; p.face = st.face; S.use = { id: st.id, t: 0 };
         if (st.id === 'bed') { S.fade.style.opacity = 1; S.say('AARAM...', 2.4); setTimeout(function () { S.fade.style.opacity = 0; if (S.use && S.use.id === 'bed') S.use = null; }, 2200); }
         if (st.id === 'chart') {

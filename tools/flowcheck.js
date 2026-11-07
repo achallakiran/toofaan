@@ -23,7 +23,7 @@ var path = require('path'), fs = require('fs'), pw = require('playwright'), out 
   res.arrestScene = await wait(function () { var e = window.__game.ctx.ride.enc; return e && e.kind === 'arrest' && e.t > 200; });
   await page.screenshot({ path: path.join(out, 'flow_3_arrest.png') });
   res.ridingOn = await wait(function () { var r = window.__game.ctx.ride; return r.state === 'ride' && r.target && r.target.key !== '__'; }, 90000);
-  res.cleared = await page.evaluate(function (k) { var r = window.__game.ctx.ride; return r.missions[k] + ' next=' + (r.target && r.target.key) + ' nextEnc=' + r.nextEnc; }, key);
+  res.cleared = await page.evaluate(function (k) { var r = window.__game.ctx.ride; return r.missions[k] + ' next=' + (r.target && r.target.key) + ' patrols=' + r.patrols.length; }, key);
   await page.waitForTimeout(800); await page.screenshot({ path: path.join(out, 'flow_4_rideon.png') });
   /* a second trouble spot straight after: the fight must start again */
   await page.evaluate(function () { var r = window.__game.ctx.ride; if (r.enc) { r.enc = null; r.state = 'ride'; } var T = r.target; r.bike.x = T.x; r.bike.z = T.z; });

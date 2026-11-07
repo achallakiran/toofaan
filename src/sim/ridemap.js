@@ -115,7 +115,12 @@ function generate(seed) {
     targets.push(axis === 'x' ? { key: LOC.ORDER[n], name: name, x: along, z: off } : { key: LOC.ORDER[n], name: name, x: off, z: along });
   }
   var props = buildProps(rngMod.createRng((seed >>> 0) ^ 0x9e3), lines);
-  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props };
+  /* home: the cycle-repair shop over Toofan's hideout, on the pavement of the middle east-west road near where the ride starts, never on a
+     trouble spot's stretch (its own rng, so the rest of the map is as before) */
+  var mid = Math.floor(R.GRID / 2), hs = Math.max(0, Math.floor((R.GRID - 1) / 2) - 1), tries2 = 0;
+  while (used['x' + mid + ':' + hs] && tries2++ < R.GRID) hs = (hs + 1) % (R.GRID - 1);
+  var home = { key: 'home', name: 'Cycle repair shop', x: (lines[hs] + lines[hs + 1]) / 2, z: lines[mid] + (R.HALF + R.PAVE * 0.5), axis: 'x', side: 1 };
+  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props, home: home };
 }
 
 module.exports = { generate: generate, clearOfProps: clearOfProps, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };

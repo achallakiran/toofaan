@@ -40,6 +40,20 @@ function createFullMap() {
       g.fillText(T.name.toUpperCase(), x, z + s + 4);
       if (st === 'open') hits.push({ key: T.key, x: x, z: z, r: s + 14 });
     });
+    /* home, the cycle-repair shop: tap it to ride home */
+    var Hm = r.map.home, hx = X(Hm.x), hz = Z(Hm.z), hcur = r.target === Hm;
+    g.fillStyle = '#4aa8ff'; g.strokeStyle = '#000'; g.lineWidth = 2; g.beginPath();
+    g.moveTo(hx, hz - 12); g.lineTo(hx + 11, hz - 1); g.lineTo(hx + 7, hz - 1); g.lineTo(hx + 7, hz + 9); g.lineTo(hx - 7, hz + 9); g.lineTo(hx - 7, hz - 1); g.lineTo(hx - 11, hz - 1); g.closePath(); g.fill(); g.stroke();
+    if (hcur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(hx - 15, hz - 16, 30, 30); }
+    g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = '#bfe3ff'; g.fillText('HOME', hx, hz + 13);
+    hits.push({ key: 'home', x: hx, z: hz, r: 22 });
+    /* gang patrols: ride up to one to take them on */
+    (r.patrols || []).forEach(function (p) {
+      var G = GANGS.GANGS[p.gang], px2 = X(p.x), pz2 = Z(p.z);
+      g.fillStyle = G ? G.color : '#f33'; g.strokeStyle = Math.sin(t / 160) > 0 ? '#ff2a2a' : '#000'; g.lineWidth = 2;
+      g.beginPath(); g.arc(px2, pz2, p.kind === 'car' ? 8 : 6, 0, 7); g.fill(); g.stroke();
+      g.fillStyle = '#fff'; g.font = "9px 'ToofanPx',monospace"; g.textBaseline = 'middle'; g.fillText(p.kind === 'car' ? 'C' : 'B', px2, pz2 + 1);
+    });
     /* Toofan */
     var b = r.bike, px = X(b.x), pz = Z(b.z), a = b.h;
     g.save(); g.translate(px, pz); g.rotate(-a + Math.PI); g.fillStyle = '#1f9bff'; g.strokeStyle = '#fff'; g.lineWidth = 2;
@@ -50,7 +64,9 @@ function createFullMap() {
     return GANGS.ORDER.map(function (k) {
       var G = GANGS.GANGS[k], n = 0, c = 0; r.map.targets.forEach(function (T) { if (GANGS.gangOf(T.key) === k) { n++; if (r.missions[T.key] === 'cleared') c++; } });
       return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:12px;height:12px;background:' + G.color + ';border:1px solid #000;display:inline-block"></span><span style="flex:1">' + G.name.toUpperCase() + '</span><span style="color:#9fd8aa">' + c + '/' + n + '</span></div>';
-    }).join('') + '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#ff5a5a"><span style="width:12px;text-align:center">?</span><span style="flex:1">THE MAN BEHIND THEM</span></div>';
+    }).join('') + '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#ff5a5a"><span style="width:12px;text-align:center">?</span><span style="flex:1">THE MAN BEHIND THEM</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#bfe3ff"><span style="width:12px;text-align:center;color:#4aa8ff">&#8962;</span><span style="flex:1">HOME</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ffb0b0"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2a2a;display:inline-block"></span><span style="flex:1">GANG ON THE ROAD</span></div>';
   }
   return {
     isOpen: function () { return !!el; },
@@ -59,7 +75,7 @@ function createFullMap() {
       el = document.createElement('div'); el.setAttribute('data-ok', '1');
       el.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(6,10,14,.94);color:#fff;font-size:12px;letter-spacing:.06em;touch-action:manipulation';
       el.innerHTML = '<canvas style="position:absolute;inset:0;width:100%;height:100%"></canvas>' +
-        '<div style="position:absolute;left:max(12px,env(safe-area-inset-left));top:max(56px,calc(env(safe-area-inset-top) + 48px));width:min(220px,46vw);padding:10px 12px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2)"><div style="color:#ffd21f;margin-bottom:6px">THE CITY</div>' + legend(r) + '<div style="margin-top:10px;color:#8a9199;font-size:10px">TAP A PLACE TO RIDE THERE</div></div>' +
+        '<div style="position:absolute;left:max(12px,env(safe-area-inset-left));top:max(56px,calc(env(safe-area-inset-top) + 48px));width:min(220px,46vw);padding:10px 12px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2)"><div style="color:#ffd21f;margin-bottom:6px">THE CITY</div>' + legend(r) + '<div style="margin-top:10px;color:#8a9199;font-size:10px">TAP A PLACE OR HOME TO RIDE THERE. RIDE UP TO A GANG TO FIGHT</div></div>' +
         '<button data-ok="1" style="position:absolute;right:max(14px,env(safe-area-inset-right));top:max(56px,calc(env(safe-area-inset-top) + 48px));padding:9px 14px;border-radius:4px;border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.6);color:#fff;font-size:12px;letter-spacing:.12em;cursor:pointer">[ CLOSE ]</button>';
       cv = el.querySelector('canvas'); document.body.appendChild(el);
       el.querySelector('button').addEventListener('click', function (e) { e.stopPropagation(); close(); });

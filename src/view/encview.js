@@ -140,8 +140,40 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
     if (car) { root.remove(car.m); car = null; } if (police) { root.remove(police.m); police = null; }
   }
 
+  /* gang patrols cruising the roads before any fight: a pair of bike goons riding side by side, or the gang car, with a red mark over
+     them so they read as a fight he can choose */
+  var pat = {}, patV = new THREE.Vector3();
+  function makePatrol(p) {
+    var P = { kind: p.kind, wheel: 0 };
+    if (p.kind === 'car') { P.car = makeCar(0, false); P.car.mark.userData.base = 1.6 / S; }
+    else { P.foes = [makeFoe({ kind: 'fist', lat: -1 }), makeFoe({ kind: 'rod', lat: 1 })]; }
+    return P;
+  }
+  function dropPatrol(P) { if (P.car) root.remove(P.car.m); if (P.foes) P.foes.forEach(function (F) { root.remove(F.root); }); }
+  function syncPatrols(list, alpha, dt, t, bx, bz) {
+    var seen = {}, i;
+    for (i = 0; i < list.length; i++) {
+      var p = list[i]; if (Math.abs(p.x - bx) > R.VIEW_R || Math.abs(p.z - bz) > R.VIEW_R) continue;
+      seen[p.id] = 1; var P = pat[p.id] || (pat[p.id] = makePatrol(p));
+      var x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha, h = p.ph + Math.atan2(Math.sin(p.h - p.ph), Math.cos(p.h - p.ph)) * alpha;
+      var lx = Math.cos(h), lz = -Math.sin(h), fx = Math.sin(h), fz = Math.cos(h);
+      if (P.car) { P.car.m.position.set(x, 0, z); P.car.m.rotation.y = h; pulse(P.car.mark, t, true, 1); }
+      else {
+        P.wheel += 7.5 * dt / (template().wheelR * S);
+        P.foes.forEach(function (F, k) {
+          var side = k ? -0.9 : 0.9, back = k ? -1.4 : 0;
+          F.root.position.set(x + lx * side + fx * back, 0, z + lz * side + fz * back); F.root.rotation.y = h;
+          F.rear.rotation.x = F.wheel; F.front.rotation.x = F.wheel; F.rig.applyPose(ridePose, { plant: false });
+          pulse(F.mark, t, k === 0, 1);
+        });
+      }
+    }
+    Object.keys(pat).forEach(function (k) { if (!seen[k]) { dropPatrol(pat[k]); delete pat[k]; } });
+  }
+
   return {
     active: false,
+    patrols: syncPatrols,
     /* the middle of the action, for the camera: {u, lat} along the road from the bike */
     focus: function (r) {
       var e = r.enc; if (!e) return null;
@@ -293,7 +325,7 @@ function createEncView(root, heroRig, heroBike, blobUnder) {
       }
       return true;
     },
-    dispose: function () { clearAll(); bursts.forEach(function (b) { root.remove(b.g); b.mat.dispose(); }); bursts = []; [clubGeo, bandGeo, lightGeo, rayGeo, ballGeo].forEach(function (g) { g.dispose(); }); [clubMat, bandMat, goonMat, lightR, lightB].forEach(function (m) { m.dispose(); }); }
+    dispose: function () { clearAll(); Object.keys(pat).forEach(function (k) { dropPatrol(pat[k]); }); pat = {}; bursts.forEach(function (b) { root.remove(b.g); b.mat.dispose(); }); bursts = []; [clubGeo, bandGeo, lightGeo, rayGeo, ballGeo].forEach(function (g) { g.dispose(); }); [clubMat, bandMat, goonMat, lightR, lightB].forEach(function (m) { m.dispose(); }); }
   };
 }
 

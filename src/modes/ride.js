@@ -1,5 +1,6 @@
 /* modes: Ride, the heart of the game (Phase 4). Toofan rides Bijli across the city to the next trouble spot. On the way the bike goons
-   attack, then the car gang. Arriving plays a cut shot and a retro card, and the game steps into that place's fight (modes/fight).
+   attack, then the car gang. (Since build 76 the road fights are his choice: gang patrols drive their roads, shown on the maps, and riding
+   up to one starts that fight. HOME signals the cycle-repair shop; arriving there opens the hidden entrance down to the hideout.) Arriving plays a cut shot and a retro card, and the game steps into that place's fight (modes/fight).
    When the area is clear it comes back here: the police take the goons away and Toofan rides on to the next signal.
    Big moments in the road fights (counters, knockouts, the leap) slow time and pull the camera back wide, with speed lines, bursts and a flash. */
 'use strict';
@@ -15,6 +16,7 @@ var GANGS = require('../data/gangs');
 var encSim = require('../sim/encounter');
 var thappadMod = require('./thappad');
 var skybolt = require('../view/skybolt');
+var shopvox = require('../view/shopvox');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -33,6 +35,31 @@ function ensureRide(ctx) {
 
 function createRide() {
   var S = {};
+  /* home: Bijli turns in to the shop, the loose brick is pressed, the shutter rolls up, the floor splits, the ramp tips down and she rolls
+     down into the dark. Then the hideout. (6.4 s) */
+  function homeCut(ctx, C, x, z, mix) {
+    var r = S.r, B = r.bike, D = S.shop.door, t = C.t;
+    function seg(a, b2) { return Math.max(0, Math.min(1, (t - a) / (b2 - a))); }
+    var a = ease(seg(0, 1.2)), front = { x: D.x, z: D.z - 3.6 };
+    var bx = C.x0 + (front.x - C.x0) * a, bz = C.z0 + (front.z - C.z0) * a, bh = C.h0 + Math.atan2(Math.sin(0 - C.h0), Math.cos(0 - C.h0)) * a, by = 0;
+    S.shop.open(seg(1.4, 4.6));
+    var roll = seg(4.6, 6.0);
+    if (roll > 0) { var dz2 = (S.shop.deep.z - front.z) * ease(roll); bz = front.z + dz2; bx = D.x; bh = 0; by = bz > D.z + 0.3 ? -Math.min(1.6, (bz - D.z - 0.3) * 0.33) : 0; }
+    B.x = B.px = bx; B.z = B.pz = bz; B.h = B.ph = bh; B.speed = roll > 0 && roll < 1 ? 3 : 0; S.v.bikeY = by;
+    if (t > 1.3 && !C.click) { C.click = true; S.sfx.hit('jab', 0.25); }
+    if (t > 1.9 && !C.roll) { C.roll = true; S.sfx.land && S.sfx.land(3); }
+    if (t > 4.6 && !C.go) { C.go = true; S.sfx.start(); }
+    var side = ease(seg(0.4, 1.6));
+    mix({ x: D.x - 3.2, y: 3.4, z: D.z - 9.6, lx: D.x + 0.4, ly: 1.1, lz: D.z + 0.8, fov: 46 }, side);
+    if (roll > 0) mix({ x: D.x - 1.6, y: 3.0, z: D.z - 5.4, lx: D.x, ly: 0.3, lz: D.z + 1.8, fov: 50 }, ease(roll));
+    if (!S.black) { S.black = document.createElement('div'); S.black.style.cssText = 'position:fixed;inset:0;z-index:30;background:#000;opacity:0;pointer-events:none'; document.body.appendChild(S.black); }
+    S.black.style.opacity = seg(5.4, 6.2);
+    if (t > 6.4 && !C.gone) {
+      C.gone = true; rideSim.leaveHome(r); S.v.bikeY = 0;
+      ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); ctx.save.set('ride.missions', r.missions);
+      ctx.go('hideout', { from: 'shop' });
+    }
+  }
   return {
     name: 'ride',
     enter: function (ctx, scope, args) {
@@ -44,13 +71,14 @@ function createRide() {
       S.r = ctx.ride; S.t = 0; S.cam = null; S.msgT = 0; S.honkT = 0; S.cut = null; S.fx = null; S.slow = 0; S.slowAcc = 0; S.shake = 0; S.sideW = 0; S.last = 0;
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
+      S.shop = shopvox.createShop(view.scene, S.r.map.home); scope.add(function () { S.shop.dispose(); });
       scope.add(function () { S.v.dispose(); ctx.touchRoot.style.visibility = ''; });
       var park = function () { var B = S.r.bike; if (S.r.state === 'ride' && !S.r.enc) ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); };   /* leaving the page parks Bijli where she is */
       var hid = function () { if (document.hidden) park(); };
       window.addEventListener('pagehide', park); document.addEventListener('visibilitychange', hid);
       scope.add(function () { window.removeEventListener('pagehide', park); document.removeEventListener('visibilitychange', hid); });
       S.sfx = sfxmod.createSfx(); S.sfx.engineOff(); S.sfx.start(); scope.add(function () { S.sfx.engineOff(); });
-      S.bars = cinecard.bars(); scope.add(function () { S.bars.remove(); });
+      S.bars = cinecard.bars(); scope.add(function () { S.bars.remove(); if (S.black) { S.black.remove(); S.black = null; } });
 
       /* overlay: hearts, the signal pointer, speed, messages, the comic word, flashes and the mini-map */
       var el = document.createElement('div');
@@ -62,6 +90,7 @@ function createRide() {
         '<div id="rMsg" style="position:absolute;left:50%;top:26%;transform:translateX(-50%);font:900 28px system-ui,sans-serif;letter-spacing:.06em;color:#ffc21a;opacity:0;transition:opacity .25s;white-space:nowrap"></div>' +
         '<div id="rWord" class="comic" style="position:absolute;left:50%;top:40%;transform:translate(-50%,-50%) rotate(-8deg) scale(0);font:900 clamp(40px,8vw,84px) \'Arial Black\',Impact,sans-serif;color:#ffd21f;-webkit-text-stroke:3px #000;text-shadow:5px 5px 0 #000;padding:10px 26px;background:radial-gradient(ellipse at center,#fff 0 30%,rgba(255,80,40,.9) 31% 55%,transparent 56%);transition:transform .12s ease-out,opacity .2s;opacity:0;white-space:nowrap"></div>' +
         '<div id="rSpeed" style="position:absolute;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);font:900 24px system-ui,sans-serif"></div>' +
+        '<button id="rHome" data-ok="1" style="position:absolute;right:16px;top:max(222px,calc(env(safe-area-inset-top) + 166px));width:120px;padding:7px 0;pointer-events:auto;cursor:pointer;border-radius:6px;border:1px solid rgba(140,200,255,.6);background:rgba(10,14,18,.7);color:#bfe3ff;font:12px \'ToofanPx\',monospace;letter-spacing:.14em">&#8962; HOME</button>' +
         '<canvas id="rMap" width="150" height="150" style="position:absolute;right:16px;top:max(96px,calc(env(safe-area-inset-top) + 40px));width:120px;height:120px;border-radius:8px;background:rgba(10,14,18,.55);border:1px solid rgba(255,255,255,.25)"></canvas>';
       document.body.appendChild(el); scope.add(function () { el.remove(); });
       var lines = document.createElement('div');
@@ -72,11 +101,13 @@ function createRide() {
       var red = document.createElement('div'); red.style.cssText = 'position:fixed;inset:0;z-index:5;pointer-events:none;background:radial-gradient(ellipse at center,rgba(255,0,0,0) 40%,rgba(255,0,0,.55));opacity:0;transition:opacity .1s';
       document.body.appendChild(flashEl); document.body.appendChild(red); scope.add(function () { flashEl.remove(); red.remove(); });
       S.ui = { point: el.querySelector('#rPoint'), hearts: el.querySelector('#rHearts'), arrow: el.querySelector('#rArrow'), target: el.querySelector('#rTarget'), msg: el.querySelector('#rMsg'),
-               word: el.querySelector('#rWord'), lines: lines, speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), flash: flashEl, red: red };
+               word: el.querySelector('#rWord'), lines: lines, speed: el.querySelector('#rSpeed'), map: el.querySelector('#rMap'), home: el.querySelector('#rHome'), flash: flashEl, red: red };
       S.flashT = 0; S.whiteT = 0; S.wordT = 0;
       /* tapping the mini-map opens the full city map; tapping a place there makes it the next signal */
       S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
       S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
+      S.ui.home.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; rideSim.chooseTarget(S.r, 'home'); });
+      ctx.debug.goHome = function () { rideSim.chooseTarget(S.r, 'home'); var H = S.r.map.home, B = S.r.bike; B.x = B.px = H.x + 14; B.z = B.pz = H.z - 3.4; B.speed = 6; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
       S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
@@ -89,7 +120,9 @@ function createRide() {
       scope.add(ctx.bus.on('ride:bump', function () { S.sfx.hit('jab', 0.3); }));
       scope.add(ctx.bus.on('ride:wall', function () { S.sfx.land(4); }));
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
-      scope.add(ctx.bus.on('ride:signal', function (e) { say('Signal: ' + e.name, 2); }));
+      scope.add(ctx.bus.on('ride:signal', function (e) { say(e.key === 'home' ? 'GHAR CHALO: CYCLE REPAIR SHOP' : 'Signal: ' + e.name, 2); }));
+      scope.add(ctx.bus.on('ride:home', function () { S.sfx.engineOff(); S.music.stop(2.5); var B = S.r.bike; S.cut = { kind: 'home', t: 0, x0: B.x, z0: B.z, h0: B.h, gone: false }; }));
+      scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
       scope.add(ctx.bus.on('enc:start', function (e) { S.music.setTrack(e.kind === 'car' ? 'boss' : e.kind === 'bikes' ? 'road' : 'ride'); if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
@@ -201,7 +234,10 @@ function createRide() {
       if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(r.enc ? (r.enc.kind === 'car' ? 'boss' : r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');   /* music switched back on, or sound just unlocked */
 
       /* ---- the arrival cut shot: circle low round Toofan as he pulls up, then the card and the fight area ---- */
-      if (S.cut) {
+      if (S.cut && S.cut.kind === 'home') {
+        var HC = S.cut; HC.t += dt; homeCut(ctx, HC, x, z, mix);
+        if (HC.gone) return;
+      } else if (S.cut) {
         var C = S.cut; C.t += dt;
         var a2 = c.yaw + 2.2 + C.t * 0.7, rad = 5.2 - C.t * 0.6;
         mix({ x: x + Math.sin(a2) * rad, y: 1.4 + C.t * 0.3, z: z + Math.cos(a2) * rad, lx: x, ly: 1.5, lz: z, fov: 40 }, ease(C.t / 0.6));
@@ -226,7 +262,7 @@ function createRide() {
       S.ui.flash.style.opacity = S.whiteT > 0 ? Math.min(0.8, S.whiteT * 7) : 0; S.whiteT -= dt;
       S.ui.red.style.opacity = S.flashT > 0 ? 1 : 0; S.flashT -= dt;
       var T = r.target, fight = !!r.enc || !!S.cut;
-      S.ui.point.style.display = fight ? 'none' : 'block'; S.ui.map.style.display = fight ? 'none' : 'block';
+      S.ui.point.style.display = fight ? 'none' : 'block'; S.ui.map.style.display = fight ? 'none' : 'block'; S.ui.home.style.display = fight || (T && T.key === 'home') ? 'none' : 'block';
       if (T && r.state !== 'arrived') {
         var dx2 = T.x - x, dz2 = T.z - z; S.ui.target.textContent = T.name.toUpperCase() + '  ' + Math.round(Math.hypot(dx2, dz2)) + ' m';
         S.ui.arrow.style.transform = 'rotate(' + (-Math.atan2(Math.sin(Math.atan2(dx2, dz2) - S.cam.yaw), Math.cos(Math.atan2(dx2, dz2) - S.cam.yaw)) * 57.3) + 'deg)'; S.ui.arrow.style.visibility = 'visible';
@@ -256,6 +292,12 @@ function drawMap(cv, r, t, yaw) {
     var cur = r.target === T, st = r.missions[T.key];
     g.fillStyle = cur ? (Math.sin(t * 8) > 0 ? '#ff3b30' : '#ffc21a') : (st === 'open' ? '#ffc21a' : '#4fc08d');
     g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
+  });
+  var H = r.map.home, hc = r.target === H;                                /* home: a little blue house */
+  g.fillStyle = hc && Math.sin(t * 8) > 0 ? '#ff3b30' : '#4aa8ff'; g.beginPath(); g.moveTo(H.x * sc, H.z * sc - 7); g.lineTo(H.x * sc + 6, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc - 1); g.lineTo(H.x * sc - 6, H.z * sc - 1); g.closePath(); g.fill();
+  (r.patrols || []).forEach(function (p) {                                /* gang patrols: their gang's colour, ringed in red */
+    var G = GANGS.GANGS[p.gang]; g.fillStyle = G ? G.color : '#f33'; g.strokeStyle = '#ff2a2a'; g.lineWidth = 2;
+    g.beginPath(); g.arc(p.x * sc, p.z * sc, p.kind === 'car' ? 5 : 4, 0, 7); g.fill(); g.stroke();
   });
   g.restore(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(W / 2, W / 2 - 7); g.lineTo(W / 2 + 5, W / 2 + 6); g.lineTo(W / 2 - 5, W / 2 + 6); g.closePath(); g.fill();
 }

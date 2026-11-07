@@ -250,6 +250,17 @@ function createRideView(scene) {
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
     var B = buildBlock(b, b.seed, detail), g = new THREE.Group();
+    if (map && map.home) {                                                  /* the cycle-repair shop stands in a gap of its own in the row */
+      var H = map.home, gx0 = H.x - 4.3, gx1 = H.x + 4.3, gz0 = H.z, gz1 = H.z + 1.5 + 7.9;
+      var inGap = function (x, z) { return x > gx0 && x < gx1 && z > gz0 && z < gz1; };
+      B.boxes = B.boxes.filter(function (q) {                                 /* boxes reaching into the gap are cut back to its edge */
+        if (q.x1 <= gx0 || q.x0 >= gx1 || q.z1 <= gz0 || q.z0 >= gz1) return true;
+        if ((q.x0 + q.x1) / 2 < H.x) q.x1 = gx0; else q.x0 = gx1;
+        return q.x1 - q.x0 > 0.05;
+      });
+      B.signs = B.signs.filter(function (q) { var x0 = Math.min(q.a[0], q.b[0]), x1 = Math.max(q.a[0], q.b[0]), z0 = Math.min(q.a[1], q.b[1]) - 0.2, z1 = Math.max(q.a[1], q.b[1]) + 0.2; return x1 <= gx0 || x0 >= gx1 || z1 <= gz0 || z0 >= gz1; });
+      B.shadows = B.shadows.filter(function (q) { return !inGap((q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2 + 0.1); });
+    }
     g.add(toMesh(B.boxes, mat)); g.add(new THREE.Mesh(signGeometry(B.signs), signMat));
     var sh = new THREE.Mesh(shadowGeometry(B.shadows, 0.18), shadowMat); sh.renderOrder = 2; g.add(sh);
     root.add(g); return g;
@@ -281,12 +292,13 @@ function createRideView(scene) {
     sync: function (r, alpha, dt, t) {
       var b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha, h = b.ph + Math.atan2(Math.sin(b.h - b.ph), Math.cos(b.h - b.ph)) * alpha;
       buildNear(x, z, 1);
-      bike.root.position.set(x, 0, z); bike.root.rotation.y = h; bikeBlob.position.set(x, 0, z); bikeBlob.rotation.y = h;
+      bike.root.position.set(x, this.bikeY || 0, z); bike.root.rotation.y = h; bikeBlob.position.set(x, 0, z); bikeBlob.rotation.y = h;
       var onBike = r.state === 'ride' || r.state === 'arrived' || r.state === 'enc';
       layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
       bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14 * Math.min(1, Math.abs(b.speed) / 6))) : 0);
       wheel += (onBike ? b.speed : (b.slide || 0)) * dt / (bike.wheelR * R.SCALE); bike.front.rotation.x = wheel; bike.rear.rotation.x = wheel;
       var inFight = ev.sync(r, alpha, dt, t, x, z);
+      ev.patrols(r.enc ? [] : (r.patrols || []), alpha, dt, t, x, z);
       if (inFight) { rig.flutter(t, 0.8); heroBlob.visible = false; }
       else if (onBike) {
         if (rig.root.parent !== bike.pitch) seatRider();

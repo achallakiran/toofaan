@@ -6,6 +6,7 @@
 
 var R = require('../data/ride');
 var mapMod = require('./ridemap');
+var GANGS = require('../data/gangs');
 var rngMod = require('../core/rng');
 var enc = require('./encounter');
 
@@ -44,7 +45,8 @@ function createRide(seed, bus) {
     state: 'ride', t: 0,                    /* ride | fly | run | arrived */
     traffic: [], nextId: 1,
     missions: {}, target: null, arrivals: 0, crashes: 0,
-    hearts: 3, enc: null, encCool: R.ENC.FIRST, nextEnc: 'bikes'
+    hearts: 3, enc: null, encCool: R.ENC.FIRST, nextEnc: 'bikes',
+    patrols: [], patrolCool: 120, prng: rngMod.createRng((seed >>> 0) ^ 0x9a7e), chases: {}
   };
   /* start on the middle east-west road, heading east in the outer left lane */
   var mid = r.map.lines[Math.floor(R.GRID / 2)];
@@ -69,8 +71,46 @@ function pickTarget(r) {
   return best;
 }
 
+/* gang patrols: a pack of bike goons or the gang car, driving the roads of their gang's area (keeping left like everyone), turning at
+   junctions now and then. They never come for him: riding up close to one starts that road fight. Up to three at a time. */
+var PATROLS = 3, PATROL_SPEED = 7.5, CHASE_R = 15;
+function spawnPatrol(r) {
+  var rng = r.prng, open = r.map.targets.filter(function (t) { return r.missions[t.key] !== 'cleared'; });
+  if (!open.length) open = r.map.targets;
+  var T = open[Math.floor(rng.next() * open.length)], kind = r.patrols.filter(function (q) { return q.kind === 'car'; }).length ? 'bikes' : (rng.next() < 0.5 ? 'car' : 'bikes');
+  var axis = rng.next() < 0.5 ? 'x' : 'z', line = mapMod.nearestLine(axis === 'x' ? T.z : T.x), s0 = (axis === 'x' ? T.x : T.z) + (rng.next() - 0.5) * 50;
+  var p = { id: 'p' + (r.nextId++), kind: kind, gang: GANGS.gangOf(T.key), axis: axis, line: line, dir: rng.next() < 0.5 ? 1 : -1, lane: 1, s: Math.max(-r.map.ext + 10, Math.min(r.map.ext - 10, s0)), x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
+  placeVehicle(r, p); p.px = p.x; p.pz = p.z; p.ph = p.h;
+  if (Math.hypot(p.x - r.bike.x, p.z - r.bike.z) < 60) return null;                    /* never pops up right beside him */
+  return p;
+}
+function stepPatrols(r) {
+  var b = r.bike, i;
+  if (r.patrols.length < PATROLS && --r.patrolCool <= 0) { var np = spawnPatrol(r); if (np) r.patrols.push(np); r.patrolCool = 240; }
+  for (i = 0; i < r.patrols.length; i++) {
+    var p = r.patrols[i], s1 = p.s + p.dir * PATROL_SPEED * DT, lines = r.map.lines, k;
+    p.px = p.x; p.pz = p.z; p.ph = p.h;
+    for (k = 0; k < lines.length; k++) {                                   /* a junction: sometimes turn onto the crossing road */
+      var L = lines[k]; if ((p.s - L) * (s1 - L) > 0 || L === p.line) continue;
+      if (r.prng.next() < 0.35) { var nl = L; s1 = p.line; p.axis = p.axis === 'x' ? 'z' : 'x'; p.line = nl; p.dir = r.prng.next() < 0.5 ? 1 : -1; }
+      break;
+    }
+    if (Math.abs(s1) > r.map.ext - 8) { p.dir = -p.dir; s1 = Math.max(-r.map.ext + 8, Math.min(r.map.ext - 8, s1)); }
+    p.s = s1; placeVehicle(r, p);
+  }
+  /* he rides up to one: the chase is on */
+  for (i = 0; i < r.patrols.length; i++) {
+    var q = r.patrols[i];
+    if (Math.hypot(q.x - b.x, q.z - b.z) < CHASE_R && enc.canStart(r)) {
+      r.patrols.splice(i, 1); r.patrolCool = 600; r.chases[q.gang] = (r.chases[q.gang] || 0) + 1;
+      enc.start(r, q.kind); r.bus.emit('ride:chase', { kind: q.kind, gang: q.gang }); return;
+    }
+  }
+}
+
 /* the player picked a place on the full map: it becomes the signal (if it is still open) */
 function chooseTarget(r, key) {
+  if (key === 'home') { if (r.state !== 'ride' || r.enc) return false; r.target = r.map.home; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: 'home', name: r.map.home.name, chosen: true }); return true; }
   var T = r.map.targets.filter(function (t) { return t.key === key; })[0];
   if (!T || r.missions[key] !== 'open' || r.state !== 'ride' || r.enc) return false;
   r.target = T; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: T.key, name: T.name, chosen: true }); return true;
@@ -165,18 +205,21 @@ function step(r, input) {
     /* arrival */
     var T = r.target;
     /* riding away from the signal leaves it open for later: once he is well past his closest approach, the pointer moves on */
-    if (r.state === 'ride' && T && !r.enc) {
+    if (r.state === 'ride' && T && !r.enc && T.key !== 'home') {
       var dT = Math.hypot(T.x - b.x, T.z - b.z);
       if (r.tKey !== T.key) { r.tKey = T.key; r.tBest = dT; }
       else if (dT < r.tBest) r.tBest = dT;
       else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
     }
+    if (r.state === 'ride' && T && T.key === 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {        /* home: the hideout's entrance */
+      r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.bus.emit('ride:home', {}); return;
+    }
     if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
-    /* road fights: after a while of riding, on a long straight */
-    if (r.state === 'ride') { if (b.speed > 6) r.encCool--; if (r.nextEnc && r.encCool <= 0 && enc.canStart(r)) enc.start(r, r.nextEnc); }
+    /* road fights only when Toofan chooses one: the gang patrols drive their roads; ride up to one and the chase is on */
+    if (r.state === 'ride' && !r.enc) stepPatrols(r);
   } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
     hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
     if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
@@ -191,6 +234,13 @@ function step(r, input) {
     /* Toofan waits here: the game steps into the fight area (the brawler) and comes back with the area cleared */
   }
   r.tick++;
+}
+
+/* out of the hideout: Bijli on the road in front of the cycle-repair shop, in the near (left) lane, ready to ride */
+function leaveHome(r) {
+  var H = r.map.home, b = r.bike, line = mapMod.nearestLine(H.z), h = -Math.PI / 2;      /* heading west: his left is the shop's side */
+  b.h = b.ph = h; b.x = b.px = H.x - 4; b.z = b.pz = line + R.LANES[1]; b.speed = 0; b.turn = 0;
+  r.state = 'ride'; r.t = 0; r.enc = null; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
 }
 
 /* back from a cleared trouble spot: Toofan is on Bijli on the road beside it while the police take the goons away */
@@ -212,4 +262,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { leaveHome: leaveHome, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
