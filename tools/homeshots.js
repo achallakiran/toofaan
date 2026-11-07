@@ -16,10 +16,10 @@ await p.evaluate(()=>{var r=__game.ctx.ride,B=r.bike,ax=Math.abs(Math.sin(B.h))>
 await p.waitForTimeout(600);await shot('0patrol');
 await p.click('#rMap');await p.waitForTimeout(700);await shot('1fullmap');await p.click('text=[ CLOSE ]');
 await p.evaluate(()=>{__game.ctx.debug.freeze=false;__game.ctx.ride.patrols=[];});
-/* home */
+/* home: just ride up to the shop, no signal */
 await p.evaluate(()=>__game.ctx.debug.goHome());
 await p.waitForFunction(()=>{var S=__game.ctx.debug.rideMode;return S&&S.cut&&S.cut.kind==='home';},null,{timeout:30000}).catch(()=>log.push('no home cut'));
-var marks=[[1.2,'2turn'],[2.4,'3shutter'],[4.0,'4floor'],[5.0,'5ramp']];
+var marks=[[1.2,'2turn'],[2.4,'3shutter'],[4.0,'4floor'],[5.4,'5ramp'],[6.0,'5bdown'],[6.5,'5ctunnel']];
 for(const m of marks){await p.waitForFunction(t=>{var S=__game.ctx.debug.rideMode;return !S.cut||S.cut.t>t;},m[0],{timeout:30000}).catch(()=>{});await shot(m[1]);}
 await p.waitForFunction(()=>__game.modes.currentName()==='hideout',null,{timeout:30000}).catch(()=>log.push('no hideout'));
 await p.waitForTimeout(1200);await shot('6hideout');

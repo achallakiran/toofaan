@@ -4,6 +4,8 @@
    Reads the ride sim only; nothing here touches the brawler. */
 'use strict';
 
+var shopvox = require('./shopvox');
+
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
 var ridevox = require('./ridevox');
@@ -57,7 +59,12 @@ function roadBoxes(map) {
     if (axis === 'x') out.push({ x0: a0, x1: a1, z0: line + o0, z1: line + o1, y0: y0, y1: y1, c: c });
     else out.push({ x0: line + o0, x1: line + o1, z0: a0, z1: a1, y0: y0, y1: y1, c: c });
   }
-  out.push({ x0: -E - 120, x1: E + 120, z0: -E - 120, z1: E + 120, y0: -0.2, y1: -0.01, c: GROUND });
+  var G0 = { x0: -E - 120, x1: E + 120, z0: -E - 120, z1: E + 120 };
+  if (map.home) {                                                       /* the ground is open where the shop's ramp goes down */
+    var Hx = shopvox.PIT(map.home);
+    out.push({ x0: G0.x0, x1: Hx.x0, z0: G0.z0, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND }, { x0: Hx.x1, x1: G0.x1, z0: G0.z0, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND },
+      { x0: Hx.x0, x1: Hx.x1, z0: G0.z0, z1: Hx.z0, y0: -0.2, y1: -0.01, c: GROUND }, { x0: Hx.x0, x1: Hx.x1, z0: Hx.z1, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND });
+  } else out.push({ x0: G0.x0, x1: G0.x1, z0: G0.z0, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND });
   ['x', 'z'].forEach(function (axis) {
     for (i = 0; i < L.length; i++) {
       strip(axis, L[i], -E, E, -H, H, 0, axis === 'x' ? 0.02 : 0.021, ROAD);
@@ -292,7 +299,7 @@ function createRideView(scene) {
     sync: function (r, alpha, dt, t) {
       var b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha, h = b.ph + Math.atan2(Math.sin(b.h - b.ph), Math.cos(b.h - b.ph)) * alpha;
       buildNear(x, z, 1);
-      bike.root.position.set(x, this.bikeY || 0, z); bike.root.rotation.y = h; bikeBlob.position.set(x, 0, z); bikeBlob.rotation.y = h;
+      bike.root.position.set(x, this.bikeY || 0, z); bike.root.rotation.order = 'YXZ'; bike.root.rotation.y = h; bike.root.rotation.x = this.bikePitch || 0; bikeBlob.position.set(x, 0, z); bikeBlob.rotation.y = h;
       var onBike = r.state === 'ride' || r.state === 'arrived' || r.state === 'enc';
       layOn += ((onBike ? 0 : 1) - layOn) * (1 - Math.exp(-10 * dt));
       bike.lean.rotation.z = layOn * 1.35 + (onBike ? Math.max(-0.4, Math.min(0.4, b.turn * 14 * Math.min(1, Math.abs(b.speed) / 6))) : 0);

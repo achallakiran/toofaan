@@ -211,7 +211,9 @@ function step(r, input) {
       else if (dT < r.tBest) r.tBest = dT;
       else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
     }
-    if (r.state === 'ride' && T && T.key === 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {        /* home: the hideout's entrance */
+    var Hm = r.map.home, dH = Math.hypot(Hm.x - b.x, Hm.z - b.z);
+    if (r.homeArmed === false && dH > R.ARRIVE_R + 8) r.homeArmed = true;          /* (just out of the shop: not again until he has ridden off) */
+    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && dH < R.ARRIVE_R) {  /* home: the shop is always a place he can ride in to, signal or not */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.bus.emit('ride:home', {}); return;
     }
     if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
@@ -240,7 +242,7 @@ function step(r, input) {
 function leaveHome(r) {
   var H = r.map.home, b = r.bike, line = mapMod.nearestLine(H.z), h = -Math.PI / 2;      /* heading west: his left is the shop's side */
   b.h = b.ph = h; b.x = b.px = H.x - 4; b.z = b.pz = line + R.LANES[1]; b.speed = 0; b.turn = 0;
-  r.state = 'ride'; r.t = 0; r.enc = null; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
+  r.state = 'ride'; r.t = 0; r.enc = null; r.homeArmed = false; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
 }
 
 /* back from a cleared trouble spot: Toofan is on Bijli on the road beside it while the police take the goons away */

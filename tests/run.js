@@ -484,6 +484,12 @@ console.log('ride mode (Phase 4)');
       r.patrolCool = 1e9; assert(rideMod.chooseTarget(r, 'home')); assert.strictEqual(r.target, H);
       r.bike.x = r.bike.px = H.x + 3; r.bike.z = r.bike.pz = H.z - 3; inp.tick(r.tick); rideMod.step(r, inp);
       assert(ev.indexOf('ride:home') >= 0, ev.join(',')); assert.strictEqual(r.state, 'arrived'); assert.strictEqual(JSON.stringify(r.missions), before);
+      /* no signal needed: riding up to the shop is enough; just out of it, it does not catch him again until he has ridden off */
+      var r2 = rideMod.createRide(5, { emit: function (n) { ev.push(n); } }); ev.length = 0; r2.patrolCool = 1e9;
+      r2.bike.x = r2.bike.px = H.x + 3; r2.bike.z = r2.bike.pz = H.z - 3; inp.tick(r2.tick); rideMod.step(r2, inp);
+      assert(ev.indexOf('ride:home') >= 0, 'riding up to the shop takes him in'); rideMod.leaveHome(r2); ev.length = 0;
+      for (var k = 0; k < 20; k++) { inp.tick(r2.tick); rideMod.step(r2, inp); }
+      assert(ev.indexOf('ride:home') < 0, 'caught again at once on the way out');
       rideMod.leaveHome(r); assert.strictEqual(r.state, 'ride'); assert(Math.hypot(r.bike.x - H.x, r.bike.z - H.z) < 10); assert(r.target && r.target.key !== 'home');
     });
     test('road fight: Block pressed just before a blow lands counters it for double damage', function () {

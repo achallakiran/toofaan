@@ -41,21 +41,20 @@ function createRide() {
     var r = S.r, B = r.bike, D = S.shop.door, t = C.t;
     function seg(a, b2) { return Math.max(0, Math.min(1, (t - a) / (b2 - a))); }
     var a = ease(seg(0, 1.2)), front = { x: D.x, z: D.z - 3.6 };
-    var bx = C.x0 + (front.x - C.x0) * a, bz = C.z0 + (front.z - C.z0) * a, bh = C.h0 + Math.atan2(Math.sin(0 - C.h0), Math.cos(0 - C.h0)) * a, by = 0;
+    var bx = C.x0 + (front.x - C.x0) * a, bz = C.z0 + (front.z - C.z0) * a, bh = C.h0 + Math.atan2(Math.sin(0 - C.h0), Math.cos(0 - C.h0)) * a, by = 0, pitch = 0;
     S.shop.open(seg(1.4, 4.6));
-    var roll = seg(4.6, 6.0);
-    if (roll > 0) { var dz2 = (S.shop.deep.z - front.z) * ease(roll); bz = front.z + dz2; bx = D.x; bh = 0; by = bz > D.z + 0.3 ? -Math.min(1.6, (bz - D.z - 0.3) * 0.33) : 0; }
-    B.x = B.px = bx; B.z = B.pz = bz; B.h = B.ph = bh; B.speed = roll > 0 && roll < 1 ? 3 : 0; S.v.bikeY = by;
+    var roll = seg(4.6, 7.2);                                  /* in at the door, down the ramp, on into the tunnel */
+    if (roll > 0) { bz = front.z + (S.shop.deep.z - front.z) * (roll * roll * 0.35 + roll * 0.65); bx = D.x; bh = 0; var A = S.shop.along(bz); by = A.y; pitch = A.pitch; }
+    B.x = B.px = bx; B.z = B.pz = bz; B.h = B.ph = bh; B.speed = roll > 0 && roll < 1 ? 4 : 0; S.v.bikeY = by; S.v.bikePitch = pitch;
     if (t > 1.3 && !C.click) { C.click = true; S.sfx.hit('jab', 0.25); }
     if (t > 1.9 && !C.roll) { C.roll = true; S.sfx.land && S.sfx.land(3); }
     if (t > 4.6 && !C.go) { C.go = true; S.sfx.start(); }
-    var side = ease(seg(0.4, 1.6));
-    mix({ x: D.x - 3.2, y: 3.4, z: D.z - 9.6, lx: D.x + 0.4, ly: 1.1, lz: D.z + 0.8, fov: 46 }, side);
-    if (roll > 0) mix({ x: D.x - 1.6, y: 3.0, z: D.z - 5.4, lx: D.x, ly: 0.3, lz: D.z + 1.8, fov: 50 }, ease(roll));
+    mix({ x: D.x - 3.2, y: 3.4, z: D.z - 9.6, lx: D.x + 0.4, ly: 1.1, lz: D.z + 0.8, fov: 46 }, ease(seg(0.4, 1.6)));
+    if (roll > 0) mix({ x: D.x - 1.3, y: 3.9, z: D.z - 2.6, lx: D.x, ly: -1.4, lz: D.z + 3.4, fov: 52 }, ease(Math.min(1, roll * 1.6)));
     if (!S.black) { S.black = document.createElement('div'); S.black.style.cssText = 'position:fixed;inset:0;z-index:30;background:#000;opacity:0;pointer-events:none'; document.body.appendChild(S.black); }
-    S.black.style.opacity = seg(5.4, 6.2);
-    if (t > 6.4 && !C.gone) {
-      C.gone = true; rideSim.leaveHome(r); S.v.bikeY = 0;
+    S.black.style.opacity = seg(6.6, 7.4);
+    if (t > 7.6 && !C.gone) {
+      C.gone = true; rideSim.leaveHome(r); S.v.bikeY = 0; S.v.bikePitch = 0;
       ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); ctx.save.set('ride.missions', r.missions);
       ctx.go('hideout', { from: 'shop' });
     }
@@ -107,7 +106,7 @@ function createRide() {
       S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
       S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
       S.ui.home.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; rideSim.chooseTarget(S.r, 'home'); });
-      ctx.debug.goHome = function () { rideSim.chooseTarget(S.r, 'home'); var H = S.r.map.home, B = S.r.bike; B.x = B.px = H.x + 14; B.z = B.pz = H.z - 3.4; B.speed = 6; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
+      ctx.debug.goHome = function () { var H = S.r.map.home, B = S.r.bike; B.x = B.px = H.x + 14; B.z = B.pz = H.z - 3.4; B.speed = 6; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
       S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
