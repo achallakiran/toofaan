@@ -243,6 +243,11 @@ function createRideView(scene) {
   ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; mark.add(ring);
   var beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 30, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
   beam.position.y = 15; mark.add(beam); root.add(mark);
+  /* home: a blue ring on the road in front of the shop and a soft blue column over it, always there */
+  var homeMark = new THREE.Group(), homeRing = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.22, 6, 40), new THREE.MeshBasicMaterial({ color: 0x4aa8ff }));
+  homeRing.rotation.x = Math.PI / 2; homeRing.position.y = 0.3; homeMark.add(homeRing);
+  var homeBeam = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 26, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0x4aa8ff, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }));
+  homeBeam.position.y = 13; homeMark.add(homeBeam); root.add(homeMark); homeMark.visible = false;
   var ev = encview.createEncView(root, rig, bike, blobUnder);
   var traffic = ridevox.createRideTraffic(root), cars = {}, wheel = 0, runPhase = 0, layOn = 0, map = null, blocks = {}, roads = null, wires = null, trees = [], treeGeos = null;
 
@@ -320,6 +325,8 @@ function createRideView(scene) {
       }
       if (r.target && r.state !== 'arrived' && !r.enc) { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
       else mark.visible = false;
+      if (map && map.home) { var hmz = map.home.z - 4.5; homeMark.visible = r.state === 'ride' && !r.enc; homeMark.position.set(map.home.x, 0, hmz); var hp = 1 + Math.sin(t * 3) * 0.08; homeRing.scale.set(hp, hp, hp); }
+      if (r.target === (map && map.home)) mark.visible = false;            /* (the blue ring is the signal there) */
       /* traffic near the bike, each with a soft shadow */
       var draw = [];
       for (i = 0; i < r.traffic.length; i++) {

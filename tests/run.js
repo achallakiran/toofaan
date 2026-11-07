@@ -488,6 +488,8 @@ console.log('ride mode (Phase 4)');
       var r2 = rideMod.createRide(5, { emit: function (n) { ev.push(n); } }); ev.length = 0; r2.patrolCool = 1e9;
       r2.bike.x = r2.bike.px = H.x + 3; r2.bike.z = r2.bike.pz = H.z - 3; inp.tick(r2.tick); rideMod.step(r2, inp);
       assert(ev.indexOf('ride:home') >= 0, 'riding up to the shop takes him in'); rideMod.leaveHome(r2); ev.length = 0;
+      var r3 = rideMod.createRide(5, null), L3 = r3.map.lines[Math.floor(r3.map.lines.length / 2)];
+      assert(rideMod.inHomeZone(r3, H.x + 4, L3 - RD2.LANES[1]), 'the far lane in front of the shop counts too'); assert(!rideMod.inHomeZone(r3, H.x + 20, H.z - 3));
       for (var k = 0; k < 20; k++) { inp.tick(r2.tick); rideMod.step(r2, inp); }
       assert(ev.indexOf('ride:home') < 0, 'caught again at once on the way out');
       rideMod.leaveHome(r); assert.strictEqual(r.state, 'ride'); assert(Math.hypot(r.bike.x - H.x, r.bike.z - H.z) < 10); assert(r.target && r.target.key !== 'home');

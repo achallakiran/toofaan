@@ -101,7 +101,7 @@ function stepPatrols(r) {
   /* he rides up to one: the chase is on */
   for (i = 0; i < r.patrols.length; i++) {
     var q = r.patrols[i];
-    if (Math.hypot(q.x - b.x, q.z - b.z) < CHASE_R && enc.canStart(r)) {
+    if (Math.hypot(q.x - b.x, q.z - b.z) < CHASE_R && Math.hypot(r.map.home.x - b.x, r.map.home.z - b.z) > 30 && enc.canStart(r)) {   /* (never on his own doorstep) */
       r.patrols.splice(i, 1); r.patrolCool = 600; r.chases[q.gang] = (r.chases[q.gang] || 0) + 1;
       enc.start(r, q.kind); r.bus.emit('ride:chase', { kind: q.kind, gang: q.gang }); return;
     }
@@ -211,9 +211,9 @@ function step(r, input) {
       else if (dT < r.tBest) r.tBest = dT;
       else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
     }
-    var Hm = r.map.home, dH = Math.hypot(Hm.x - b.x, Hm.z - b.z);
-    if (r.homeArmed === false && dH > R.ARRIVE_R + 8) r.homeArmed = true;          /* (just out of the shop: not again until he has ridden off) */
-    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && dH < R.ARRIVE_R) {  /* home: the shop is always a place he can ride in to, signal or not */
+    var Hm = r.map.home, dH = Math.hypot(Hm.x - b.x, Hm.z - b.z), atHome = inHomeZone(r, b.x, b.z);
+    if (r.homeArmed === false && !atHome && dH > 18) r.homeArmed = true;            /* (just out of the shop: not again until he has ridden off) */
+    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome) {  /* home: the shop is always a place he can ride in to, signal or not */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.bus.emit('ride:home', {}); return;
     }
     if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
@@ -238,6 +238,12 @@ function step(r, input) {
   r.tick++;
 }
 
+/* the shop's zone: the pavement in front of it and the whole road there, both lanes, so he never has to cross over to be taken in */
+var HOME_ZONE = 9;
+function inHomeZone(r, x, z) {
+  var H = r.map.home, line = mapMod.nearestLine(H.z);
+  return Math.abs(x - H.x) < HOME_ZONE && z > line - R.HALF - 0.5 && z < H.z + 2;
+}
 /* out of the hideout: Bijli on the road in front of the cycle-repair shop, in the near (left) lane, ready to ride */
 function leaveHome(r) {
   var H = r.map.home, b = r.bike, line = mapMod.nearestLine(H.z), h = -Math.PI / 2;      /* heading west: his left is the shop's side */
@@ -264,4 +270,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { leaveHome: leaveHome, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
