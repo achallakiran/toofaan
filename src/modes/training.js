@@ -1,4 +1,4 @@
-/* modes (helper for the hideout): Toofan's training corner by the workbench. Three short workouts, scored for fun only (nothing changes
+/* modes (helper for the hideout): Toofan's training corner on the gym mat. Three short workouts, scored for fun only (nothing changes
    in the fights); the best score of each is kept.
      PUSH-UPS        20 s. Each tap is one push-up; tap again as he comes up. Count the reps.
      SKIPPING        30 s. The rope turns faster as the streak grows; tap as it swings under his feet. Miss and he trips.

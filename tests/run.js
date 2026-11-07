@@ -489,7 +489,15 @@ console.log('ride mode (Phase 4)');
       r2.bike.x = r2.bike.px = H.x + 3; r2.bike.z = r2.bike.pz = H.z - 3; inp.tick(r2.tick); rideMod.step(r2, inp);
       assert(ev.indexOf('ride:home') >= 0, 'riding up to the shop takes him in'); rideMod.leaveHome(r2); ev.length = 0;
       var r3 = rideMod.createRide(5, null), L3 = r3.map.lines[Math.floor(r3.map.lines.length / 2)];
-      assert(rideMod.inHomeZone(r3, H.x + 4, L3 - RD2.LANES[1]), 'the far lane in front of the shop counts too'); assert(!rideMod.inHomeZone(r3, H.x + 20, H.z - 3));
+      void L3; var G3 = rideMod.homeGate(r3);
+      assert(rideMod.inHomeZone(r3, G3.x + 2, G3.z), 'the blue ring'); assert(!rideMod.inHomeZone(r3, G3.x, G3.z - 2 * RD2.LANES[1]), 'the far lane is just the road'); assert(!rideMod.inHomeZone(r3, G3.x + 20, G3.z));
+      /* riding through the ring at speed does not take him in; stopping in it does */
+      var ev3 = []; r3.bus = { emit: function (n) { ev3.push(n); } }; r3.patrolCool = 1e9; r3.target = null;
+      var B3 = r3.bike; B3.x = B3.px = G3.x + 12; B3.z = B3.pz = G3.z; B3.h = B3.ph = -Math.PI / 2; B3.speed = 12;
+      for (k = 0; k < 120; k++) { inp.setAxis(0, 1); inp.tick(r3.tick); rideMod.step(r3, inp); }
+      assert(ev3.indexOf('ride:home') < 0, 'riding past at speed took him in');
+      B3.x = B3.px = G3.x + 1; B3.z = B3.pz = G3.z; B3.speed = 1; inp.setAxis(0, 0); inp.tick(r3.tick); rideMod.step(r3, inp);
+      assert(ev3.indexOf('ride:home') >= 0, 'stopping in the ring takes him in');
       for (var k = 0; k < 20; k++) { inp.tick(r2.tick); rideMod.step(r2, inp); }
       assert(ev.indexOf('ride:home') < 0, 'caught again at once on the way out');
       rideMod.leaveHome(r); assert.strictEqual(r.state, 'ride'); assert(Math.hypot(r.bike.x - H.x, r.bike.z - H.z) < 10); assert(r.target && r.target.key !== 'home');

@@ -328,7 +328,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 78',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 79',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1477,7 +1477,10 @@ function createHideoutMode() {
         else if (!S.use && near) use(near);
       }
       function use(st) {
-        if (st.id === 'raka') { S.d.st = 'lick'; S.d.until = t + 1.4; S.d.face = Math.atan2(p.x - S.d.x, p.z - S.d.z); S.sfx.bark(); S.say('RAKA WAGS HIS TAIL', 1.6); return; }
+        if (st.id === 'raka') {                                          /* he turns to Raka and crouches; Raka comes round in front of him and sits up for it */
+          p.face = S.d.x >= p.x ? Math.PI / 2 : -Math.PI / 2; S.use = { id: 'raka', t: 0 };     /* side-on to the camera, so the pat reads */
+          S.d.st = 'lick'; S.d.until = t + 2.0; S.sfx.bark(); S.say('RAKA WAGS HIS TAIL', 1.6); return;
+        }
         if (st.id === 'bijli') { S.say('BIJLI, CHAL!', 1); S.sfx.start(); S.leaving = now + 900; rideSim.leaveHome(rideMode.ensureRide(ctx)); return; }
         p.x = st.x; p.z = st.z; p.face = st.face; S.use = { id: st.id, t: 0 };
         if (st.id === 'bed') { S.fade.style.opacity = 1; S.say('AARAM...', 2.4); setTimeout(function () { S.fade.style.opacity = 0; if (S.use && S.use.id === 'bed') S.use = null; }, 2200); }
@@ -1487,7 +1490,7 @@ function createHideoutMode() {
             S.mapOpen = true; S.map.open(r, function (key) { if (rideSim.chooseTarget(r, key)) S.say('NEXT: ' + r.target.name.toUpperCase(), 2.6); });
           });
         }
-        if (st.id === 'bench') { p.x = 4.6; p.z = 6.5; p.face = 0; S.msgT = 0; S.ui.msg.style.opacity = 0; S.train.open(); }
+        if (st.id === 'bench') { p.x = st.x; p.z = st.z; p.face = 0; S.msgT = 0; S.ui.msg.style.opacity = 0; S.train.open(); }
         if (st.id === 'gym') { S.say('HEAVY BAG', 1.4); S.mp.press(); }
         if (st.id === 'music') { S.rig.guitar.visible = true; S.music.play('jam'); S.say('TOOFAAN... TOOFAAN!', 2.4); }
       }
@@ -1499,8 +1502,13 @@ function createHideoutMode() {
       if (S.use) {
         S.use.t += dt; var u = S.use.t;
         if (S.use.id === 'chart') target = posemath.layer(target, { 'head.rx': -8, 'armA.sx': 40, 'armA.e': 60, 'spine.ry': Math.sin(u * 0.7) * 6 }, 0, 1, 1, 1);
-        if (S.use.id === 'bed') target = posemath.layer(target, { 'spine.rx': 25, 'head.rx': 25 }, 0, 1, 1, 1);
-        if (S.use.id === 'music') { var hp = {}; Object.keys(HELD).forEach(function (k) { hp[k] = HELD[k]; }); hp['gtr.ry'] = HELD['gtr.ry'] + Math.sin(u * 8.4) * 3; hp['spine.rx'] = 6 + Math.sin(u * 8.4) * 2; hp['head.rx'] = 8 + Math.abs(Math.sin(u * 4.2)) * 8; target = posemath.layer(target, hp, 0, 1, 1, 1); }
+        if (S.use.id === 'raka') {
+          var cr = Math.min(1, u / 0.35) * Math.min(1, Math.max(0, (2.0 - u) / 0.35)), pat = Math.sin(u * 9) * 10 * (u > 0.4 && u < 1.7 ? 1 : 0);
+          target = posemath.layer(target, { 'hip.y': -0.3 * cr, 'hip.rx': 20 * cr, 'spine.rx': 32 * cr, 'head.rx': 18 * cr, 'legA.hx': 92 * cr, 'legA.k': 118 * cr, 'legA.a': 16 * cr, 'legB.hx': 30 * cr, 'legB.k': 95 * cr, 'armA.sx': (62 + pat) * cr, 'armA.sz': 6 * cr, 'armA.e': 18 * cr }, 0, 1, 1, 1);
+          if (u > 2.05) S.use = null;
+        }
+        if (S.use && S.use.id === 'bed') target = posemath.layer(target, { 'spine.rx': 25, 'head.rx': 25 }, 0, 1, 1, 1);
+        if (S.use && S.use.id === 'music') { var hp = {}; Object.keys(HELD).forEach(function (k) { hp[k] = HELD[k]; }); hp['gtr.ry'] = HELD['gtr.ry'] + Math.sin(u * 8.4) * 3; hp['spine.rx'] = 6 + Math.sin(u * 8.4) * 2; hp['head.rx'] = 8 + Math.abs(Math.sin(u * 4.2)) * 8; target = posemath.layer(target, hp, 0, 1, 1, 1); }
       }
       var tr = S.use && S.use.id === 'bench' ? S.train.update(dt, p.x, p.z) : null;     /* a workout sets his pose, lean and jump */
       if (tr) { target = tr.pose; p.face = angTo(p.face, tr.face, 1 - Math.exp(-10 * dt)); }
@@ -1512,7 +1520,13 @@ function createHideoutMode() {
       S.key.position.set(p.x + 0.8, 2.2, p.z + 1.4);
       /* ---- Raka: follows, sits when close, naps if left alone ---- */
       var D = S.d, fx = p.x - Math.sin(p.face) * 1.0 + 0.5, fz = p.z - Math.cos(p.face) * 1.0, ddx = fx - D.x, ddz = fz - D.z, dl = Math.hypot(ddx, ddz);
-      if (D.until && t < D.until) S.dog.pose(D.st, t);
+      if (S.use && S.use.id === 'raka') {                              /* in front of him, 0.75 m out, facing him */
+        var gx = p.x + Math.sin(p.face) * 0.75, gz = p.z + Math.cos(p.face) * 0.75, gdx = gx - D.x, gdz = gz - D.z, gl = Math.hypot(gdx, gdz);
+        if (gl > 0.04) { var st2 = Math.min(gl, 2.6 * dt); D.x += gdx / gl * st2; D.z += gdz / gl * st2; collide(D); S.dog.pose('walk', t); D.face = angTo(D.face, Math.atan2(gdx, gdz), 1 - Math.exp(-10 * dt)); }
+        else { D.face = angTo(D.face, Math.atan2(p.x - D.x, p.z - D.z), 1 - Math.exp(-10 * dt)); S.dog.pose('lick', t); }
+        D.walking = false; D.idle = 0;
+      }
+      else if (D.until && t < D.until) S.dog.pose(D.st, t);
       else if (dl > 1.4 || (D.walking && dl > 0.5)) {
         if (D.st === 'sleep' && dl < 4) { D.st = 'stand'; }
         if (D.st !== 'sleep') { D.walking = true; var dsp = Math.min(3.2, dl * 1.5); var q = { x: D.x + ddx / dl * dsp * dt, z: D.z + ddz / dl * dsp * dt }; collide(q); D.x = q.x; D.z = q.z; D.face = angTo(D.face, Math.atan2(ddx, ddz), 1 - Math.exp(-8 * dt)); S.dog.pose('walk', t); D.idle = 0; }
@@ -1569,6 +1583,7 @@ function ensureRide(ctx) {
     if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k] === 'active' ? 'open' : saved[k]; }); rideSim.pickTarget(ctx.ride); }
     var pos = ctx.save.get('ride.pos', null), B = ctx.ride.bike;     /* Continue: back where Bijli was parked */
     if (pos && isFinite(pos.x) && isFinite(pos.z)) { B.x = B.px = pos.x; B.z = B.pz = pos.z; B.h = B.ph = pos.h || 0; }
+    var Gt = rideSim.homeGate(ctx.ride); if (Math.hypot(B.x - Gt.x, B.z - Gt.z) < 12) ctx.ride.homeArmed = false;     /* parked at the shop: it does not take him straight back in */
   }
   return ctx.ride;
 }
@@ -1577,6 +1592,7 @@ function createRide() {
   var S = {};
   /* home: Bijli turns in to the shop, the loose brick is pressed, the shutter rolls up, the floor splits, the ramp tips down and she rolls
      down into the dark. Then the hideout. (6.4 s) */
+  function startHome() { if (S.cut) return; S.sfx.engineOff(); S.music.stop(2.5); var B = S.r.bike; S.cut = { kind: 'home', t: 0, x0: B.x, z0: B.z, h0: B.h, gone: false }; }
   function homeCut(ctx, C, x, z, mix) {
     var r = S.r, B = r.bike, D = S.shop.door, t = C.t;
     function seg(a, b2) { return Math.max(0, Math.min(1, (t - a) / (b2 - a))); }
@@ -1603,6 +1619,7 @@ function createRide() {
     name: 'ride',
     enter: function (ctx, scope, args) {
       var view = ctx.view;
+      S.cut = null; S.black = null; S.gateSaidT = 0;                 /* (a scene from the last visit, such as going home, never carries over) */
       view.setSky('#a9c7da', false);
       ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
       /* the ride carries on where you left it */
@@ -1646,7 +1663,7 @@ function createRide() {
       S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
       S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
       S.ui.home.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; rideSim.chooseTarget(S.r, 'home'); });
-      ctx.debug.goHome = function () { var H = S.r.map.home, B = S.r.bike; B.x = B.px = H.x + 14; B.z = B.pz = H.z - 3.4; B.speed = 6; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
+      ctx.debug.goHome = function () { rideSim.chooseTarget(S.r, 'home'); var H = S.r.map.home, B = S.r.bike; var G = rideSim.homeGate(S.r); B.x = B.px = G.x + 7; B.z = B.pz = G.z; B.speed = 5; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
       S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
@@ -1660,7 +1677,7 @@ function createRide() {
       scope.add(ctx.bus.on('ride:wall', function () { S.sfx.land(4); }));
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
       scope.add(ctx.bus.on('ride:signal', function (e) { say(e.key === 'home' ? 'GHAR CHALO: CYCLE REPAIR SHOP' : 'Signal: ' + e.name, 2); }));
-      scope.add(ctx.bus.on('ride:home', function () { S.sfx.engineOff(); S.music.stop(2.5); var B = S.r.bike; S.cut = { kind: 'home', t: 0, x0: B.x, z0: B.z, h0: B.h, gone: false }; }));
+      scope.add(ctx.bus.on('ride:home', function () { startHome(); }));
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
@@ -1773,6 +1790,9 @@ function createRide() {
       if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(r.enc ? (r.enc.kind === 'car' ? 'boss' : r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');   /* music switched back on, or sound just unlocked */
 
       /* ---- the arrival cut shot: circle low round Toofan as he pulls up, then the card and the fight area ---- */
+      if (S.r.atHome && !S.cut) startHome();                              /* (whatever the order of things, home always plays its scene) */
+      if (S.r.atGate && !S.cut && Math.abs(S.r.bike.speed) >= 4.5 && !(S.gateSaidT > 0)) { S.say('STOP IN THE BLUE RING TO GO HOME', 1.8); S.gateSaidT = 6; }
+      if (S.gateSaidT > 0) S.gateSaidT -= dt;
       if (S.cut && S.cut.kind === 'home') {
         var HC = S.cut; HC.t += dt; homeCut(ctx, HC, x, z, mix);
         if (HC.gone) return;
@@ -2282,7 +2302,7 @@ module.exports = { createTitle: createTitle };
 
 };
 defs["modes/training"]=function(module,exports,require){
-/* modes (helper for the hideout): Toofan's training corner by the workbench. Three short workouts, scored for fun only (nothing changes
+/* modes (helper for the hideout): Toofan's training corner on the gym mat. Three short workouts, scored for fun only (nothing changes
    in the fights); the best score of each is kept.
      PUSH-UPS        20 s. Each tap is one push-up; tap again as he comes up. Count the reps.
      SKIPPING        30 s. The rope turns faster as the streak grows; tap as it swings under his feet. Miss and he trips.
@@ -4043,7 +4063,8 @@ var SOLIDS = [
   [3.75, -2.5, 6.45, -1.55], [5.8, -1.45, 6.3, -0.9], [6.7, -2.5, 7.5, -1.7],                                /* the desk, its cabinet, the server rack */
   [8.55, -2.3, 10.45, -0.75], [10.95, -2.4, 11.95, -1.85], [12.2, -2.5, 13, -0.9],                           /* the drums, the guitars, the amp */
   [-0.25, 2.4, 0.25, 2.9], [4.25, 2.4, 4.75, 2.9], [8.75, 2.4, 9.25, 2.9],                                   /* pillars */
-  [9.75, 4.25, 10.25, 4.75], [10.95, 5.4, 12.6, 6.6], [12.4, 2.6, 13, 4.6],                                  /* the bag, the bench, the weights */
+  [9.75, 4.25, 10.25, 4.75], [10.85, 5.0, 12.6, 6.6], [12.4, 2.6, 13, 4.6],                                  /* the bag, the bench, the weights */
+  [8.15, 5.0, 8.75, 5.9], [10.5, 3.25, 10.75, 3.5], [12.1, 3.25, 12.35, 3.5], [8.15, 6.8, 8.8, 7.15], [9.6, 6.9, 10.0, 7.25], [12.15, 6.85, 13, 7.4],   /* dummy, pull-up bar, kettlebells, ball, gada */
   [2.8, 4.15, 7.2, 4.27], [5.6, 4.4, 7.3, 5.2], [3.15, 8.35, 6.25, 9.0],                                     /* the chain-link screen, tyres, the tool bench */
   [7.6, 7.8, 8.9, 9.1], [8.8, 7.2, 10.6, 8.8], [11.2, 8.2, 11.9, 9.0],                                       /* crates, the tarp, the fridge */
   [-0.2, 5.6, 2.4, 7.6], [-2.7, 5.2, -0.8, 9.0]                                                              /* Bijli's lift, the ramp */
@@ -4052,7 +4073,7 @@ var SOLIDS = [
 var STATIONS = [
   { id: 'bed', x: 1.55, z: -0.15, face: -2.4, label: 'SLEEP' },
   { id: 'chart', x: 5.1, z: -1.05, face: Math.PI, label: 'GANG CHART' },
-  { id: 'bench', x: 4.7, z: 7.8, face: 0, label: 'TRAINING' },
+  { id: 'bench', x: 9.2, z: 6.3, face: 0, label: 'TRAINING' },              /* the workouts, on the gym mat */
   { id: 'gym', x: 10.0, z: 5.35, face: Math.PI, label: 'TRAIN' },
   { id: 'music', x: 11.45, z: -1.2, face: 0, label: 'PLAY GUITAR' },
   { id: 'bijli', x: 1.0, z: 5.0, face: 0, label: 'RIDE OUT' }
@@ -4073,13 +4094,13 @@ function build(seed, opts) {
   for (x = -2.6; x < 2.4; x += 0.32) K.b(x, 0.015, -2.4, x + 0.3, 0.035, 1.2, (Math.round(x * 3) % 2) ? C.WOOD2 : C.BROWN);                          /* old planks under the bed corner */
   K.b(W.x0, 0, W.z0 - 0.1, W.x1, W.h, W.z0, C.CHAR); K.b(W.x0 - 0.1, 0, W.z0, W.x0, W.h, W.z1, C.CHAR); K.b(W.x1, 0, W.z0, W.x1 + 0.1, W.h, W.z1, C.CHAR);
   if (!cut) K.b(W.x0, 0, W.z1, W.x1, W.h, W.z1 + 0.1, C.CHAR); if (!cut) K.b(W.x0, W.h, W.z0, W.x1, W.h + 0.1, W.z1, C.BLACK);
-  for (var yy = 0; yy < 3.6; yy += 0.16) for (x = W.x0; x < W.x1; x += 0.32) if (rng.next() < 0.78) K.b(x + ((yy * 6.25 | 0) % 2) * 0.16, yy, W.z0 - 0.02, x + 0.3 + ((yy * 6.25 | 0) % 2) * 0.16, yy + 0.14, W.z0, rng.next() < 0.2 ? C.BRICK : (rng.next() < 0.5 ? C.BRICK2 : C.STONE3));   /* the old brick back wall, missing bricks */
-  for (k = 0; k < 14; k++) { var gx = R(0, 12), gy = R(0.4, 2.6); K.b(gx, gy, W.z0 + 0.0, gx + R(0.3, 1.2), gy + R(0.06, 0.2), W.z0 + 0.012, [C.MAGENTA, C.TEAL, C.MARIGOLD, C.CRIMSON, C.LIME][k % 5]); }   /* graffiti strokes */
+  for (var yy = 0; yy < 3.6; yy += 0.16) for (x = W.x0; x < W.x1; x += 0.32) if (rng.next() < 0.78) K.b(x + ((yy * 6.25 | 0) % 2) * 0.16, yy, W.z0, x + 0.3 + ((yy * 6.25 | 0) % 2) * 0.16, yy + 0.14, W.z0 + 0.025, rng.next() < 0.2 ? C.BRICK : (rng.next() < 0.5 ? C.BRICK2 : C.STONE3));   /* the old brick back wall, missing bricks */
+  for (k = 0; k < 14; k++) { var gx = R(0, 12), gy = R(0.4, 2.6); K.b(gx, gy, W.z0 + 0.025, gx + R(0.3, 1.2), gy + R(0.06, 0.2), W.z0 + 0.036, [C.MAGENTA, C.TEAL, C.MARIGOLD, C.CRIMSON, C.LIME][k % 5]); }   /* graffiti strokes */
   K.b(W.x0, 3.7, W.z0, W.x1, 3.86, W.z0 + 0.16, C.RUST); K.b(W.x0, 3.45, W.z0, W.x1, 3.55, W.z0 + 0.12, C.STEEL); if (!cut) K.b(W.x0, 3.9, 2.0, W.x1, 4.0, 2.1, C.RUST);   /* pipes */
   if (!cut) for (x = -2.5; x < W.x1; x += 1.4) K.b(x, 3.86, -2.5, x + 0.05, 3.95, 9, C.BLACK);                                                                 /* cable trays across the ceiling */
   for (x = 0; x < W.x1; x += 4.5) { K.b(x - 0.25, 0, 2.4, x + 0.25, W.h, 2.9, C.STONE3); K.b(x - 0.26, 0.9, 2.39, x + 0.26, 1.0, 2.91, C.YELLOW); K.b(x - 0.26, 1.0, 2.39, x + 0.26, 1.1, 2.91, C.BLACK); }   /* pillars with hazard bands */
   /* the street grate high above the bed: a little cold light falls through */
-  K.b(-0.7, 3.0, W.z0 - 0.01, 0.7, 3.6, W.z0 + 0.01, C.NAVY); for (k = 0; k < 8; k++) K.b(-0.68 + k * 0.19, 3.0, W.z0 + 0.01, -0.64 + k * 0.19, 3.6, W.z0 + 0.03, C.BLACK);
+  K.b(-0.7, 3.0, W.z0, 0.7, 3.6, W.z0 + 0.035, C.NAVY); for (k = 0; k < 8; k++) K.b(-0.68 + k * 0.19, 3.0, W.z0 + 0.035, -0.64 + k * 0.19, 3.6, W.z0 + 0.05, C.BLACK);
   K.lamp(0, 2.8, -1.6, 0x7a9cff, 1.4, 6);
   /* string bulbs zig-zagging across the hall, warm and dim */
   for (k = 0; k < 26; k++) { var bx = -2 + k * 0.58, bz = (k % 2 ? 1.4 : 0.6), by = 3.45 - Math.sin(k * 0.6) * 0.15; K.b(bx - 0.03, by - 0.05, bz - 0.03, bx + 0.03, by + 0.02, bz + 0.03, C.DARK); K.led(bx, by - 0.08, bz, 0xffc36a, R(0.2, 0.6), R(0, 6), 'pulse'); }
@@ -4126,14 +4147,33 @@ function build(seed, opts) {
     var f = FONT[ch], ox = 8.75 + li * 0.62, P = 0.13;
     for (var r = 0; r < 5; r++) for (var cI = 0; cI < 3; cI++) if (f[r][cI] === '1') { var lx = ox + cI * P, ly = 3.2 - r * P; K.g(lx, ly, W.z0 + 0.05, lx + P * 0.8, ly + P * 0.8, W.z0 + 0.09, PINK); }
   });
-  K.b(8.6, 2.45, W.z0, 12.5, 3.4, W.z0 + 0.03, C.BLACK);                                                                                     /* the sign's backing board */
+  K.b(8.6, 2.45, W.z0, 12.5, 3.4, W.z0 + 0.044, C.BLACK);                                                                                     /* the sign's backing board */
   K.lamp(10.3, 2.4, -1.6, 0xff2a6a, 1.2, 5, true);
 
   /* ---- the gym: bag, bench, rack, mirror, a red work light ---- */
   K.b(9.95, 2.0, 4.45, 10.05, W.h, 4.55, C.DARK); for (k = 0; k < 4; k++) K.b(9.75 + 0.02 * (k % 2), 0.9 + k * 0.28, 4.25, 10.25 - 0.02 * (k % 2), 1.18 + k * 0.28, 4.75, k % 2 ? C.CRIMSON : C.BRICK2);
   K.b(11.0, 0, 5.6, 12.6, 0.45, 6.0, C.CHAR); K.b(11.1, 0.45, 5.65, 12.2, 0.5, 5.95, C.DARK); K.b(11.0, 0, 5.4, 11.1, 1.1, 5.5, C.STEEL); K.b(11.0, 0, 6.1, 11.1, 1.1, 6.2, C.STEEL); K.b(10.95, 1.05, 5.0, 11.15, 1.1, 6.6, C.STEEL);
   K.b(12.4, 0, 2.6, 12.95, 1.2, 4.6, C.CHAR); for (k = 0; k < 6; k++) K.b(12.45, 0.25 + (k % 2) * 0.5, 2.8 + (k >> 1) * 0.6, 12.9, 0.4 + (k % 2) * 0.5, 3.0 + (k >> 1) * 0.6, C.STEEL);
-  K.b(12.95, 0.3, 4.9, 12.99, 2.3, 6.6, C.SLATE); K.b(8.0, 0.015, 3.2, 12.9, 0.04, 7.5, C.BLACK);
+  K.b(12.95, 0.3, 4.9, 12.99, 2.3, 6.6, C.SLATE);
+  /* the training floor: red and blue mat tiles */
+  for (x = 8.0; x < 12.9; x += 0.6) for (z = 3.2; z < 7.5; z += 0.6) K.b(x + 0.01, 0.015, z + 0.01, Math.min(12.9, x + 0.6) - 0.01, 0.04, Math.min(7.5, z + 0.6) - 0.01, ((Math.round((x - 8) / 0.6) + Math.round((z - 3.2) / 0.6)) % 2) ? C.CRIMSON : C.NAVY);
+  /* the barbell's plates, and dumbbells on the rack */
+  K.b(10.85, 0.78, 5.0, 11.25, 1.37, 5.12, C.BLACK); K.b(10.85, 0.78, 6.48, 11.25, 1.37, 6.6, C.BLACK); K.b(10.9, 0.86, 5.12, 11.2, 1.29, 5.2, C.RED); K.b(10.9, 0.86, 6.4, 11.2, 1.29, 6.48, C.RED);
+  for (k = 0; k < 6; k++) { var dy = 0.42 + (k % 2) * 0.5, dz = 2.9 + (k >> 1) * 0.6; K.b(12.48, dy, dz - 0.1, 12.86, dy + 0.14, dz - 0.04, C.BLACK); K.b(12.48, dy, dz + 0.04, 12.86, dy + 0.14, dz + 0.1, C.BLACK); }
+  /* the wooden dummy (arms and a leg out to the front) */
+  K.b(8.15, 0, 5.0, 8.75, 0.08, 5.6, C.WOOD2); K.b(8.3, 0.08, 5.15, 8.6, 1.75, 5.45, C.WOOD); K.b(8.28, 1.7, 5.13, 8.62, 1.78, 5.47, C.WOOD2);
+  K.b(8.33, 1.28, 5.45, 8.41, 1.36, 5.9, C.WOOD2); K.b(8.49, 1.28, 5.45, 8.57, 1.36, 5.9, C.WOOD2); K.b(8.41, 1.02, 5.45, 8.49, 1.1, 5.85, C.WOOD2); K.b(8.4, 0.45, 5.45, 8.5, 0.53, 5.8, C.WOOD2);
+  /* a pull-up bar, a skipping rope hung on it */
+  K.b(10.55, 0, 3.3, 10.7, 2.6, 3.45, C.STEEL); K.b(12.15, 0, 3.3, 12.3, 2.6, 3.45, C.STEEL); K.b(10.55, 2.45, 3.34, 12.3, 2.53, 3.41, C.STEEL);
+  K.b(10.5, 0.04, 3.25, 10.75, 0.08, 3.5, C.YELLOW); K.b(12.1, 0.04, 3.25, 12.35, 0.08, 3.5, C.YELLOW);
+  K.b(10.71, 1.25, 3.46, 10.74, 1.95, 3.49, C.RED); K.b(10.78, 1.25, 3.46, 10.81, 1.95, 3.49, C.RED); K.b(10.71, 1.2, 3.44, 10.81, 1.3, 3.5, C.WOOD2);
+  /* kettlebells and a medicine ball */
+  [[8.3, 6.95], [8.65, 7.0]].forEach(function (q) { K.b(q[0] - 0.12, 0.04, q[1] - 0.12, q[0] + 0.12, 0.26, q[1] + 0.12, C.BLACK); K.b(q[0] - 0.09, 0.26, q[1] - 0.025, q[0] + 0.09, 0.34, q[1] + 0.025, C.BLACK); });
+  K.b(9.65, 0.04, 6.95, 9.95, 0.34, 7.2, C.OLIVE);
+  /* the akhada corner: a gada (mace) and a pair of mudgar clubs by the mirror */
+  K.b(12.72, 0.04, 7.06, 12.78, 1.1, 7.12, C.WOOD2); K.b(12.58, 1.1, 6.93, 12.92, 1.42, 7.25, C.BRASS); K.b(12.62, 1.42, 6.97, 12.88, 1.5, 7.21, C.BRASS);
+  [[12.3, 7.2], [12.5, 7.28]].forEach(function (q) { K.b(q[0] - 0.08, 0.04, q[1] - 0.08, q[0] + 0.08, 0.5, q[1] + 0.08, C.WOOD); K.b(q[0] - 0.04, 0.5, q[1] - 0.04, q[0] + 0.04, 0.76, q[1] + 0.04, C.WOOD2); });
+  K.lamp(10.2, 3.1, 5.6, 0xfff0d0, 0.8, 6);
   K.lamp(11.5, 3.0, 4.8, 0xff3030, 0.9, 5);
 
   /* ---- the garage: Bijli's lift with hazard stripes, a tool bench, pegboard, tyres, a chain-link screen, the ramp up ---- */
@@ -4396,12 +4436,13 @@ function step(r, input) {
       else if (dT < r.tBest) r.tBest = dT;
       else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
     }
-    var Hm = r.map.home, dH = Math.hypot(Hm.x - b.x, Hm.z - b.z), atHome = inHomeZone(r, b.x, b.z);
-    if (r.homeArmed === false && !atHome && dH > 18) r.homeArmed = true;            /* (just out of the shop: not again until he has ridden off) */
-    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome) {  /* home: the shop is always a place he can ride in to, signal or not */
-      r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.bus.emit('ride:home', {}); return;
+    var atHome = inHomeZone(r, b.x, b.z), Gt = homeGate(r), dG = Math.hypot(Gt.x - b.x, Gt.z - b.z);
+    if (r.homeArmed === false && dG > GATE_R + 6) r.homeArmed = true;               /* (just out of the shop: not again until he has ridden off) */
+    r.atGate = atHome && r.state === 'ride' && !r.enc;
+    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome && (Math.abs(b.speed) < GATE_STOP || (T && T.key === 'home'))) {  /* home: the shop is always a place he can ride in to, signal or not */
+      r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.atHome = true; r.bus.emit('ride:home', {}); return;
     }
-    if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
+    if (r.state === 'ride' && T && T.key !== 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
@@ -4423,17 +4464,16 @@ function step(r, input) {
   r.tick++;
 }
 
-/* the shop's zone: the pavement in front of it and the whole road there, both lanes, so he never has to cross over to be taken in */
-var HOME_ZONE = 9;
-function inHomeZone(r, x, z) {
-  var H = r.map.home, line = mapMod.nearestLine(H.z);
-  return Math.abs(x - H.x) < HOME_ZONE && z > line - R.HALF - 0.5 && z < H.z + 2;
-}
+/* the shop's gate: the blue ring on the near lane in front of the shop. He goes in when he comes to a stop inside it (or rides into it
+   after signalling HOME); riding past on the road, even through it at speed, never takes him in. */
+var GATE_R = 4.2, GATE_STOP = 4.5;
+function homeGate(r) { var H = r.map.home; return { x: H.x, z: mapMod.nearestLine(H.z) + R.LANES[1] }; }
+function inHomeZone(r, x, z) { var G = homeGate(r); return Math.hypot(x - G.x, z - G.z) < GATE_R; }
 /* out of the hideout: Bijli on the road in front of the cycle-repair shop, in the near (left) lane, ready to ride */
 function leaveHome(r) {
   var H = r.map.home, b = r.bike, line = mapMod.nearestLine(H.z), h = -Math.PI / 2;      /* heading west: his left is the shop's side */
   b.h = b.ph = h; b.x = b.px = H.x - 4; b.z = b.pz = line + R.LANES[1]; b.speed = 0; b.turn = 0;
-  r.state = 'ride'; r.t = 0; r.enc = null; r.homeArmed = false; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
+  r.state = 'ride'; r.t = 0; r.enc = null; r.homeArmed = false; r.atHome = false; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
 }
 
 /* back from a cleared trouble spot: Toofan is on Bijli on the road beside it while the police take the goons away */
@@ -4455,7 +4495,7 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
 
 };
 defs["sim/ridemap"]=function(module,exports,require){
@@ -4653,6 +4693,7 @@ function createView(canvas, tierName) {
     },
     clearChunks: function () { for (var k in chunks) this.removeChunk(k); },
     followCamera: function (x, z, shot) {
+      if (window.__camShot) shot = window.__camShot;                     /* (test tools: hold the camera on a set shot) */
       if (!shot) { camera.position.set(x, 6.4, z + 6.6); camera.lookAt(x, 1.0, z - 2.2); if (camera.fov !== 46) { camera.fov = 46; camera.updateProjectionMatrix(); } return; }
       camera.position.set(shot.x, shot.y, shot.z); camera.lookAt(shot.lx, shot.ly, shot.lz);
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }
@@ -7865,6 +7906,8 @@ defs["view/rideview"]=function(module,exports,require){
 'use strict';
 
 var shopvox = require('./shopvox');
+/* the blue ring stands on the shop's gate: the near lane in front of it (sim/ride homeGate) */
+function rideSimGate(map) { var H = map.home, L = map.lines, best = L[0]; L.forEach(function (v) { if (Math.abs(v - H.z) < Math.abs(best - H.z)) best = v; }); return best + R.LANES[1]; }
 
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
@@ -8185,14 +8228,14 @@ function createRideView(scene) {
       }
       if (r.target && r.state !== 'arrived' && !r.enc) { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
       else mark.visible = false;
-      if (map && map.home) { var hmz = map.home.z - 4.5; homeMark.visible = r.state === 'ride' && !r.enc; homeMark.position.set(map.home.x, 0, hmz); var hp = 1 + Math.sin(t * 3) * 0.08; homeRing.scale.set(hp, hp, hp); }
+      if (map && map.home) { var hmz = rideSimGate(map); homeMark.visible = r.state === 'ride' && !r.enc; homeMark.position.set(map.home.x, 0, hmz); var hp = 1 + Math.sin(t * 3) * 0.08; homeRing.scale.set(hp, hp, hp); }
       if (r.target === (map && map.home)) mark.visible = false;            /* (the blue ring is the signal there) */
       /* traffic near the bike, each with a soft shadow */
       var draw = [];
       for (i = 0; i < r.traffic.length; i++) {
         var v = r.traffic[i]; if (r.enc || Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
         var K = R.KINDS[v.kind];
-        draw.push({ kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
+        draw.push({ id: v.id, kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
       }
       traffic.draw(draw, b.x, b.z);
     },
@@ -8225,8 +8268,11 @@ var vg = require('./voxgrid');
 var C = kit.C;
 
 /* wheels: a stepped disc seen from the side, with a hub */
+/* (while CAP is set, wheels are also listed so the traffic can spin them; with CAP.skip they are left out of the body) */
+var CAP = null;
 function wheel(K, u, v, r, w) {
   var hw = (w || 0.22) / 2;
+  if (CAP) { CAP.list.push({ x: u * kit.SX, z: v < 0 ? v * kit.SZ : v, r: r, w: (w || 0.22) * kit.SX }); if (CAP.skip) return; }
   K.b(u - hw, r * 0.3, v - r, u + hw, r * 1.7, v + r, C.CHAR); K.b(u - hw, 0, v - r * 0.7, u + hw, r * 2, v + r * 0.7, C.CHAR);
   K.b(u - hw - 0.01, r * 0.6, v - r * 0.4, u + hw + 0.01, r * 1.4, v + r * 0.4, C.GREY);
 }
@@ -8247,6 +8293,12 @@ function car(K, o) {
   K.b(-W + 0.08, belt - 0.25, L, -W + 0.4, belt - 0.08, L + 0.03, C.LEMON); K.b(W - 0.4, belt - 0.25, L, W - 0.08, belt - 0.08, L + 0.03, C.LEMON);
   K.b(-W + 0.06, belt - 0.25, -L - 0.03, -W + 0.34, belt - 0.08, -L, C.CRIMSON); K.b(W - 0.34, belt - 0.25, -L - 0.03, W - 0.06, belt - 0.08, -L, C.CRIMSON);
   K.b(-0.35, belt - 0.3, L, 0.35, belt - 0.12, L + 0.02, C.DARK);                               /* grille */
+  /* the glass catches the light: two pale streaks across the windscreen, one on each side window; the rear screen a shade lighter */
+  K.b(-W + 0.3, belt + 0.12, gF, -W + 0.4, roof - 0.2, gF + 0.02, C.BLUEGREY); K.b(-W + 0.5, belt + 0.12, gF, -W + 0.55, roof - 0.28, gF + 0.02, C.BLUEGREY);
+  K.b(-W + 0.05, belt + 0.1, gF - 0.5, -W + 0.07, roof - 0.18, gF - 0.42, C.BLUEGREY); K.b(W - 0.07, belt + 0.1, gF - 0.5, W - 0.05, roof - 0.18, gF - 0.42, C.BLUEGREY);
+  K.b(-W + 0.2, belt + 0.1, gB - 0.02, W - 0.2, roof - 0.16, gB, C.NAVY);
+  K.b(-W - 0.015, belt - 0.24, L - 0.18, -W, belt - 0.16, L - 0.02, C.SAFFRON); K.b(W, belt - 0.24, L - 0.18, W + 0.015, belt - 0.16, L - 0.02, C.SAFFRON);   /* indicators */
+  K.b(-W - 0.015, base + 0.16, -L + 0.9, -W, base + 0.2, L - 0.9, C.GREY); K.b(W, base + 0.16, -L + 0.9, W + 0.015, base + 0.2, L - 0.9, C.GREY);           /* chrome strip */
   plate(K, L + 0.08, base + 0.08, o.taxi); plate(K, -L - 0.08, base + 0.3, o.taxi);
   K.b(-W - 0.01, base + 0.3, 0.05, W + 0.01, belt - 0.06, 0.08, C.DARK);                        /* door line */
   K.b(-W - 0.02, belt - 0.2, 0.25, -W, belt - 0.15, 0.4, C.GREY); K.b(W, belt - 0.2, 0.25, W + 0.02, belt - 0.15, 0.4, C.GREY);
@@ -8339,7 +8391,26 @@ var VS = 0.085;                         /* the voxel size of Bijli, so traffic a
 var SCALE = require('../data/ride').VEH_SCALE;
 var NEAR = 34, MAX_NEAR = 6;            /* the six nearest vehicles within this distance get the full voxel model, the rest the light box model */
 
-function boxesOf(kind, look) { var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0); (BUILD[kind] || BUILD.car)(K, look); return K.out.boxes; }
+function boxesOf(kind, look, noWheels) {
+  var K = kit.createBuilder(rngMod.createRng(7 + look)); K.at(0, 0, 0);
+  CAP = { list: [], skip: !!noWheels }; (BUILD[kind] || BUILD.car)(K, look); var w = CAP.list; CAP = null;
+  K.out.boxes.wheels = w; return K.out.boxes;
+}
+/* where a model's wheels are: axle centre (x, r, z), radius r, width w */
+var wheelCache = {};
+function wheelsOf(kind) { return wheelCache[kind] || (wheelCache[kind] = boxesOf(kind, 0).wheels); }
+/* one wheel as its own voxel model, centred on its axle (axle along x): tyre, hub and a light cross on the rim so it reads as it turns */
+var wheelGeoCache = {};
+function wheelGeometry(r, w) {
+  var key = r + ':' + w; if (wheelGeoCache[key]) return wheelGeoCache[key];
+  var hw = w / 2, B = [];
+  function b(x0, y0, z0, x1, y1, z1, c) { B.push({ x0: x0, y0: y0, z0: z0, x1: x1, y1: y1, z1: z1, c: c }); }
+  b(-hw, r * 0.3, -r, hw, r * 1.7, r, C.CHAR); b(-hw, 0, -r * 0.7, hw, r * 2, r * 0.7, C.CHAR);
+  b(-hw - 0.01, r * 0.45, -r * 0.55, hw + 0.01, r * 1.55, r * 0.55, C.DARK);
+  b(-hw - 0.02, r * 0.88, -r * 0.6, hw + 0.02, r * 1.12, r * 0.6, C.GREY); b(-hw - 0.02, r * 0.4, -r * 0.12, hw + 0.02, r * 1.6, r * 0.12, C.GREY);
+  b(-hw - 0.03, r * 0.8, -r * 0.2, hw + 0.03, r * 1.2, r * 0.2, C.WHITE);
+  var g = toGeo(voxelArrays(B, 31)); g.translate(0, -r, 0); g.computeBoundingSphere(); return (wheelGeoCache[key] = g);
+}
 function toGeo(a) {
   var g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
@@ -8359,6 +8430,9 @@ function voxelArrays(boxes, seed) {
 }
 var cacheNear = {};
 /* one vehicle model as a single geometry (the gang car in the road fights uses this); real size, forward +z */
+/* the near model without its wheels (the traffic draws those apart, turning) */
+var cacheBody = {};
+function bodyGeometry(kind, look) { var key = kind + (look || 0); return cacheBody[key] || (cacheBody[key] = toGeo(voxelArrays(boxesOf(kind, look || 0, true), key.length * 13 + (look || 0)))); }
 function modelGeometry(kind, look) {
   var key = kind + (look || 0);
   if (!cacheNear[key]) cacheNear[key] = toGeo(voxelArrays(boxesOf(kind, look || 0), key.length * 13 + (look || 0)));
@@ -8377,35 +8451,50 @@ function createRideTraffic(parent) {
     var key = kind + look + (near ? 'n' : 'f'), s = sets[key];
     if (s) return s;
     var g, t;
-    if (near) { g = modelGeometry(kind, look); t = g.index.count / 3; }
+    if (near) { g = bodyGeometry(kind, look); t = g.index.count / 3; }
     else { var a = boxmesh.boxesToArrays(boxesOf(kind, look), CONFIG.PALETTE); g = toGeo(a); t = a.triangles; farGeos.push(g); }
     var im = new THREE.InstancedMesh(g, mat, near ? 24 : 48); im.count = 0; im.frustumCulled = false; parent.add(im);
     s = sets[key] = { im: im, n: 0, tris: t, cap: near ? 24 : 48 }; return s;
   }
+  /* turning wheels for the near vehicles: one instanced mesh per wheel size; each vehicle's roll is kept by its id */
+  var wsets = {}, roll = {}, WM = new THREE.Matrix4(), WR = new THREE.Matrix4();
+  function wset(r, w) { var key = r + ':' + w; if (wsets[key]) return wsets[key]; var im = new THREE.InstancedMesh(wheelGeometry(r, w), mat, MAX_NEAR * 6 + 8); im.count = 0; im.frustumCulled = false; parent.add(im); return (wsets[key] = { im: im, n: 0 }); }
   return {
     LOOKS: LOOKS, kinds: Object.keys(BUILD), SCALE: SCALE,
     /* draw this frame's vehicles: list of {kind, look, x, z, h, len, r}; (fx, fz) is the focus, for the near/far choice */
     draw: function (list, fx, fz) {
-      var k, i, nb = 0, nNear = 0; for (k in sets) sets[k].n = 0; tris = 0;
+      var k, i, nb = 0, nNear = 0, seen = {}; for (k in sets) sets[k].n = 0; for (k in wsets) wsets[k].n = 0; tris = 0;
       if (fx !== undefined) { list.forEach(function (v) { v.d = Math.hypot(v.x - fx, v.z - fz); }); list.sort(function (a, b) { return a.d - b.d; }); }
       for (i = 0; i < list.length; i++) {
         var v = list[i], near = fx === undefined || (v.d < NEAR && nNear < MAX_NEAR), s = set(v.kind, v.look % LOOKS, near); if (near) nNear++;
         if (s.n >= s.cap) { s = set(v.kind, v.look % LOOKS, false); if (s.n >= s.cap) continue; }
         Q.setFromAxisAngle(Y, v.h); P.set(v.x, 0, v.z); Sc.set(SCALE, SCALE, SCALE); M.compose(P, Q, Sc); s.im.setMatrixAt(s.n++, M); tris += s.tris;
+        if (s.cap === 24 && v.id !== undefined) {                                /* near: its wheels, rolled on by how far it has come */
+          var R0 = roll[v.id], moved = R0 ? Math.hypot(v.x - R0.x, v.z - R0.z) : 0; if (moved > 3) moved = 0;
+          R0 = roll[v.id] = { x: v.x, z: v.z, d: (R0 ? R0.d : 0) + moved }; seen[v.id] = 1;
+          var W8 = wheelsOf(v.kind);
+          for (var wi = 0; wi < W8.length; wi++) {
+            var wq = W8[wi], ws = wset(wq.r, wq.w);
+            WR.makeRotationX(R0.d / (wq.r * SCALE)); WR.setPosition(wq.x, wq.r, wq.z); WM.multiplyMatrices(M, WR);
+            if (ws.n < MAX_NEAR * 6 + 8) ws.im.setMatrixAt(ws.n++, WM);
+          }
+        }
         if (nb < 256) { P.set(v.x + 0.35, 0.05, v.z + 0.25); Sc.set(v.r * 2.6, 1, v.len * 1.1); M.compose(P, Q, Sc); blobs.setMatrixAt(nb++, M); }
       }
       for (k in sets) { sets[k].im.count = sets[k].n; sets[k].im.instanceMatrix.needsUpdate = true; }
+      for (k in wsets) { wsets[k].im.count = wsets[k].n; wsets[k].im.instanceMatrix.needsUpdate = true; }
+      for (k in roll) if (!seen[k]) delete roll[k];
       blobs.count = nb; blobs.instanceMatrix.needsUpdate = true;
     },
     triangles: function () { return tris; },
     dispose: function () {
-      for (var k in sets) parent.remove(sets[k].im); parent.remove(blobs);
+      for (var k in sets) parent.remove(sets[k].im); for (k in wsets) parent.remove(wsets[k].im); parent.remove(blobs);
       farGeos.forEach(function (g) { g.dispose(); }); mat.dispose(); blobGeo.dispose(); blobMat.dispose(); sets = {};
     }
   };
 }
 /* the voxel models are shared between rides (built once, kept); this frees them when the game wants the memory back */
-function disposeModels() { for (var k in cacheNear) cacheNear[k].dispose(); cacheNear = {}; }
+function disposeModels() { var k; for (k in cacheNear) cacheNear[k].dispose(); cacheNear = {}; for (k in cacheBody) cacheBody[k].dispose(); cacheBody = {}; for (k in wheelGeoCache) wheelGeoCache[k].dispose(); wheelGeoCache = {}; }
 
 module.exports = { createRideTraffic: createRideTraffic, modelGeometry: modelGeometry, modelSize: modelSize, disposeModels: disposeModels, BUILD: BUILD, LOOKS: LOOKS, VS: VS };
 

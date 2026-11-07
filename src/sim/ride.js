@@ -211,12 +211,13 @@ function step(r, input) {
       else if (dT < r.tBest) r.tBest = dT;
       else if (dT > r.tBest + R.ABANDON) { r.skipped = T.key; r.tKey = null; pickTarget(r); r.bus.emit('ride:abandon', { key: T.key, name: T.name, next: r.target && r.target.name }); T = r.target; }
     }
-    var Hm = r.map.home, dH = Math.hypot(Hm.x - b.x, Hm.z - b.z), atHome = inHomeZone(r, b.x, b.z);
-    if (r.homeArmed === false && !atHome && dH > 18) r.homeArmed = true;            /* (just out of the shop: not again until he has ridden off) */
-    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome) {  /* home: the shop is always a place he can ride in to, signal or not */
-      r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.bus.emit('ride:home', {}); return;
+    var atHome = inHomeZone(r, b.x, b.z), Gt = homeGate(r), dG = Math.hypot(Gt.x - b.x, Gt.z - b.z);
+    if (r.homeArmed === false && dG > GATE_R + 6) r.homeArmed = true;               /* (just out of the shop: not again until he has ridden off) */
+    r.atGate = atHome && r.state === 'ride' && !r.enc;
+    if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome && (Math.abs(b.speed) < GATE_STOP || (T && T.key === 'home'))) {  /* home: the shop is always a place he can ride in to, signal or not */
+      r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.atHome = true; r.bus.emit('ride:home', {}); return;
     }
-    if (r.state === 'ride' && T && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {
+    if (r.state === 'ride' && T && T.key !== 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
@@ -238,17 +239,16 @@ function step(r, input) {
   r.tick++;
 }
 
-/* the shop's zone: the pavement in front of it and the whole road there, both lanes, so he never has to cross over to be taken in */
-var HOME_ZONE = 9;
-function inHomeZone(r, x, z) {
-  var H = r.map.home, line = mapMod.nearestLine(H.z);
-  return Math.abs(x - H.x) < HOME_ZONE && z > line - R.HALF - 0.5 && z < H.z + 2;
-}
+/* the shop's gate: the blue ring on the near lane in front of the shop. He goes in when he comes to a stop inside it (or rides into it
+   after signalling HOME); riding past on the road, even through it at speed, never takes him in. */
+var GATE_R = 4.2, GATE_STOP = 4.5;
+function homeGate(r) { var H = r.map.home; return { x: H.x, z: mapMod.nearestLine(H.z) + R.LANES[1] }; }
+function inHomeZone(r, x, z) { var G = homeGate(r); return Math.hypot(x - G.x, z - G.z) < GATE_R; }
 /* out of the hideout: Bijli on the road in front of the cycle-repair shop, in the near (left) lane, ready to ride */
 function leaveHome(r) {
   var H = r.map.home, b = r.bike, line = mapMod.nearestLine(H.z), h = -Math.PI / 2;      /* heading west: his left is the shop's side */
   b.h = b.ph = h; b.x = b.px = H.x - 4; b.z = b.pz = line + R.LANES[1]; b.speed = 0; b.turn = 0;
-  r.state = 'ride'; r.t = 0; r.enc = null; r.homeArmed = false; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
+  r.state = 'ride'; r.t = 0; r.enc = null; r.homeArmed = false; r.atHome = false; if (!r.target || r.target.key === 'home') { r.target = null; pickTarget(r); }
 }
 
 /* back from a cleared trouble spot: Toofan is on Bijli on the road beside it while the police take the goons away */
@@ -270,4 +270,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };

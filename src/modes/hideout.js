@@ -113,7 +113,10 @@ function createHideoutMode() {
         else if (!S.use && near) use(near);
       }
       function use(st) {
-        if (st.id === 'raka') { S.d.st = 'lick'; S.d.until = t + 1.4; S.d.face = Math.atan2(p.x - S.d.x, p.z - S.d.z); S.sfx.bark(); S.say('RAKA WAGS HIS TAIL', 1.6); return; }
+        if (st.id === 'raka') {                                          /* he turns to Raka and crouches; Raka comes round in front of him and sits up for it */
+          p.face = S.d.x >= p.x ? Math.PI / 2 : -Math.PI / 2; S.use = { id: 'raka', t: 0 };     /* side-on to the camera, so the pat reads */
+          S.d.st = 'lick'; S.d.until = t + 2.0; S.sfx.bark(); S.say('RAKA WAGS HIS TAIL', 1.6); return;
+        }
         if (st.id === 'bijli') { S.say('BIJLI, CHAL!', 1); S.sfx.start(); S.leaving = now + 900; rideSim.leaveHome(rideMode.ensureRide(ctx)); return; }
         p.x = st.x; p.z = st.z; p.face = st.face; S.use = { id: st.id, t: 0 };
         if (st.id === 'bed') { S.fade.style.opacity = 1; S.say('AARAM...', 2.4); setTimeout(function () { S.fade.style.opacity = 0; if (S.use && S.use.id === 'bed') S.use = null; }, 2200); }
@@ -123,7 +126,7 @@ function createHideoutMode() {
             S.mapOpen = true; S.map.open(r, function (key) { if (rideSim.chooseTarget(r, key)) S.say('NEXT: ' + r.target.name.toUpperCase(), 2.6); });
           });
         }
-        if (st.id === 'bench') { p.x = 4.6; p.z = 6.5; p.face = 0; S.msgT = 0; S.ui.msg.style.opacity = 0; S.train.open(); }
+        if (st.id === 'bench') { p.x = st.x; p.z = st.z; p.face = 0; S.msgT = 0; S.ui.msg.style.opacity = 0; S.train.open(); }
         if (st.id === 'gym') { S.say('HEAVY BAG', 1.4); S.mp.press(); }
         if (st.id === 'music') { S.rig.guitar.visible = true; S.music.play('jam'); S.say('TOOFAAN... TOOFAAN!', 2.4); }
       }
@@ -135,8 +138,13 @@ function createHideoutMode() {
       if (S.use) {
         S.use.t += dt; var u = S.use.t;
         if (S.use.id === 'chart') target = posemath.layer(target, { 'head.rx': -8, 'armA.sx': 40, 'armA.e': 60, 'spine.ry': Math.sin(u * 0.7) * 6 }, 0, 1, 1, 1);
-        if (S.use.id === 'bed') target = posemath.layer(target, { 'spine.rx': 25, 'head.rx': 25 }, 0, 1, 1, 1);
-        if (S.use.id === 'music') { var hp = {}; Object.keys(HELD).forEach(function (k) { hp[k] = HELD[k]; }); hp['gtr.ry'] = HELD['gtr.ry'] + Math.sin(u * 8.4) * 3; hp['spine.rx'] = 6 + Math.sin(u * 8.4) * 2; hp['head.rx'] = 8 + Math.abs(Math.sin(u * 4.2)) * 8; target = posemath.layer(target, hp, 0, 1, 1, 1); }
+        if (S.use.id === 'raka') {
+          var cr = Math.min(1, u / 0.35) * Math.min(1, Math.max(0, (2.0 - u) / 0.35)), pat = Math.sin(u * 9) * 10 * (u > 0.4 && u < 1.7 ? 1 : 0);
+          target = posemath.layer(target, { 'hip.y': -0.3 * cr, 'hip.rx': 20 * cr, 'spine.rx': 32 * cr, 'head.rx': 18 * cr, 'legA.hx': 92 * cr, 'legA.k': 118 * cr, 'legA.a': 16 * cr, 'legB.hx': 30 * cr, 'legB.k': 95 * cr, 'armA.sx': (62 + pat) * cr, 'armA.sz': 6 * cr, 'armA.e': 18 * cr }, 0, 1, 1, 1);
+          if (u > 2.05) S.use = null;
+        }
+        if (S.use && S.use.id === 'bed') target = posemath.layer(target, { 'spine.rx': 25, 'head.rx': 25 }, 0, 1, 1, 1);
+        if (S.use && S.use.id === 'music') { var hp = {}; Object.keys(HELD).forEach(function (k) { hp[k] = HELD[k]; }); hp['gtr.ry'] = HELD['gtr.ry'] + Math.sin(u * 8.4) * 3; hp['spine.rx'] = 6 + Math.sin(u * 8.4) * 2; hp['head.rx'] = 8 + Math.abs(Math.sin(u * 4.2)) * 8; target = posemath.layer(target, hp, 0, 1, 1, 1); }
       }
       var tr = S.use && S.use.id === 'bench' ? S.train.update(dt, p.x, p.z) : null;     /* a workout sets his pose, lean and jump */
       if (tr) { target = tr.pose; p.face = angTo(p.face, tr.face, 1 - Math.exp(-10 * dt)); }
@@ -148,7 +156,13 @@ function createHideoutMode() {
       S.key.position.set(p.x + 0.8, 2.2, p.z + 1.4);
       /* ---- Raka: follows, sits when close, naps if left alone ---- */
       var D = S.d, fx = p.x - Math.sin(p.face) * 1.0 + 0.5, fz = p.z - Math.cos(p.face) * 1.0, ddx = fx - D.x, ddz = fz - D.z, dl = Math.hypot(ddx, ddz);
-      if (D.until && t < D.until) S.dog.pose(D.st, t);
+      if (S.use && S.use.id === 'raka') {                              /* in front of him, 0.75 m out, facing him */
+        var gx = p.x + Math.sin(p.face) * 0.75, gz = p.z + Math.cos(p.face) * 0.75, gdx = gx - D.x, gdz = gz - D.z, gl = Math.hypot(gdx, gdz);
+        if (gl > 0.04) { var st2 = Math.min(gl, 2.6 * dt); D.x += gdx / gl * st2; D.z += gdz / gl * st2; collide(D); S.dog.pose('walk', t); D.face = angTo(D.face, Math.atan2(gdx, gdz), 1 - Math.exp(-10 * dt)); }
+        else { D.face = angTo(D.face, Math.atan2(p.x - D.x, p.z - D.z), 1 - Math.exp(-10 * dt)); S.dog.pose('lick', t); }
+        D.walking = false; D.idle = 0;
+      }
+      else if (D.until && t < D.until) S.dog.pose(D.st, t);
       else if (dl > 1.4 || (D.walking && dl > 0.5)) {
         if (D.st === 'sleep' && dl < 4) { D.st = 'stand'; }
         if (D.st !== 'sleep') { D.walking = true; var dsp = Math.min(3.2, dl * 1.5); var q = { x: D.x + ddx / dl * dsp * dt, z: D.z + ddz / dl * dsp * dt }; collide(q); D.x = q.x; D.z = q.z; D.face = angTo(D.face, Math.atan2(ddx, ddz), 1 - Math.exp(-8 * dt)); S.dog.pose('walk', t); D.idle = 0; }

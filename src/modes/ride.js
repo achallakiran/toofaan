@@ -29,6 +29,7 @@ function ensureRide(ctx) {
     if (saved) { Object.keys(saved).forEach(function (k) { if (ctx.ride.missions[k]) ctx.ride.missions[k] = saved[k] === 'active' ? 'open' : saved[k]; }); rideSim.pickTarget(ctx.ride); }
     var pos = ctx.save.get('ride.pos', null), B = ctx.ride.bike;     /* Continue: back where Bijli was parked */
     if (pos && isFinite(pos.x) && isFinite(pos.z)) { B.x = B.px = pos.x; B.z = B.pz = pos.z; B.h = B.ph = pos.h || 0; }
+    var Gt = rideSim.homeGate(ctx.ride); if (Math.hypot(B.x - Gt.x, B.z - Gt.z) < 12) ctx.ride.homeArmed = false;     /* parked at the shop: it does not take him straight back in */
   }
   return ctx.ride;
 }
@@ -37,6 +38,7 @@ function createRide() {
   var S = {};
   /* home: Bijli turns in to the shop, the loose brick is pressed, the shutter rolls up, the floor splits, the ramp tips down and she rolls
      down into the dark. Then the hideout. (6.4 s) */
+  function startHome() { if (S.cut) return; S.sfx.engineOff(); S.music.stop(2.5); var B = S.r.bike; S.cut = { kind: 'home', t: 0, x0: B.x, z0: B.z, h0: B.h, gone: false }; }
   function homeCut(ctx, C, x, z, mix) {
     var r = S.r, B = r.bike, D = S.shop.door, t = C.t;
     function seg(a, b2) { return Math.max(0, Math.min(1, (t - a) / (b2 - a))); }
@@ -63,6 +65,7 @@ function createRide() {
     name: 'ride',
     enter: function (ctx, scope, args) {
       var view = ctx.view;
+      S.cut = null; S.black = null; S.gateSaidT = 0;                 /* (a scene from the last visit, such as going home, never carries over) */
       view.setSky('#a9c7da', false);
       ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
       /* the ride carries on where you left it */
@@ -106,7 +109,7 @@ function createRide() {
       S.map = fullmap.createFullMap(); scope.add(function () { S.map.dispose(); });
       S.ui.map.style.pointerEvents = 'auto'; S.ui.map.style.cursor = 'pointer'; S.ui.map.setAttribute('data-ok', '1');
       S.ui.home.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; rideSim.chooseTarget(S.r, 'home'); });
-      ctx.debug.goHome = function () { var H = S.r.map.home, B = S.r.bike; B.x = B.px = H.x + 14; B.z = B.pz = H.z - 3.4; B.speed = 6; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
+      ctx.debug.goHome = function () { rideSim.chooseTarget(S.r, 'home'); var H = S.r.map.home, B = S.r.bike; var G = rideSim.homeGate(S.r); B.x = B.px = G.x + 7; B.z = B.pz = G.z; B.speed = 5; B.h = B.ph = -Math.PI / 2; };   /* (test tools) */
       S.ui.map.addEventListener('click', function (ev) { ev.stopPropagation(); if (S.r.state !== 'ride' || S.r.enc || S.cut) return; S.map.open(S.r, function (key) { if (rideSim.chooseTarget(S.r, key)) say('SIGNAL: ' + S.r.target.name.toUpperCase(), 1.8); }); });
       function say(text, secs) { S.ui.msg.textContent = text; S.ui.msg.style.opacity = 1; S.msgT = secs || 1.6; }
       function word(text) { S.ui.word.textContent = text; S.ui.word.style.opacity = 1; S.ui.word.style.transform = 'translate(-50%,-50%) rotate(-8deg) scale(1.15)'; S.wordT = 0.7; }
@@ -120,7 +123,7 @@ function createRide() {
       scope.add(ctx.bus.on('ride:wall', function () { S.sfx.land(4); }));
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
       scope.add(ctx.bus.on('ride:signal', function (e) { say(e.key === 'home' ? 'GHAR CHALO: CYCLE REPAIR SHOP' : 'Signal: ' + e.name, 2); }));
-      scope.add(ctx.bus.on('ride:home', function () { S.sfx.engineOff(); S.music.stop(2.5); var B = S.r.bike; S.cut = { kind: 'home', t: 0, x0: B.x, z0: B.z, h0: B.h, gone: false }; }));
+      scope.add(ctx.bus.on('ride:home', function () { startHome(); }));
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
@@ -233,6 +236,9 @@ function createRide() {
       if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(r.enc ? (r.enc.kind === 'car' ? 'boss' : r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');   /* music switched back on, or sound just unlocked */
 
       /* ---- the arrival cut shot: circle low round Toofan as he pulls up, then the card and the fight area ---- */
+      if (S.r.atHome && !S.cut) startHome();                              /* (whatever the order of things, home always plays its scene) */
+      if (S.r.atGate && !S.cut && Math.abs(S.r.bike.speed) >= 4.5 && !(S.gateSaidT > 0)) { S.say('STOP IN THE BLUE RING TO GO HOME', 1.8); S.gateSaidT = 6; }
+      if (S.gateSaidT > 0) S.gateSaidT -= dt;
       if (S.cut && S.cut.kind === 'home') {
         var HC = S.cut; HC.t += dt; homeCut(ctx, HC, x, z, mix);
         if (HC.gone) return;

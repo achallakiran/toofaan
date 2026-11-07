@@ -63,6 +63,7 @@ function createView(canvas, tierName) {
     },
     clearChunks: function () { for (var k in chunks) this.removeChunk(k); },
     followCamera: function (x, z, shot) {
+      if (window.__camShot) shot = window.__camShot;                     /* (test tools: hold the camera on a set shot) */
       if (!shot) { camera.position.set(x, 6.4, z + 6.6); camera.lookAt(x, 1.0, z - 2.2); if (camera.fov !== 46) { camera.fov = 46; camera.updateProjectionMatrix(); } return; }
       camera.position.set(shot.x, shot.y, shot.z); camera.lookAt(shot.lx, shot.ly, shot.lz);
       if (Math.abs(camera.fov - shot.fov) > 0.01) { camera.fov = shot.fov; camera.updateProjectionMatrix(); }

@@ -5,6 +5,8 @@
 'use strict';
 
 var shopvox = require('./shopvox');
+/* the blue ring stands on the shop's gate: the near lane in front of it (sim/ride homeGate) */
+function rideSimGate(map) { var H = map.home, L = map.lines, best = L[0]; L.forEach(function (v) { if (Math.abs(v - H.z) < Math.abs(best - H.z)) best = v; }); return best + R.LANES[1]; }
 
 var R = require('../data/ride');
 var boxmesh = require('./boxmesh');
@@ -325,14 +327,14 @@ function createRideView(scene) {
       }
       if (r.target && r.state !== 'arrived' && !r.enc) { mark.visible = true; mark.position.set(r.target.x, 0, r.target.z); var p = 1 + Math.sin(t * 5) * 0.12; ring.scale.set(p, p, p); }
       else mark.visible = false;
-      if (map && map.home) { var hmz = map.home.z - 4.5; homeMark.visible = r.state === 'ride' && !r.enc; homeMark.position.set(map.home.x, 0, hmz); var hp = 1 + Math.sin(t * 3) * 0.08; homeRing.scale.set(hp, hp, hp); }
+      if (map && map.home) { var hmz = rideSimGate(map); homeMark.visible = r.state === 'ride' && !r.enc; homeMark.position.set(map.home.x, 0, hmz); var hp = 1 + Math.sin(t * 3) * 0.08; homeRing.scale.set(hp, hp, hp); }
       if (r.target === (map && map.home)) mark.visible = false;            /* (the blue ring is the signal there) */
       /* traffic near the bike, each with a soft shadow */
       var draw = [];
       for (i = 0; i < r.traffic.length; i++) {
         var v = r.traffic[i]; if (r.enc || Math.abs(v.x - b.x) > R.VIEW_R || Math.abs(v.z - b.z) > R.VIEW_R) continue;
         var K = R.KINDS[v.kind];
-        draw.push({ kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
+        draw.push({ id: v.id, kind: v.kind, look: v.look, x: v.px + (v.x - v.px) * alpha, z: v.pz + (v.z - v.pz) * alpha, h: v.h, len: K.len, r: K.r });
       }
       traffic.draw(draw, b.x, b.z);
     },

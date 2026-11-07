@@ -25,7 +25,8 @@ var SOLIDS = [
   [3.75, -2.5, 6.45, -1.55], [5.8, -1.45, 6.3, -0.9], [6.7, -2.5, 7.5, -1.7],                                /* the desk, its cabinet, the server rack */
   [8.55, -2.3, 10.45, -0.75], [10.95, -2.4, 11.95, -1.85], [12.2, -2.5, 13, -0.9],                           /* the drums, the guitars, the amp */
   [-0.25, 2.4, 0.25, 2.9], [4.25, 2.4, 4.75, 2.9], [8.75, 2.4, 9.25, 2.9],                                   /* pillars */
-  [9.75, 4.25, 10.25, 4.75], [10.95, 5.4, 12.6, 6.6], [12.4, 2.6, 13, 4.6],                                  /* the bag, the bench, the weights */
+  [9.75, 4.25, 10.25, 4.75], [10.85, 5.0, 12.6, 6.6], [12.4, 2.6, 13, 4.6],                                  /* the bag, the bench, the weights */
+  [8.15, 5.0, 8.75, 5.9], [10.5, 3.25, 10.75, 3.5], [12.1, 3.25, 12.35, 3.5], [8.15, 6.8, 8.8, 7.15], [9.6, 6.9, 10.0, 7.25], [12.15, 6.85, 13, 7.4],   /* dummy, pull-up bar, kettlebells, ball, gada */
   [2.8, 4.15, 7.2, 4.27], [5.6, 4.4, 7.3, 5.2], [3.15, 8.35, 6.25, 9.0],                                     /* the chain-link screen, tyres, the tool bench */
   [7.6, 7.8, 8.9, 9.1], [8.8, 7.2, 10.6, 8.8], [11.2, 8.2, 11.9, 9.0],                                       /* crates, the tarp, the fridge */
   [-0.2, 5.6, 2.4, 7.6], [-2.7, 5.2, -0.8, 9.0]                                                              /* Bijli's lift, the ramp */
@@ -34,7 +35,7 @@ var SOLIDS = [
 var STATIONS = [
   { id: 'bed', x: 1.55, z: -0.15, face: -2.4, label: 'SLEEP' },
   { id: 'chart', x: 5.1, z: -1.05, face: Math.PI, label: 'GANG CHART' },
-  { id: 'bench', x: 4.7, z: 7.8, face: 0, label: 'TRAINING' },
+  { id: 'bench', x: 9.2, z: 6.3, face: 0, label: 'TRAINING' },              /* the workouts, on the gym mat */
   { id: 'gym', x: 10.0, z: 5.35, face: Math.PI, label: 'TRAIN' },
   { id: 'music', x: 11.45, z: -1.2, face: 0, label: 'PLAY GUITAR' },
   { id: 'bijli', x: 1.0, z: 5.0, face: 0, label: 'RIDE OUT' }
@@ -55,13 +56,13 @@ function build(seed, opts) {
   for (x = -2.6; x < 2.4; x += 0.32) K.b(x, 0.015, -2.4, x + 0.3, 0.035, 1.2, (Math.round(x * 3) % 2) ? C.WOOD2 : C.BROWN);                          /* old planks under the bed corner */
   K.b(W.x0, 0, W.z0 - 0.1, W.x1, W.h, W.z0, C.CHAR); K.b(W.x0 - 0.1, 0, W.z0, W.x0, W.h, W.z1, C.CHAR); K.b(W.x1, 0, W.z0, W.x1 + 0.1, W.h, W.z1, C.CHAR);
   if (!cut) K.b(W.x0, 0, W.z1, W.x1, W.h, W.z1 + 0.1, C.CHAR); if (!cut) K.b(W.x0, W.h, W.z0, W.x1, W.h + 0.1, W.z1, C.BLACK);
-  for (var yy = 0; yy < 3.6; yy += 0.16) for (x = W.x0; x < W.x1; x += 0.32) if (rng.next() < 0.78) K.b(x + ((yy * 6.25 | 0) % 2) * 0.16, yy, W.z0 - 0.02, x + 0.3 + ((yy * 6.25 | 0) % 2) * 0.16, yy + 0.14, W.z0, rng.next() < 0.2 ? C.BRICK : (rng.next() < 0.5 ? C.BRICK2 : C.STONE3));   /* the old brick back wall, missing bricks */
-  for (k = 0; k < 14; k++) { var gx = R(0, 12), gy = R(0.4, 2.6); K.b(gx, gy, W.z0 + 0.0, gx + R(0.3, 1.2), gy + R(0.06, 0.2), W.z0 + 0.012, [C.MAGENTA, C.TEAL, C.MARIGOLD, C.CRIMSON, C.LIME][k % 5]); }   /* graffiti strokes */
+  for (var yy = 0; yy < 3.6; yy += 0.16) for (x = W.x0; x < W.x1; x += 0.32) if (rng.next() < 0.78) K.b(x + ((yy * 6.25 | 0) % 2) * 0.16, yy, W.z0, x + 0.3 + ((yy * 6.25 | 0) % 2) * 0.16, yy + 0.14, W.z0 + 0.025, rng.next() < 0.2 ? C.BRICK : (rng.next() < 0.5 ? C.BRICK2 : C.STONE3));   /* the old brick back wall, missing bricks */
+  for (k = 0; k < 14; k++) { var gx = R(0, 12), gy = R(0.4, 2.6); K.b(gx, gy, W.z0 + 0.025, gx + R(0.3, 1.2), gy + R(0.06, 0.2), W.z0 + 0.036, [C.MAGENTA, C.TEAL, C.MARIGOLD, C.CRIMSON, C.LIME][k % 5]); }   /* graffiti strokes */
   K.b(W.x0, 3.7, W.z0, W.x1, 3.86, W.z0 + 0.16, C.RUST); K.b(W.x0, 3.45, W.z0, W.x1, 3.55, W.z0 + 0.12, C.STEEL); if (!cut) K.b(W.x0, 3.9, 2.0, W.x1, 4.0, 2.1, C.RUST);   /* pipes */
   if (!cut) for (x = -2.5; x < W.x1; x += 1.4) K.b(x, 3.86, -2.5, x + 0.05, 3.95, 9, C.BLACK);                                                                 /* cable trays across the ceiling */
   for (x = 0; x < W.x1; x += 4.5) { K.b(x - 0.25, 0, 2.4, x + 0.25, W.h, 2.9, C.STONE3); K.b(x - 0.26, 0.9, 2.39, x + 0.26, 1.0, 2.91, C.YELLOW); K.b(x - 0.26, 1.0, 2.39, x + 0.26, 1.1, 2.91, C.BLACK); }   /* pillars with hazard bands */
   /* the street grate high above the bed: a little cold light falls through */
-  K.b(-0.7, 3.0, W.z0 - 0.01, 0.7, 3.6, W.z0 + 0.01, C.NAVY); for (k = 0; k < 8; k++) K.b(-0.68 + k * 0.19, 3.0, W.z0 + 0.01, -0.64 + k * 0.19, 3.6, W.z0 + 0.03, C.BLACK);
+  K.b(-0.7, 3.0, W.z0, 0.7, 3.6, W.z0 + 0.035, C.NAVY); for (k = 0; k < 8; k++) K.b(-0.68 + k * 0.19, 3.0, W.z0 + 0.035, -0.64 + k * 0.19, 3.6, W.z0 + 0.05, C.BLACK);
   K.lamp(0, 2.8, -1.6, 0x7a9cff, 1.4, 6);
   /* string bulbs zig-zagging across the hall, warm and dim */
   for (k = 0; k < 26; k++) { var bx = -2 + k * 0.58, bz = (k % 2 ? 1.4 : 0.6), by = 3.45 - Math.sin(k * 0.6) * 0.15; K.b(bx - 0.03, by - 0.05, bz - 0.03, bx + 0.03, by + 0.02, bz + 0.03, C.DARK); K.led(bx, by - 0.08, bz, 0xffc36a, R(0.2, 0.6), R(0, 6), 'pulse'); }
@@ -108,14 +109,33 @@ function build(seed, opts) {
     var f = FONT[ch], ox = 8.75 + li * 0.62, P = 0.13;
     for (var r = 0; r < 5; r++) for (var cI = 0; cI < 3; cI++) if (f[r][cI] === '1') { var lx = ox + cI * P, ly = 3.2 - r * P; K.g(lx, ly, W.z0 + 0.05, lx + P * 0.8, ly + P * 0.8, W.z0 + 0.09, PINK); }
   });
-  K.b(8.6, 2.45, W.z0, 12.5, 3.4, W.z0 + 0.03, C.BLACK);                                                                                     /* the sign's backing board */
+  K.b(8.6, 2.45, W.z0, 12.5, 3.4, W.z0 + 0.044, C.BLACK);                                                                                     /* the sign's backing board */
   K.lamp(10.3, 2.4, -1.6, 0xff2a6a, 1.2, 5, true);
 
   /* ---- the gym: bag, bench, rack, mirror, a red work light ---- */
   K.b(9.95, 2.0, 4.45, 10.05, W.h, 4.55, C.DARK); for (k = 0; k < 4; k++) K.b(9.75 + 0.02 * (k % 2), 0.9 + k * 0.28, 4.25, 10.25 - 0.02 * (k % 2), 1.18 + k * 0.28, 4.75, k % 2 ? C.CRIMSON : C.BRICK2);
   K.b(11.0, 0, 5.6, 12.6, 0.45, 6.0, C.CHAR); K.b(11.1, 0.45, 5.65, 12.2, 0.5, 5.95, C.DARK); K.b(11.0, 0, 5.4, 11.1, 1.1, 5.5, C.STEEL); K.b(11.0, 0, 6.1, 11.1, 1.1, 6.2, C.STEEL); K.b(10.95, 1.05, 5.0, 11.15, 1.1, 6.6, C.STEEL);
   K.b(12.4, 0, 2.6, 12.95, 1.2, 4.6, C.CHAR); for (k = 0; k < 6; k++) K.b(12.45, 0.25 + (k % 2) * 0.5, 2.8 + (k >> 1) * 0.6, 12.9, 0.4 + (k % 2) * 0.5, 3.0 + (k >> 1) * 0.6, C.STEEL);
-  K.b(12.95, 0.3, 4.9, 12.99, 2.3, 6.6, C.SLATE); K.b(8.0, 0.015, 3.2, 12.9, 0.04, 7.5, C.BLACK);
+  K.b(12.95, 0.3, 4.9, 12.99, 2.3, 6.6, C.SLATE);
+  /* the training floor: red and blue mat tiles */
+  for (x = 8.0; x < 12.9; x += 0.6) for (z = 3.2; z < 7.5; z += 0.6) K.b(x + 0.01, 0.015, z + 0.01, Math.min(12.9, x + 0.6) - 0.01, 0.04, Math.min(7.5, z + 0.6) - 0.01, ((Math.round((x - 8) / 0.6) + Math.round((z - 3.2) / 0.6)) % 2) ? C.CRIMSON : C.NAVY);
+  /* the barbell's plates, and dumbbells on the rack */
+  K.b(10.85, 0.78, 5.0, 11.25, 1.37, 5.12, C.BLACK); K.b(10.85, 0.78, 6.48, 11.25, 1.37, 6.6, C.BLACK); K.b(10.9, 0.86, 5.12, 11.2, 1.29, 5.2, C.RED); K.b(10.9, 0.86, 6.4, 11.2, 1.29, 6.48, C.RED);
+  for (k = 0; k < 6; k++) { var dy = 0.42 + (k % 2) * 0.5, dz = 2.9 + (k >> 1) * 0.6; K.b(12.48, dy, dz - 0.1, 12.86, dy + 0.14, dz - 0.04, C.BLACK); K.b(12.48, dy, dz + 0.04, 12.86, dy + 0.14, dz + 0.1, C.BLACK); }
+  /* the wooden dummy (arms and a leg out to the front) */
+  K.b(8.15, 0, 5.0, 8.75, 0.08, 5.6, C.WOOD2); K.b(8.3, 0.08, 5.15, 8.6, 1.75, 5.45, C.WOOD); K.b(8.28, 1.7, 5.13, 8.62, 1.78, 5.47, C.WOOD2);
+  K.b(8.33, 1.28, 5.45, 8.41, 1.36, 5.9, C.WOOD2); K.b(8.49, 1.28, 5.45, 8.57, 1.36, 5.9, C.WOOD2); K.b(8.41, 1.02, 5.45, 8.49, 1.1, 5.85, C.WOOD2); K.b(8.4, 0.45, 5.45, 8.5, 0.53, 5.8, C.WOOD2);
+  /* a pull-up bar, a skipping rope hung on it */
+  K.b(10.55, 0, 3.3, 10.7, 2.6, 3.45, C.STEEL); K.b(12.15, 0, 3.3, 12.3, 2.6, 3.45, C.STEEL); K.b(10.55, 2.45, 3.34, 12.3, 2.53, 3.41, C.STEEL);
+  K.b(10.5, 0.04, 3.25, 10.75, 0.08, 3.5, C.YELLOW); K.b(12.1, 0.04, 3.25, 12.35, 0.08, 3.5, C.YELLOW);
+  K.b(10.71, 1.25, 3.46, 10.74, 1.95, 3.49, C.RED); K.b(10.78, 1.25, 3.46, 10.81, 1.95, 3.49, C.RED); K.b(10.71, 1.2, 3.44, 10.81, 1.3, 3.5, C.WOOD2);
+  /* kettlebells and a medicine ball */
+  [[8.3, 6.95], [8.65, 7.0]].forEach(function (q) { K.b(q[0] - 0.12, 0.04, q[1] - 0.12, q[0] + 0.12, 0.26, q[1] + 0.12, C.BLACK); K.b(q[0] - 0.09, 0.26, q[1] - 0.025, q[0] + 0.09, 0.34, q[1] + 0.025, C.BLACK); });
+  K.b(9.65, 0.04, 6.95, 9.95, 0.34, 7.2, C.OLIVE);
+  /* the akhada corner: a gada (mace) and a pair of mudgar clubs by the mirror */
+  K.b(12.72, 0.04, 7.06, 12.78, 1.1, 7.12, C.WOOD2); K.b(12.58, 1.1, 6.93, 12.92, 1.42, 7.25, C.BRASS); K.b(12.62, 1.42, 6.97, 12.88, 1.5, 7.21, C.BRASS);
+  [[12.3, 7.2], [12.5, 7.28]].forEach(function (q) { K.b(q[0] - 0.08, 0.04, q[1] - 0.08, q[0] + 0.08, 0.5, q[1] + 0.08, C.WOOD); K.b(q[0] - 0.04, 0.5, q[1] - 0.04, q[0] + 0.04, 0.76, q[1] + 0.04, C.WOOD2); });
+  K.lamp(10.2, 3.1, 5.6, 0xfff0d0, 0.8, 6);
   K.lamp(11.5, 3.0, 4.8, 0xff3030, 0.9, 5);
 
   /* ---- the garage: Bijli's lift with hazard stripes, a tool bench, pegboard, tyres, a chain-link screen, the ramp up ---- */
