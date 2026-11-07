@@ -17,6 +17,7 @@ var encSim = require('../sim/encounter');
 var thappadMod = require('./thappad');
 var skybolt = require('../view/skybolt');
 var shopvox = require('../view/shopvox');
+var landmarks = require('../view/landmarks');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -74,6 +75,7 @@ function createRide() {
       if (args && args.after === 'arrest') { rideSim.afterFight(S.r, args.key); ctx.save.set('ride.missions', S.r.missions); S.sideW = 1; }
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       S.shop = shopvox.createShop(view.scene, S.r.map.home); scope.add(function () { S.shop.dispose(); });
+      S.marks = landmarks.createLandmarks(view.scene, S.r.map); scope.add(function () { S.marks.dispose(); });      /* each place's landmark */
       scope.add(function () { S.v.dispose(); ctx.touchRoot.style.visibility = ''; });
       var park = function () { var B = S.r.bike; if (S.r.state === 'ride' && !S.r.enc) ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); };   /* leaving the page parks Bijli where she is */
       var hid = function () { if (document.hidden) park(); };

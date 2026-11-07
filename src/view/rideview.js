@@ -5,6 +5,7 @@
 'use strict';
 
 var shopvox = require('./shopvox');
+var landmarks = require('./landmarks');
 /* the blue ring stands on the shop's gate: the near lane in front of it (sim/ride homeGate) */
 function rideSimGate(map) { var H = map.home, L = map.lines, best = L[0]; L.forEach(function (v) { if (Math.abs(v - H.z) < Math.abs(best - H.z)) best = v; }); return best + R.LANES[1]; }
 
@@ -264,17 +265,20 @@ function createRideView(scene) {
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
     var B = buildBlock(b, b.seed, detail), g = new THREE.Group();
-    if (map && map.home) {                                                  /* the cycle-repair shop stands in a gap of its own in the row */
-      var H = map.home, gx0 = H.x - 4.3, gx1 = H.x + 4.3, gz0 = H.z, gz1 = H.z + 1.5 + 7.9;
-      var inGap = function (x, z) { return x > gx0 && x < gx1 && z > gz0 && z < gz1; };
-      B.boxes = B.boxes.filter(function (q) {                                 /* boxes reaching into the gap are cut back to its edge */
-        if (q.x1 <= gx0 || q.x0 >= gx1 || q.z1 <= gz0 || q.z0 >= gz1) return true;
-        if ((q.x0 + q.x1) / 2 < H.x) q.x1 = gx0; else q.x0 = gx1;
-        return q.x1 - q.x0 > 0.05;
+    /* gaps in the row: the cycle-repair shop's, and each trouble spot's for its landmark; boxes reaching in are cut back to the edge */
+    var GL = [];
+    if (map && map.home) { var H = map.home; GL.push({ axis: 'x', x0: H.x - 4.3, x1: H.x + 4.3, z0: H.z, z1: H.z + 1.5 + 7.9, c: H.x }); }
+    if (map) GL = GL.concat(landmarks.gaps(map));
+    GL.forEach(function (G) {
+      var inGap = function (x, z) { return x > G.x0 && x < G.x1 && z > G.z0 && z < G.z1; };
+      B.boxes = B.boxes.filter(function (q) {
+        if (q.x1 <= G.x0 || q.x0 >= G.x1 || q.z1 <= G.z0 || q.z0 >= G.z1) return true;
+        if (G.axis === 'x') { if ((q.x0 + q.x1) / 2 < G.c) q.x1 = G.x0; else q.x0 = G.x1; return q.x1 - q.x0 > 0.05; }
+        if ((q.z0 + q.z1) / 2 < G.c) q.z1 = G.z0; else q.z0 = G.z1; return q.z1 - q.z0 > 0.05;
       });
-      B.signs = B.signs.filter(function (q) { var x0 = Math.min(q.a[0], q.b[0]), x1 = Math.max(q.a[0], q.b[0]), z0 = Math.min(q.a[1], q.b[1]) - 0.2, z1 = Math.max(q.a[1], q.b[1]) + 0.2; return x1 <= gx0 || x0 >= gx1 || z1 <= gz0 || z0 >= gz1; });
+      B.signs = B.signs.filter(function (q) { var x0 = Math.min(q.a[0], q.b[0]), x1 = Math.max(q.a[0], q.b[0]), z0 = Math.min(q.a[1], q.b[1]) - 0.2, z1 = Math.max(q.a[1], q.b[1]) + 0.2; return x1 <= G.x0 || x0 >= G.x1 || z1 <= G.z0 || z0 >= G.z1; });
       B.shadows = B.shadows.filter(function (q) { return !inGap((q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2 + 0.1); });
-    }
+    });
     g.add(toMesh(B.boxes, mat)); g.add(new THREE.Mesh(signGeometry(B.signs), signMat));
     var sh = new THREE.Mesh(shadowGeometry(B.shadows, 0.18), shadowMat); sh.renderOrder = 2; g.add(sh);
     root.add(g); return g;

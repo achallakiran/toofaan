@@ -250,9 +250,9 @@ function step(world, input) {
     if (pick) {
       var bearing = Math.atan2(pick.x - p.x, pick.z - p.z);
       addRage(p, RAGE.timedBlock); c.guardHits = 0; pick.st = 'hurt'; pick.t = 0; pick.kx = 0; pick.kz = 0; pick.guarding = false;
-      /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar half full the hero can spend it on a guitar counter instead. */
+      /* two men at once: a double takedown. One man: a direct hit he cannot guard. With the rage bar past 60 the counter is the guitar counter (it costs nothing). */
       var kind = near >= 2 ? 'double' : (p.rage >= 60 ? 'special' : 'direct');
-      if (kind === 'special') p.rage -= 50;
+      /* (the guitar counter is free: only the finisher spends the rage bar; nothing he does or suffers ever takes it away) */
       if (kind !== 'double') { p.face = bearing; c.target = pick.id; }
       world.bus.emit('block', { timed: true, id: pick.id, x: p.x, z: p.z });
       world.bus.emit('counter', { id: pick.id, kind: kind });

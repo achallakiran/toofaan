@@ -112,7 +112,8 @@ function generate(seed) {
     used[key] = 1;
     var along = (lines[seg] + lines[seg + 1]) / 2, off = lines[li] + sd * (R.HALF + R.PAVE * 0.5);
     var name = LOC.LOCATIONS[LOC.ORDER[n]].name;
-    targets.push(axis === 'x' ? { key: LOC.ORDER[n], name: name, x: along, z: off } : { key: LOC.ORDER[n], name: name, x: off, z: along });
+    /* (axis, line, side: which road it is on and which side of it, so the view can stand the place's landmark behind the pavement) */
+    targets.push(axis === 'x' ? { key: LOC.ORDER[n], name: name, x: along, z: off, axis: 'x', line: lines[li], side: sd } : { key: LOC.ORDER[n], name: name, x: off, z: along, axis: 'z', line: lines[li], side: sd });
   }
   var props = buildProps(rngMod.createRng((seed >>> 0) ^ 0x9e3), lines);
   /* home: the cycle-repair shop over Toofan's hideout, on the pavement of the middle east-west road near where the ride starts, never on a

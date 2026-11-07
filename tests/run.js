@@ -105,8 +105,12 @@ function replay(type, ti, atkP) {
 test('fight replay: recorded fights play out exactly as recorded (won, knocked out and still going)', function () {
   /* re-recorded for build 73 after checking that, with the old get-up length (30 ticks) and the old loss delay, these same replays still
      give the old values exactly: the only changes are the goons' longer get-up and Maa ka Thappad instead of a lost fight */
-  var GOLD = { market: [['cleared', 6, 87, 3461885993], ['thappad', 0, 0, 2957785086]], temple: [['cleared', 6, 63, 2953749483], ['fight', 2, 29, 3658513791]],
-    toll: [['thappad', 2, 0, 3833356648], ['thappad', 1, 0, 858132002]], railway: [['cleared', 6, 100, 1145781783], ['thappad', 2, 0, 3226667411]], warehouse: [['cleared', 6, 15, 989297316], ['thappad', 1, 0, 96181121]] };
+  /* re-recorded again for build 80 (the guitar counter no longer spends rage): with rage left out of the hash, old and new code give
+     identical fingerprints for every replay, and the outcomes, kills and health are unchanged. Market re-recorded once more in build 80:
+     its lane now has baskets along both sides that the men walk round (the other recorded places' props did not move) */
+  var GOLD = { market: [['cleared', 6, 35, 723372299], ['thappad', 0, 0, 3490199743]], temple: [['cleared', 6, 63, 4046417842], ['fight', 2, 29, 1480076574]],
+    toll: [['thappad', 2, 0, 3833356648], ['thappad', 1, 0, 2055069415]], railway: [['cleared', 6, 100, 3945096846], ['thappad', 2, 0, 3074116866]], warehouse: [['cleared', 6, 15, 803876446], ['thappad', 1, 0, 1846114681]] };
+  if (process.env.PRINT_GOLD) Object.keys(GOLD).forEach(function (type, i) { console.log(type, JSON.stringify([replay(type, i, 0.3), replay(type, i, 0.03)]), JSON.stringify(GOLD[type])); });
   Object.keys(GOLD).forEach(function (type, i) { assert.deepStrictEqual([replay(type, i, 0.3), replay(type, i, 0.03)], GOLD[type], type); });
 });
 test('fight: identical inputs from the same seed give identical hashes; different input changes it', function () {
@@ -116,6 +120,13 @@ test('fight: identical inputs from the same seed give identical hashes; differen
     return fwMod.hash(fw);
   }
   assert.strictEqual(run(11, 1), run(11, 1)); assert.notStrictEqual(run(11, 1), run(12, 1)); assert.notStrictEqual(run(11, 1), run(11, 0.5));
+});
+test('rage: the guitar counter costs nothing; only the finisher spends the bar', function () {
+  var f = fightWorld(), p = f.w.player; p.rage = 80; req('sim/combat').spawn(f.w, 'thug', 0, 1.2); var e = f.w.combat.enemies[0];
+  e.st = 'windup'; e.t = Math.ceil(req('data/enemies').KINDS.thug.windup * 60 * 0.6); e.cd = 9999;
+  f.inp.setButton('block', true); f.tick(1); f.inp.setButton('block', false); f.tick(1);
+  var c = f.ev.filter(function (q) { return q[0] === 'counter'; });
+  assert.strictEqual(c.length, 1); assert.strictEqual(c[0][1].kind, 'special'); assert(p.rage >= 80, 'rage went down: ' + p.rage);
 });
 test('rage gate: the finisher only fires at full rage, then resets', function () {
   var f = fightWorld(), p = f.w.player;

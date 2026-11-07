@@ -262,6 +262,24 @@ P.floor = function (K, x0, z0, x1, z1, a, b, s) {
   }
 };
 
+/* a ground that is not tiles: one base surface, then big slabs or worn patches in a few close shades (rng-picked), so a forecourt reads
+   as poured concrete, a road as asphalt, a yard as slabs */
+P.slabs = function (K, x0, z0, x1, z1, cols, s) {
+  var S = s || 2.0, x, z; K.at(0, 0, 0);
+  for (x = x0; x < x1 - 0.01; x += S) for (z = z0; z < z1 - 0.01; z += S) K.b(x + 0.03, 0, z + 0.03, Math.min(x1, x + S) - 0.03, 0.025, Math.min(z1, z + S) - 0.03, K.pick(cols));
+};
+P.asphalt = function (K, x0, z0, x1, z1, base, patch, n) {
+  K.at(0, 0, 0); K.b(x0, 0, z0, x1, 0.02, z1, base);
+  for (var i = 0; i < (n || 18); i++) { var px = K.range(x0, x1 - 1.5), pz = K.range(z0, z1 - 1.2); K.b(px, 0.02, pz, px + K.range(0.8, 2.6), 0.026, pz + K.range(0.6, 1.8), patch); }
+};
+/* a fuel pump: base, body with a lit display, the hose and nozzle on its hook */
+P.pump = function (K, c) {
+  K.b(-0.42, 0, -0.32, 0.42, 0.18, 0.32, C.CEMENT); K.b(-0.36, 0.18, -0.26, 0.36, 1.85, 0.26, C.OFFWHITE); K.b(-0.37, 1.85, -0.27, 0.37, 2.1, 0.27, c || C.NAVY);
+  K.b(-0.26, 1.2, 0.26, 0.26, 1.6, 0.29, C.SLATE); K.b(-0.2, 1.3, 0.29, 0.2, 1.45, 0.3, C.LIME); K.b(-0.37, 0.5, -0.27, 0.37, 0.62, 0.27, c || C.NAVY);
+  K.b(0.36, 0.95, -0.06, 0.48, 1.35, 0.06, C.DARK); K.b(0.44, 0.35, -0.04, 0.48, 0.95, 0.04, C.DARK); K.b(0.36, 0.3, -0.04, 0.46, 0.36, 0.04, C.DARK);
+  K.s(-0.42, -0.32, 0.42, 0.32, 2.1);
+};
+
 /* scattered floor detail: cracks, oil stains, puddles, leaves, litter, a manhole; flat slabs, never in the way */
 P.scatter = function (K, x0, z0, x1, z1, n, kinds) {
   var i, ks = kinds || ['crack', 'stain', 'leaf', 'paper', 'puddle'];

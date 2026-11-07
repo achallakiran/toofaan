@@ -80,7 +80,16 @@ A.temple = function (K) {
 
 A.market = function (K) {
   var x, k;
-  P.floor(K, -12, -9, 12, 12, C.CEMENT, C.CONC2, 0.8); P.scatter(K, -10, -7, 10, 11, 34, ['crack', 'stain', 'paper', 'leaf', 'puddle', 'manhole']);
+  P.asphalt(K, -12.6, -9.2, 12.6, 12.2, C.GREY, C.CONC2, 26); P.scatter(K, -10, -7, 10, 11, 44, ['crack', 'stain', 'paper', 'leaf', 'leaf', 'puddle', 'manhole']);
+  /* the lane: coloured tarps strung across it from stall to stall, a jumble of baskets, sacks and crates along both sides */
+  for (k = 0; k < 4; k++) {
+    K.tall('tarp' + k).at(0, -5 + k * 3.6, 0);
+    var tc = [C.BLUE, C.CRIMSON, C.MARIGOLD, C.LEAF][k];
+    for (x = -12.5; x < 12.5; x += 1.25) { var sag = 3.9 - Math.cos(x / 12.5 * Math.PI / 2) * 0.7; K.b(x, sag, -0.9, x + 1.27, sag + 0.08, 0.9, (Math.round(x / 1.25) % 2) ? tc : C.OFFWHITE); }
+    K.end();
+  }
+  for (k = 0; k < 8; k++) { var bx = k < 4 ? -10.6 : 10.6, bz = -5.6 + (k % 4) * 3.6 + 1.4; K.at(bx, bz, 0);
+    K.b(-0.3, 0, -0.3, 0.3, 0.35, 0.3, C.WOOD2); K.b(-0.26, 0.35, -0.26, 0.26, 0.45, 0.26, K.pick([C.CRIMSON, C.LIME, C.MARIGOLD, C.LEMON, C.LEAF])); K.s(-0.3, -0.3, 0.3, 0.3, 0.45); }
   K.at(0, 0, 0); for (x = -12; x < 12; x += 0.8) K.b(x, 0.026, -0.3, x + 0.6, 0.03, 0.3, C.GREYP);   /* the drain cover strip */
   backdrop(K, -15, 15, -9.6, { boards: ['KIRANA STORE', 'SHARMA CLOTH HOUSE', 'MOBILE REPAIR', 'MITHAI BHANDAR', 'HARDWARE'], bgs: ['#d0312d', '#2a55b8', '#18a0a8', '#f08a24', '#7a3fa0'] });
   /* wires over the street between two poles */
@@ -192,8 +201,21 @@ A.construction = function (K) {
 
 A.petrol = function (K) {
   var x, k;
-  P.floor(K, -12, -9, 12, 12, C.CONC2, C.STONE2, 1.0); P.scatter(K, -10, -7, 10, 11, 26, ['stain', 'stain', 'crack', 'paper', 'puddle']);
+  P.slabs(K, -12, -9, 12, 12, [C.CONC2, C.CONC2, C.CEMENT, C.STONE2], 3.0); P.scatter(K, -10, -7, 10, 11, 34, ['stain', 'stain', 'stain', 'crack', 'paper', 'puddle']);
   K.at(0, 0, 0); for (x = -11; x <= 11; x += 2.2) K.b(x, 0.026, 5.0, x + 1.2, 0.03, 5.2, C.WHITE);
+  /* painted forecourt: lane arrows, ENTRY / EXIT */
+  [[-8.5, 1], [8.5, -1]].forEach(function (q) { K.at(q[0], 2.0, 0); K.b(-0.12, 0.026, -1.4, 0.12, 0.031, 1.0, C.WHITE); K.b(-0.5, 0.026, q[1] > 0 ? -1.4 : 0.6, 0.5, 0.031, q[1] > 0 ? -1.0 : 1.0, C.WHITE); });
+  K.at(-8.5, 4.2, 0); K.sign(0, 0.04, 0, 2.2, 0.5, 'ENTRY', '#ffffff', '#17181b'); K.at(8.5, 4.2, 0); K.sign(0, 0.04, 0, 2.2, 0.5, 'EXIT', '#ffffff', '#17181b');
+  /* the pump islands in the forecourt, under their own canopy: the fight goes round the pumps */
+  [-5.0, 5.0].forEach(function (u, ii) {
+    K.at(u, -3.2, 0); K.b(-1.9, 0, -0.75, 1.9, 0.2, 0.75, C.CEMENT); K.b(-1.92, 0.2, -0.77, 1.92, 0.24, 0.77, C.YELLOW); K.b(-1.95, 0, -0.8, -1.7, 0.6, 0.8, C.YELLOW); K.b(1.7, 0, -0.8, 1.95, 0.6, 0.8, C.YELLOW);
+    K.s(-1.9, -0.75, 1.9, 0.75, 0.6);
+    K.at(u - 0.85, -3.2, 0); P.pump(K, ii ? C.CRIMSON : C.NAVY); K.at(u + 0.85, -3.2, 0); P.pump(K, ii ? C.CRIMSON : C.NAVY);
+  });
+  K.tall('canopyF').at(0, -3.2, 0);
+  [-6.9, -3.1, 3.1, 6.9].forEach(function (u) { K.b(u - 0.18, 0.24, -0.18, u + 0.18, 5.2, 0.18, C.OFFWHITE); });
+  K.b(-8.4, 5.2, -2.6, 8.4, 5.6, 2.2, C.OFFWHITE); K.b(-8.45, 5.6, -2.65, 8.45, 6.2, 2.25, C.NAVY); K.b(-8.46, 5.7, 2.25, 8.46, 6.1, 2.32, C.MARIGOLD);
+  K.sign(0, 5.9, 2.34, 6, 0.42, 'DESI FUEL', '#1d3557', '#ffd166'); K.end();
   /* the canopy over two pump islands, north of the fight */
   K.tall('canopy').at(0, -10.6, 0);
   [[-6.5, -0.6], [6.5, -0.6], [-6.5, -4.2], [6.5, -4.2]].forEach(function (q) { K.b(q[0] - 0.3, 0, q[1] - 0.3, q[0] + 0.3, 5.0, q[1] + 0.3, C.OFFWHITE); K.s(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 5); });
@@ -242,7 +264,7 @@ A.petrol = function (K) {
 
 A.warehouse = function (K) {
   var x, y, k;
-  P.floor(K, -12, -9, 12, 12, C.CONC2, C.CEMENT, 1.4);
+  P.slabs(K, -12, -9, 12, 12, [C.CEMENT, C.CEMENT, C.GREYP, C.CONC2], 4.0);
   K.at(0, 0, 0); K.b(-11, 0.026, 6.6, 11, 0.032, 6.8, C.YELLOW); K.b(-11, 0.026, -5.6, 11, 0.032, -5.4, C.YELLOW);
   for (x = -10; x < 10; x += 2.5) K.b(x, 0.026, -5.4, x + 0.15, 0.032, 6.6, C.YELLOW);
   P.scatter(K, -10, -7, 10, 11, 28, ['stain', 'stain', 'crack', 'paper', 'puddle']);
@@ -269,6 +291,11 @@ A.warehouse = function (K) {
   K.tall('container').at(13.4, 0.5, 3);
   K.b(-3, 0, -1.2, 3, 2.6, 1.2, C.SAFFRON); for (x = -2.9; x < 3; x += 0.22) K.b(x, 0.05, 1.2, x + 0.09, 2.55, 1.25, C.MARIGOLD);
   K.b(-3.02, 2.5, -1.22, 3.02, 2.62, 1.26, C.RUST); K.sign(0, 1.9, 1.27, 3, 0.4, 'DESI CARGO', '#bc6c25', '#ffffff'); K.s(-3, -1.2, 3, 1.25, 2.6); K.end();
+  /* containers stacked two high in the west of the yard */
+  K.tall('stackW').at(-12.4, 7.2, 1);
+  K.b(-2.6, 0, -1.15, 2.6, 2.5, 1.15, C.BLUE); for (x = -2.5; x < 2.6; x += 0.22) K.b(x, 0.05, 1.15, x + 0.09, 2.45, 1.2, C.NAVY);
+  K.b(-2.6, 2.5, -1.15, 2.6, 5.0, 1.15, C.LEAF); for (x = -2.5; x < 2.6; x += 0.22) K.b(x, 2.55, 1.15, x + 0.09, 4.95, 1.2, C.DGREEN);
+  K.sign(0, 1.5, 1.21, 2.6, 0.36, 'SHAKTI', '#1d3557', '#ffffff'); K.s(-2.6, -1.15, 2.6, 1.2, 5.0); K.end();
   K.at(11.6, 6.4, 0); P.drum(K, C.CRIMSON); K.at(12.3, 7.0, 0); P.drum(K, C.CRIMSON); K.at(11.4, 7.3, 0); P.drum(K, C.NAVY); K.at(-11.6, 9.2, 0); P.tyres(K, 3);
   backdrop(K, 10.5, 16, -14.6, { tag: 'w' });
   cornerTrees(K, true, false);
@@ -308,6 +335,16 @@ A.slum = function (K) {
   K.tall('shack').at(14.2, -7.0, 3); K.b(-2, 0, -1.4, 2, 2.6, 1.0, C.RUST); K.b(-2.2, 2.6, -1.6, 2.2, 2.7, 1.5, C.STEEL); K.b(-0.5, 0, 1.0, 0.4, 2.0, 1.04, C.NAVY); K.b(0.9, 1.2, 1.0, 1.7, 1.8, 1.04, C.SLATE); K.s(-2, -1.4, 2, 1.0, 2.7); K.end();
   K.tall('shackW').at(-14.2, -6.4, 1); K.b(-1.8, 0, -1.4, 1.8, 2.5, 1.0, C.W_TURQ); K.b(-2.0, 2.5, -1.6, 2.0, 2.6, 1.5, C.RUST); K.b(-0.4, 0, 1.0, 0.4, 2.0, 1.04, C.CRIMSON); K.s(-1.8, -1.4, 1.8, 1.0, 2.6); K.end();
   K.tall('poleS').at(-12.6, -8.6, 0); P.pole(K, 7); K.end();
+  /* a black water tank up on a steel stand, and tin lean-tos pressing in on both sides */
+  K.tall('tank').at(12.2, -6.8, 0);
+  [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]].forEach(function (q) { K.b(q[0] - 0.06, 0, q[1] - 0.06, q[0] + 0.06, 3.0, q[1] + 0.06, C.STEEL); });
+  K.b(-0.85, 3.0, -0.85, 0.85, 3.1, 0.85, C.STEEL); K.b(-0.75, 3.1, -0.75, 0.75, 4.5, 0.75, C.BLACK); K.b(-0.5, 4.5, -0.5, 0.5, 4.65, 0.5, C.BLACK); K.s(-0.85, -0.85, 0.85, 0.85, 4.65); K.end();
+  [[-12.8, 0.2, 1], [12.8, 4.6, 3]].forEach(function (q, i5) {
+    K.tall('lean' + i5).at(q[0], q[1], q[2]);
+    K.b(-1.6, 0, -0.9, 1.6, 2.2, 0.0, i5 ? C.TEAL : C.W_ROSE); K.b(-1.8, 2.2, -1.0, 1.8, 2.28, 1.2, C.RUST); for (x = -1.8; x < 1.8; x += 0.3) K.b(x, 2.28, -1.0, x + 0.1, 2.32, 1.2, C.GREY);
+    K.b(-1.62, 0, 1.0, -1.52, 2.2, 1.1, C.WOOD); K.b(1.52, 0, 1.0, 1.62, 2.2, 1.1, C.WOOD); K.b(-0.5, 0, 0.0, 0.4, 1.9, 0.04, C.NAVY);
+    K.s(-1.6, -0.9, 1.6, 0.0, 2.3); K.end();
+  });
   southBarrier(K, 'wall');
   return { ground: C.BROWN, spawns: [[-7, -6.5], [7, -6.5], [0, -7], [-10.5, 0], [10.5, 0], [-4, -6.5], [4, -6.5]] };
 };
@@ -318,11 +355,13 @@ A.railway = function (K) {
   for (k = 0; k < 60; k++) { var px = K.range(-12, 12), pz = K.range(-9, 11); K.b(px, 0, pz, px + K.range(0.4, 1.2), 0.03, pz + K.range(0.3, 0.9), k % 2 ? C.STONE3 : C.STONE2); }
   /* the level crossing: two tracks across the yard (sleepers, rails, ballast), the road over them in the middle */
   [-3.4, -8.6].forEach(function (tz) {
-    K.b(-13, 0, tz - 1.6, 13, 0.08, tz + 1.6, C.STONE3);
-    for (x = -13; x < 13; x += 0.65) K.b(x, 0.08, tz - 1.25, x + 0.28, 0.16, tz + 1.25, C.WOOD2);
-    K.b(-13, 0.16, tz - 0.78, 13, 0.3, tz - 0.68, C.STEEL); K.b(-13, 0.16, tz + 0.68, 13, 0.3, tz + 0.78, C.STEEL);
+    K.b(-13, 0, tz - 1.7, 13, 0.1, tz + 1.7, C.DARK); for (x = -13; x < 13; x += 0.5) K.b(x, 0.1, tz - 1.6, x + 0.3, 0.12, tz + 1.6, C.STONE3);   /* dark ballast */
+    for (x = -13; x < 13; x += 0.65) K.b(x, 0.12, tz - 1.3, x + 0.32, 0.22, tz + 1.3, C.BROWN);
+    K.b(-13, 0.22, tz - 0.8, 13, 0.36, tz - 0.66, C.STEEL); K.b(-13, 0.36, tz - 0.79, 13, 0.39, tz - 0.67, C.OFFWHITE);
+    K.b(-13, 0.22, tz + 0.66, 13, 0.36, tz + 0.8, C.STEEL); K.b(-13, 0.36, tz + 0.67, 13, 0.39, tz + 0.79, C.OFFWHITE);
   });
-  K.b(-2.6, 0.0, -10.4, 2.6, 0.31, -1.6, C.CHAR);                                                   /* the road across */
+  K.b(-2.6, 0.0, -10.4, 2.6, 0.4, -1.6, C.CHAR); K.b(-0.1, 0.4, -10.2, 0.1, 0.41, -1.8, C.YELLOW);                          /* the road across */
+  K.at(4.2, 1.0, 0); K.b(-1.2, 0.02, -0.06, 1.2, 0.03, 0.06, C.WHITE); K.sign(0, 0.04, 0.3, 2.6, 0.5, 'LOOK OUT FOR TRAINS', '#ffd166', '#17181b');
   /* boom gates at the crossing, the cabin, the signal post */
   [[-3.6, -0.6], [3.6, -11.6]].forEach(function (q, i2) {
     K.at(q[0], q[1], 0); K.b(-0.25, 0, -0.25, 0.25, 1.2, 0.25, C.STONE); K.b(-0.15, 1.2, -0.15, 0.15, 1.4, 0.15, C.DARK);
@@ -397,7 +436,22 @@ A.toll = function (K) {
 
 A.flyover = function (K) {
   var x, k;
-  P.floor(K, -12, -9, 12, 12, C.CONC2, C.CEMENT, 1.8); P.scatter(K, -10, -7, 10, 11, 30, ['stain', 'puddle', 'paper', 'crack', 'leaf']);
+  P.asphalt(K, -12.6, -9.2, 12.6, 12.2, C.CHAR, C.DARK, 22); P.scatter(K, -10, -7, 10, 11, 30, ['stain', 'puddle', 'paper', 'crack', 'leaf']);
+  K.at(0, 0, 0); for (x = -12; x < 12; x += 2.4) K.b(x, 0.026, 3.9, x + 1.2, 0.032, 4.1, C.WHITE);                          /* the lane line */
+  K.b(-12.6, 0.021, -9.2, 12.6, 0.024, 1.2, C.BLACK);                                                                        /* the deck's shadow over the north half */
+  /* the underpass: two great piers in the fight, the deck on them high above, crash barrier and drip line along its edge */
+  [-8.6, 8.6].forEach(function (u, i4) {                              /* (at the sides, so they never stand between the camera and the fight) */
+    K.tall('pierIn' + i4).at(u, -1.0, 0);
+    K.b(-0.85, 0, -0.85, 0.85, 7.6, 0.85, C.CEMENT); K.b(-0.95, 0, -0.95, 0.95, 0.5, 0.95, C.STONE3); K.b(-1.8, 7.0, -1.1, 1.8, 7.6, 1.1, C.CEMENT);
+    for (k = 0; k < 3; k++) K.b(-0.7 + k * 0.48, 1.0 + (k % 2) * 0.2, 0.85, -0.3 + k * 0.48, 1.9 + (k % 2) * 0.2, 0.89, K.pick([C.MAGENTA, C.LEMON, C.MARIGOLD, C.TEAL, C.CRIMSON]));
+    K.b(-0.86, 2.2, 0.85, 0.86, 2.6, 0.88, C.YELLOW); K.b(-0.86, 2.6, 0.85, 0.86, 3.0, 0.88, C.BLACK);
+    K.s(-0.95, -0.95, 0.95, 0.95, 7.6); K.end();
+  });
+  /* the deck itself runs high over the north, on the piers: from the fight you see its edge and the shadow it throws */
+  K.tall('deckIn').at(0, -1.0, 0);
+  K.b(-17, 7.6, -9.4, 17, 8.6, 1.4, C.CEMENT); K.b(-17, 8.6, 1.0, 17, 9.3, 1.4, C.STONE); K.b(-17, 7.4, 1.2, 17, 7.6, 1.4, C.STONE3);
+  for (x = -17; x < 17; x += 1.5) K.b(x, 7.3, 1.25, x + 1.4, 7.4, 1.4, C.DARK);
+  K.end();
   /* the flyover overhead: a deck on two rows of piers, crash barriers, drain pipes; posters and paint on the piers */
   K.tall('deck').at(0, -11.6, 0);
   K.b(-17, 6.2, -4.6, 17, 7.4, 1.6, C.CEMENT); K.b(-17, 7.4, 1.2, 17, 8.2, 1.6, C.STONE); K.b(-17, 7.4, -4.6, 17, 8.2, -4.2, C.STONE);
