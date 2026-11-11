@@ -202,14 +202,43 @@ function finish(r) {
   r.bus.emit('enc:end', { kind: e.kind });
 }
 
+/* the corner: when the road ahead ends at the ring road, the chase turns onto the ring, toward the middle of the city. Toofan keeps his
+   lane: his path is a smooth curve from his lane on this road to the same lane on the ring road (a Bezier through the corner where the
+   two lanes cross); the road frame (f, l) turns with him, so the goons alongside and the car swing round with him. */
+function startTurn(r, e) {
+  var b = r.bike, L = r.map.lines, n = L.length, fx = Math.round(e.f.x), fz = Math.round(e.f.z), along = fx ? b.x : b.z, dir = fx || fz;
+  var Lj = dir > 0 ? L[n - 1] : L[0], d0 = (Lj - along) * dir;
+  if (d0 > 13 || d0 < 3) return;                                          /* only the last road before the ring, from a little way off */
+  var line = fx ? mapMod.nearestLine(b.z) : mapMod.nearestLine(b.x), lat = (b.x - (fx ? b.x : line)) * e.l.x + (b.z - (fx ? line : b.z)) * e.l.z;
+  /* onto the ring toward the middle: which way along it */
+  var d2 = line > 0 ? -1 : 1;
+  var f1 = fx ? { x: 0, z: d2 } : { x: d2, z: 0 }, h1 = Math.atan2(f1.x, f1.z), l1 = { x: Math.cos(h1), z: -Math.sin(h1) };
+  var J = fx ? { x: Lj, z: line } : { x: line, z: Lj };
+  var C = { x: J.x + e.l.x * lat + l1.x * lat, z: J.z + e.l.z * lat + l1.z * lat };
+  var dC = (C.x - b.x) * e.f.x + (C.z - b.z) * e.f.z; if (dC < 1) return;
+  var P1 = { x: C.x + f1.x * dC, z: C.z + f1.z * dC };
+  e.turn = { u: 0, P0: { x: b.x, z: b.z }, C: C, P1: P1, len: dC * 1.7, f1: f1, l1: l1, h1: h1 };
+}
+function stepTurn(r, e, roll) {
+  var T = e.turn, b = r.bike;
+  T.u = Math.min(1, T.u + roll * DT / T.len);
+  var u = T.u, a = (1 - u) * (1 - u), c = 2 * (1 - u) * u, d = u * u;
+  b.x = a * T.P0.x + c * T.C.x + d * T.P1.x; b.z = a * T.P0.z + c * T.C.z + d * T.P1.z;
+  var tx = 2 * (1 - u) * (T.C.x - T.P0.x) + 2 * u * (T.P1.x - T.C.x), tz = 2 * (1 - u) * (T.C.z - T.P0.z) + 2 * u * (T.P1.z - T.C.z);
+  var h = Math.atan2(tx, tz); b.h = h; e.f.x = Math.sin(h); e.f.z = Math.cos(h); e.l.x = Math.cos(h); e.l.z = -Math.sin(h);
+  if (u >= 1) { b.h = T.h1; e.f.x = T.f1.x; e.f.z = T.f1.z; e.l.x = T.l1.x; e.l.z = T.l1.z; e.turn = null; r.bus.emit('enc:corner', {}); }
+}
+
 function step(r, input) {
   var e = r.enc, b = r.bike, H = e.hero;
   b.px = b.x; b.pz = b.z; b.ph = b.h; e.t++;
-  /* the road keeps rolling; at the map's edge everyone comes to a stop and the fight goes on */
-  var roll = runAhead(r.map, b.x, b.z, b.h) > 8 ? e.speed : 0;
+  /* the road keeps rolling; where it meets the ring road at the city's edge, the whole chase sweeps round the corner onto it */
+  var roll = e.speed;
   if (e.phase === 'down') roll = Math.max(0, e.speed * (1 - e.t / 50)); else if (e.phase === 'rise') roll = e.t > RISE - 40 ? e.speed * (e.t - (RISE - 40)) / 40 : 0;
   if (e.phase === 'police') roll = e.kind === 'arrest' ? 0 : Math.max(0, E.SPEED * (1 - e.t / 60));
-  b.speed = roll; b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT;
+  b.speed = roll;
+  if (!e.turn && roll > 0.5 && e.kind !== 'arrest') startTurn(r, e);
+  if (e.turn) stepTurn(r, e, roll); else { b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT; }
 
   if (e.kind === 'arrest') { stepArrest(r, e, roll); if (e.t > e.arrestEnd) finish(r); return; }
   if (e.phase === 'intro') { if (e.t > 70) { e.phase = 'fight'; e.t = 0; } if (e.kind === 'car') stepCar(r, e); else stepFoes(r, e); return; }

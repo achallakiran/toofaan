@@ -121,18 +121,12 @@ function generate(seed) {
   var mid = Math.floor(R.GRID / 2), hs = Math.max(0, Math.floor((R.GRID - 1) / 2) - 1), tries2 = 0;
   while (used['x' + mid + ':' + hs] && tries2++ < R.GRID) hs = (hs + 1) % (R.GRID - 1);
   var home = { key: 'home', name: 'Cycle repair shop', x: (lines[hs] + lines[hs + 1]) / 2, z: lines[mid] + (R.HALF + R.PAVE * 0.5), axis: 'x', side: 1 };
-  /* the old mansion: a whole block of its own, walled in, its gate on the street on the side toward the middle of the map. The block is the
-     first corner (then any other) with no trouble spot and not the shop on any of its pavements. No rng: the rest of the map is as before. */
-  function touches(B, P) { return P.x > B.x0 - inset - 0.5 && P.x < B.x1 + inset + 0.5 && P.z > B.z0 - inset - 0.5 && P.z < B.z1 + inset + 0.5; }
-  var G1 = R.GRID - 2, order = [[G1, 0], [0, 0], [G1, G1], [0, G1]], bi, mb = null;
-  for (i = 0; i <= G1; i++) for (j = 0; j <= G1; j++) order.push([i, j]);
-  for (bi = 0; bi < order.length && !mb; bi++) {
-    var cand = blocks[order[bi][0] * (R.GRID - 1) + order[bi][1]];
-    if (!targets.some(function (T) { return touches(cand, T); }) && !touches(cand, home)) mb = cand;
-  }
-  var mcx = (mb.x0 + mb.x1) / 2, mcz = (mb.z0 + mb.z1) / 2, mside = mcz < 0 ? 1 : -1, mline = mside > 0 ? mb.z1 + inset : mb.z0 - inset;
-  var mansion = { key: 'mansion', name: 'The old mansion', block: mb.key, x: mcx, z: mline - mside * (R.HALF + R.PAVE * 0.5), cx: mcx, cz: mcz, side: mside, line: mline,
-    gate: { x: mcx, z: mline - mside * R.LANES[1] } };
+  /* the old mansion: outside the city, beyond its top-left corner (the smallest x and z). The road north out of the corner junction ends at
+     its locked gate in a long wall; past the gate a narrow deserted lane runs on to the house, far off in the fog. The two edge blocks
+     either side of the lane are its grounds (no shop rows there). No rng: the rest of the map is as before. */
+  var L0 = lines[0], E0 = extent();
+  var mansion = { key: 'mansion', name: 'The old mansion', x: L0, z: -E0, wallZ: -E0, gate: { x: L0, z: L0 - R.HALF - 1.0 }, house: { x: L0, z: -E0 - 60 },
+    icon: { x: L0, z: -E0 + 2 }, grounds: [(-1) + ',' + (-1), 0 + ',' + (-1)] };
   return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props, home: home, mansion: mansion };
 }
 

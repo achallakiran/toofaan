@@ -20,6 +20,34 @@ function placeVehicle(r, v) {
   if (v.axis === 'x') { v.x = v.s + Lx * off; v.z = v.line + Lz * off; } else { v.x = v.line + Lx * off; v.z = v.s + Lz * off; }
 }
 
+/* routing at junctions, for traffic and the gang patrols alike: the roads form a closed grid whose outer roads are a ring, so nothing
+   ever runs off the map. On the way to each junction a vehicle picks straight on or a turn (at the ring, where straight on would leave
+   the city, it must turn; on the ring itself it may only turn inward). It turns where its own lane meets the new road's lane, so its
+   position runs on unbroken; the heading turns at once and the view eases it round (hd). */
+function laneAt(axis, line, dir, lane) { var h = headingOf(axis, dir), off = R.LANES[lane]; return axis === 'x' ? line - Math.sin(h) * off : line + Math.cos(h) * off; }
+function route(r, v, rng) {
+  var L = r.map.lines, n = L.length, k;
+  if (!v.plan) {
+    var Lj = null;
+    for (k = 0; k < n; k++) { var d = (L[k] - v.s) * v.dir; if (d > R.HALF + 0.5 && (Lj === null || d < (Lj - v.s) * v.dir)) Lj = L[k]; }
+    if (Lj === null) { v.dir = -v.dir; return; }                                 /* (never on the closed grid; a guard) */
+    var straight = v.dir > 0 ? Lj !== L[n - 1] : Lj !== L[0], turns = [];
+    if (v.line !== L[n - 1]) turns.push(1); if (v.line !== L[0]) turns.push(-1);
+    var d2 = straight && (rng.next() < 0.6 || !turns.length) ? 0 : turns[Math.floor(rng.next() * turns.length)];
+    var na = v.axis === 'x' ? 'z' : 'x';
+    v.plan = { Lj: Lj, d2: d2, at: d2 ? laneAt(na, Lj, d2, v.lane) : 0 };
+  }
+  var P = v.plan;
+  if (!P.d2) { if ((v.s - P.Lj) * v.dir > R.HALF) v.plan = null; return; }
+  if ((v.s - P.at) * v.dir >= 0) {
+    var sNew = v.axis === 'x' ? v.z : v.x;
+    v.axis = v.axis === 'x' ? 'z' : 'x'; v.line = P.Lj; v.dir = P.d2; v.s = sNew; v.plan = null; placeVehicle(r, v);
+  }
+}
+function easeHeading(v) { if (v.hd === undefined) v.hd = v.h; v.hd += Math.atan2(Math.sin(v.h - v.hd), Math.cos(v.h - v.hd)) * 0.16; }
+/* a place along a road inside the ring, clear of the junction boxes */
+function inRing(r, s0) { var L = r.map.lines, lo = L[0] + R.HALF + 2, hi = L[L.length - 1] - R.HALF - 2; return Math.max(lo, Math.min(hi, s0)); }
+
 function spawnVehicle(r, awayFrom) {
   var rng = r.rng, tries = 0, v;
   do {
@@ -30,7 +58,7 @@ function spawnVehicle(r, awayFrom) {
     v = { id: r.nextId, kind: pick, look: Math.floor(rng.next() * 4), axis: rng.next() < 0.5 ? 'x' : 'z', line: r.map.lines[Math.floor(rng.next() * R.GRID)],
           dir: rng.next() < 0.5 ? 1 : -1, lane: rng.next() < (pick === 'bus' || pick === 'truck' ? 0.2 : 0.5) ? 0 : 1, s: (rng.next() * 2 - 1) * r.map.ext,
           vmax: K.speed[0] + rng.next() * (K.speed[1] - K.speed[0]), v: 0, wait: 0, x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
-    placeVehicle(r, v); tries++;
+    v.s = inRing(r, v.s); placeVehicle(r, v); tries++;
   } while (awayFrom && Math.hypot(v.x - awayFrom.x, v.z - awayFrom.z) < R.VIEW_R && tries < 30);
   v.v = v.vmax * 0.8; v.px = v.x; v.pz = v.z; v.ph = v.h; r.nextId++;
   return v;
@@ -46,7 +74,7 @@ function createRide(seed, bus) {
     traffic: [], nextId: 1,
     missions: {}, target: null, arrivals: 0, crashes: 0,
     hearts: 3, enc: null, encCool: R.ENC.FIRST, nextEnc: 'bikes',
-    patrols: [], patrolCool: 120, prng: rngMod.createRng((seed >>> 0) ^ 0x9a7e), chases: {}
+    patrols: [], patrolCool: 120, prng: rngMod.createRng((seed >>> 0) ^ 0x9a7e), trng: rngMod.createRng((seed >>> 0) ^ 0x7a11), chases: {}
   };
   /* start on the middle east-west road, heading east in the outer left lane */
   var mid = r.map.lines[Math.floor(R.GRID / 2)];
@@ -79,7 +107,7 @@ function spawnPatrol(r) {
   if (!open.length) open = r.map.targets;
   var T = open[Math.floor(rng.next() * open.length)], kind = r.patrols.filter(function (q) { return q.kind === 'car'; }).length ? 'bikes' : (rng.next() < 0.5 ? 'car' : 'bikes');
   var axis = rng.next() < 0.5 ? 'x' : 'z', line = mapMod.nearestLine(axis === 'x' ? T.z : T.x), s0 = (axis === 'x' ? T.x : T.z) + (rng.next() - 0.5) * 50;
-  var p = { id: 'p' + (r.nextId++), kind: kind, gang: GANGS.gangOf(T.key), axis: axis, line: line, dir: rng.next() < 0.5 ? 1 : -1, lane: 1, s: Math.max(-r.map.ext + 10, Math.min(r.map.ext - 10, s0)), x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
+  var p = { id: 'p' + (r.nextId++), kind: kind, gang: GANGS.gangOf(T.key), axis: axis, line: line, dir: rng.next() < 0.5 ? 1 : -1, lane: 1, s: inRing(r, s0), x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
   placeVehicle(r, p); p.px = p.x; p.pz = p.z; p.ph = p.h;
   if (Math.hypot(p.x - r.bike.x, p.z - r.bike.z) < 60) return null;                    /* never pops up right beside him */
   return p;
@@ -88,15 +116,9 @@ function stepPatrols(r) {
   var b = r.bike, i;
   if (r.patrols.length < PATROLS && --r.patrolCool <= 0) { var np = spawnPatrol(r); if (np) r.patrols.push(np); r.patrolCool = 240; }
   for (i = 0; i < r.patrols.length; i++) {
-    var p = r.patrols[i], s1 = p.s + p.dir * PATROL_SPEED * DT, lines = r.map.lines, k;
-    p.px = p.x; p.pz = p.z; p.ph = p.h;
-    for (k = 0; k < lines.length; k++) {                                   /* a junction: sometimes turn onto the crossing road */
-      var L = lines[k]; if ((p.s - L) * (s1 - L) > 0 || L === p.line) continue;
-      if (r.prng.next() < 0.35) { var nl = L; s1 = p.line; p.axis = p.axis === 'x' ? 'z' : 'x'; p.line = nl; p.dir = r.prng.next() < 0.5 ? 1 : -1; }
-      break;
-    }
-    if (Math.abs(s1) > r.map.ext - 8) { p.dir = -p.dir; s1 = Math.max(-r.map.ext + 8, Math.min(r.map.ext - 8, s1)); }
-    p.s = s1; placeVehicle(r, p);
+    var p = r.patrols[i];
+    p.px = p.x; p.pz = p.z; p.ph = p.hd !== undefined ? p.hd : p.h;
+    p.s += p.dir * PATROL_SPEED * DT; route(r, p, r.prng); placeVehicle(r, p); easeHeading(p);      /* the roads like all traffic, turning at junctions */
   }
   /* he rides up to one: the chase is on */
   for (i = 0; i < r.patrols.length; i++) {
@@ -118,7 +140,7 @@ function chooseTarget(r, key) {
 }
 
 function stepTraffic(r) {
-  var list = r.traffic, i, j, E = r.map.ext;
+  var list = r.traffic, i, j;
   for (i = 0; i < list.length; i++) {
     var v = list[i]; v.px = v.x; v.pz = v.z; v.ph = v.h;
     if (v.wait > 0) { v.wait--; v.v = 0; continue; }
@@ -143,8 +165,9 @@ function stepTraffic(r) {
     if (fwd > 0 && fwd < R.KINDS[v.kind].len / 2 + 4 && lat < 1.6) want = Math.min(want, 1);
     v.v += Math.max(-8 * DT, Math.min(3 * DT, want - v.v));
     v.s += v.dir * v.v * DT;
-    if (Math.abs(v.s) > E + 4) { list[i] = spawnVehicle(r, r.bike); continue; }          /* off the map: a new one appears out of sight */
-    placeVehicle(r, v);
+    route(r, v, r.trng);
+    if (Math.hypot(v.x - r.bike.x, v.z - r.bike.z) > 230) { list[i] = spawnVehicle(r, r.bike); continue; }   /* far away: a new one nearer, out of sight */
+    placeVehicle(r, v); easeHeading(v);
   }
 }
 

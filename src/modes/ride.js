@@ -306,7 +306,7 @@ function drawMap(cv, r, t, yaw) {
     g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
   });
   var Mn = r.map.mansion;                                                 /* the old mansion: a dark house, a red padlock while shut */
-  if (Mn) { var mx = Mn.cx * sc, mz = Mn.cz * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
+  if (Mn) { var mx = Mn.icon.x * sc, mz = Mn.icon.z * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
     if (!rideSim.mansionOpen(r)) { g.fillStyle = '#ff3a2a'; g.fillRect(mx - 2.5, mz + 1, 5, 4); } }
   var H = r.map.home, hc = r.target === H;                                /* home: a little blue house */
   g.fillStyle = hc && Math.sin(t * 8) > 0 ? '#ff3b30' : '#4aa8ff'; g.beginPath(); g.moveTo(H.x * sc, H.z * sc - 7); g.lineTo(H.x * sc + 6, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc - 1); g.lineTo(H.x * sc - 6, H.z * sc - 1); g.closePath(); g.fill();

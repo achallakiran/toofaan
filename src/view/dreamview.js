@@ -44,14 +44,26 @@ function createDream(renderer) {
   var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8); geos.push(sariGeo, headGeo);
   var maa = person('thug', 0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
   maa.pale = true;
-  /* the two-headed man: big, his own head pushed to one side and a second head grown beside it on the same neck, both with burning eyes */
-  var villain = person('thug', 1.45, function (rig) {
-    rig.head.position.x -= 0.12;
-    var h2 = new THREE.Mesh(box(0.27, 0.31, 0.29), black.plain); h2.position.set(rig.head.position.x + 0.27, rig.head.position.y + 0.16, rig.head.position.z); h2.rotation.z = -0.18; rig.neck.add(h2);
-    var jaw = new THREE.Mesh(box(0.2, 0.08, 0.24), black.plain); jaw.position.set(0, -0.15, 0.02); h2.add(jaw);
-    [[-0.06, 0.03], [0.06, 0.03]].forEach(function (e) {
-      var a = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); a.position.set(e[0], e[1], 0.15); a.userData.keep = true; h2.add(a);
-      var b = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+  /* the two-headed man: nothing like Toofan. Huge (half again his height) and hunched, broad spiked shoulders, a long coat flaring from
+     his waist to his shins with tails behind; two heads splayed apart in a V on one thick neck, each with a pair of short horns, and four
+     burning eyes */
+  var coatGeo = new THREE.CylinderGeometry(0.3, 0.55, 1.05, 10), tails = [];
+  geos.push(coatGeo);
+  var villain = person('thug', 1.6, function (rig) {
+    rig.head.position.x -= 0.15; rig.head.rotation.z = 0.25;
+    var h2 = new THREE.Mesh(box(0.3, 0.34, 0.31), black.plain); h2.position.set(rig.head.position.x + 0.36, rig.head.position.y + 0.12, rig.head.position.z); h2.rotation.z = -0.38; rig.neck.add(h2);
+    var jaw = new THREE.Mesh(box(0.24, 0.1, 0.27), black.plain); jaw.position.set(0, -0.17, 0.02); h2.add(jaw);
+    function horns(parent, y) { [-1, 1].forEach(function (k) { var hn = new THREE.Mesh(box(0.05, 0.16, 0.05), black.plain); hn.position.set(k * 0.09, y, 0); hn.rotation.z = -k * 0.45; parent.add(hn); }); }
+    horns(h2, 0.2); horns(rig.head, 0.36);
+    [[-0.07, 0.03], [0.07, 0.03]].forEach(function (e) {
+      var a = new THREE.Mesh(box(0.06, 0.028, 0.02), ember); a.position.set(e[0], e[1], 0.16); a.userData.keep = true; h2.add(a);
+      var b = new THREE.Mesh(box(0.06, 0.028, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+    });
+    var coat = new THREE.Mesh(coatGeo, black.plain); coat.position.set(0, -0.42, -0.02); rig.hips.add(coat);
+    [-0.14, 0.14].forEach(function (u) { var tl = new THREE.Mesh(box(0.2, 0.8, 0.04), black.plain); tl.position.set(u, -0.6, -0.42); rig.hips.add(tl); tails.push(tl); });
+    ['L', 'R'].forEach(function (sd) {
+      var pad = new THREE.Mesh(box(0.24, 0.12, 0.24), black.plain); pad.position.set(0, 0.05, 0); rig.parts[sd].shoulder.add(pad);
+      [-0.07, 0.07].forEach(function (u) { var sp = new THREE.Mesh(box(0.04, 0.13, 0.04), black.plain); sp.position.set(u, 0.15, 0); pad.add(sp); });
     });
   });
   var hero = person(undefined, 1.0);
@@ -139,7 +151,8 @@ function createDream(renderer) {
          her son. Through the gate he hauls her faster, up the drive and the steps, and the door shuts on them. */
       var vz = villainZ(T), vx = 0.6, yank = Math.max(0, Math.sin(T * 2.6)) * 0.12, gone = T > 16.1;
       var stride = T < 9 ? T * 2.0 : 18 + (T - 9) * 3.0;
-      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 22, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
+      tails.forEach(function (tl, k) { tl.rotation.x = 0.35 + Math.sin(T * 4 + k) * 0.15; });
+      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 30, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
         'armB.sx': -62, 'armB.sz': -8, 'armB.e': 4, 'armB.pr': 20, 'armA.sx': 25 + Math.sin(stride) * 20, 'armA.e': 50 }, 1, 1, 1, 1));
       villain.rig.root.position.y = vz < -14.2 ? (vz + 14.2) * -0.85 : 0;                             /* up the steps */
       var sk = Math.sin(T * 5.2);
@@ -174,16 +187,16 @@ function createDream(renderer) {
       /* ---- the six shots ---- */
       var roll = 0, Gp = function (x, y, z) { return new THREE.Vector3(x, y, z); };
       if (shot === 0) {            /* 1. wide and low: the mansion behind the shut gate, the blood trail, him hauling her toward it */
-        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.6), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
+        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
         cam.position.y = Math.max(0.6, cam.position.y - 1.2); cam.lookAt(FC.x, FC.y + 1.0, FC.z); roll = -0.03;
       } else if (shot === 1) {     /* 2. side on, medium, tracking: the drag in profile, his fist on her wrist in the middle */
-        frame([-1, -0.04, -0.12], body(vx, 0, vz, 2.75).concat(body(mx, 0, mz, 1.75)), 40, aspect, 0.8, 3);
+        frame([-1, -0.04, -0.12], body(vx, 0, vz, 3.05).concat(body(mx, 0, mz, 1.75)), 40, aspect, 0.8, 3);
         roll = -0.04;
       } else if (shot === 2) {     /* 3. in front of him, low, tilted, slow motion: running at us, the after-images behind */
         frame([0.22, 0.2, 1], body(hx, hy, hz, 1.9).concat(body(hx, 0, hz + 0.6, 1.9)), 44, aspect, 0.82, 2.4);
         roll = 0.13 + Math.sin(t * 0.6) * 0.02;
       } else if (shot === 3) {     /* 4. over his shoulder, long lens: the gate opens, he drags her through and up the drive */
-        frame([0.55, -0.05, -1], [Gp(hx - 0.4, 1.0, hz), Gp(hx + 0.4, 2.0, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.6), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
+        frame([0.55, -0.05, -1], [Gp(hx - 0.4, 1.0, hz), Gp(hx + 0.4, 2.0, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
         roll = 0.03;
       } else if (shot === 4) {     /* 5. beside the gate, low: it swings shut, the chain snaps across, he slams into the bars */
         frame([-1, -0.04, -0.5], [Gp(-2.0, 0, GZ), Gp(2.0, 4.0, GZ)].concat(body(hx, 0, hz, 1.95)), 44, aspect, 0.85, 3);

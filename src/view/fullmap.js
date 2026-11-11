@@ -49,13 +49,13 @@ function createFullMap() {
     if (hcur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(hx - 15, hz - 16, 30, 30); }
     g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = '#bfe3ff'; g.fillText('HOME', hx, hz + 13);
     hits.push({ key: 'home', x: hx, z: hz, r: 22 });
-    /* the old mansion: its whole block dark, walled; a padlock while it is shut */
+    /* the old mansion: its gate at the top of the road north out of the top-left corner (the house itself lies beyond the map's edge);
+       a padlock while it is shut */
     var Mn = r.map.mansion;
     if (Mn) {
-      var mb = r.map.blocks.filter(function (q) { return q.key === Mn.block; })[0], mopen = rideSimOpen(r);
-      if (mb) { g.fillStyle = '#1a0d14'; g.fillRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 3; g.strokeRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); }
-      var mx2 = X(Mn.cx), mz2 = Z(Mn.cz);
+      var mopen = rideSimOpen(r), mx2 = X(Mn.icon.x), mz2 = Z(Mn.icon.z);
       g.fillStyle = '#3a2430'; g.fillRect(mx2 - 10, mz2 - 4, 20, 12); g.beginPath(); g.moveTo(mx2 - 12, mz2 - 4); g.lineTo(mx2, mz2 - 13); g.lineTo(mx2 + 12, mz2 - 4); g.closePath(); g.fill();
+      g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 2; g.strokeRect(mx2 - 10, mz2 - 4, 20, 12);
       if (!mopen) { g.strokeStyle = '#ff3a2a'; g.lineWidth = 2; g.beginPath(); g.arc(mx2, mz2 + 1, 3, Math.PI, 0); g.stroke(); g.fillStyle = '#ff3a2a'; g.fillRect(mx2 - 4, mz2 + 1, 8, 6); }
       g.font = "10px 'ToofanPx',monospace"; g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = mopen ? '#ffd21f' : '#ff8a8a'; g.fillText(mopen ? 'OPEN' : 'LOCKED', mx2, mz2 + 11);
       if (r.target === Mn) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(mx2 - 16, mz2 - 17, 32, 38); }

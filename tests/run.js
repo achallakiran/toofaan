@@ -489,17 +489,35 @@ console.log('ride mode (Phase 4)');
       var a = go(), c = go();
       assert(a.far, 'spawned beside him'); assert(a.onRoad, 'left the road'); assert(a.most >= 1 && a.most <= 3, 'patrols ' + a.most); assert.strictEqual(a.h, c.h);
     });
-    test('the old mansion: a block of its own (no trouble spot, not the shop), its gate locked until every gang boss is beaten', function () {
-      var m1 = rmap.generate(7), m2 = rmap.generate(7), M = m1.mansion;
-      assert(M && M.block); assert.deepStrictEqual(m1.mansion, m2.mansion);
-      var B = m1.blocks.filter(function (q) { return q.key === M.block; })[0], pad = RD2.HALF + RD2.PAVE + 0.5;
-      function near(P) { return P.x > B.x0 - pad && P.x < B.x1 + pad && P.z > B.z0 - pad && P.z < B.z1 + pad; }
-      assert(!m1.targets.some(near), 'a trouble spot on its pavement'); assert(!near(m1.home), 'the shop on its pavement');
+    test('the old mansion: past the top-left corner of the city, its gate at the end of the road north out of it, locked until every gang boss is beaten', function () {
+      var m1 = rmap.generate(7), M = m1.mansion, L = m1.lines;
+      assert.deepStrictEqual(m1.mansion, rmap.generate(7).mansion);
+      assert.strictEqual(M.gate.x, L[0]); assert(M.gate.z < L[0] && M.gate.z > -m1.ext, 'the gate is just north of the corner junction');
+      assert(M.house.z < -m1.ext - 20, 'the house is well outside the city');
       var ev = [], r = rideMod.createRide(7, { emit: function (n) { ev.push(n); } }), inp = inputMod.createInput(); r.patrolCool = 1e9;
       r.bike.x = r.bike.px = r.map.mansion.gate.x + 1; r.bike.z = r.bike.pz = r.map.mansion.gate.z; inp.tick(r.tick); rideMod.step(r, inp);
       assert(ev.indexOf('ride:locked') >= 0 && ev.indexOf('ride:mansion') < 0); assert.strictEqual(r.state, 'ride', 'the locked gate changes nothing');
       assert(!rideMod.mansionOpen(r)); r.bosses = ['antu', 'kalia', 'bhairav', 'teja']; assert(!rideMod.mansionOpen(r), 'one boss still left');
       r.bosses.push('raju'); assert(rideMod.mansionOpen(r)); r.mansionSaid = false; inp.tick(r.tick); rideMod.step(r, inp); assert(ev.indexOf('ride:mansion') >= 0);
+    });
+    test('no dead ends: traffic and gang patrols stay inside the ring road, in their lanes, turning at junctions', function () {
+      var r = rideMod.createRide(5, null), inp = inputMod.createInput(), t, max = 0, turns = 0, off = 0, last = {}, lim = r.map.lines[r.map.lines.length - 1] + RD2.LANES[1] + 1e-6;
+      r.patrolCool = 1;
+      for (t = 0; t < 12000; t++) {
+        inp.tick(r.tick); rideMod.step(r, inp); if (r.enc) { r.enc = null; r.state = 'ride'; }
+        r.traffic.concat(r.patrols).forEach(function (v) {
+          max = Math.max(max, Math.abs(v.x), Math.abs(v.z)); if (last[v.id] && last[v.id] !== v.axis) turns++; last[v.id] = v.axis;
+          var lat = v.axis === 'x' ? v.z - v.line : v.x - v.line; if (Math.abs(Math.abs(lat) - RD2.LANES[v.lane]) > 1e-6) off++;
+        });
+      }
+      assert(max <= lim, 'past the ring: ' + max); assert.strictEqual(off, 0); assert(turns > 50, 'turns ' + turns);
+    });
+    test('a road chase that reaches the ring road turns the corner onto it and goes on', function () {
+      var ev = [], r = rideMod.createRide(5, { emit: function (n) { ev.push(n); } }), inp = inputMod.createInput(), b = r.bike, t; r.patrolCool = 1e9;
+      b.x = b.px = 60; b.z = b.pz = r.map.lines[2] - RD2.LANES[1]; b.h = b.ph = Math.PI / 2; b.speed = 12; r.state = 'ride'; req('sim/encounter').start(r, 'bikes');
+      for (t = 0; t < 1500 && r.enc; t++) { r.hearts = 3; inp.tick(r.tick); rideMod.step(r, inp); }
+      assert(ev.indexOf('enc:corner') >= 0, 'no corner'); assert(Math.abs(b.h) < 0.01 && b.z > r.map.lines[2] + 20, 'did not go on along the ring: ' + b.x + ',' + b.z + ' h' + b.h);
+      assert(rmap.onRoad(b.x, b.z, 0), 'off the road');
     });
     test('ride home: HOME signals the cycle-repair shop; arriving there opens the way to the hideout and touches no mission; leaving starts at the shop', function () {
       var ev = [], r = rideMod.createRide(5, { emit: function (n) { ev.push(n); } }), inp = inputMod.createInput(), H = r.map.home, before = JSON.stringify(r.missions);

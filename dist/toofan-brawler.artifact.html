@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 83',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 84',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1853,7 +1853,7 @@ function drawMap(cv, r, t, yaw) {
     g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
   });
   var Mn = r.map.mansion;                                                 /* the old mansion: a dark house, a red padlock while shut */
-  if (Mn) { var mx = Mn.cx * sc, mz = Mn.cz * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
+  if (Mn) { var mx = Mn.icon.x * sc, mz = Mn.icon.z * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
     if (!rideSim.mansionOpen(r)) { g.fillStyle = '#ff3a2a'; g.fillRect(mx - 2.5, mz + 1, 5, 4); } }
   var H = r.map.home, hc = r.target === H;                                /* home: a little blue house */
   g.fillStyle = hc && Math.sin(t * 8) > 0 ? '#ff3b30' : '#4aa8ff'; g.beginPath(); g.moveTo(H.x * sc, H.z * sc - 7); g.lineTo(H.x * sc + 6, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc - 1); g.lineTo(H.x * sc - 6, H.z * sc - 1); g.closePath(); g.fill();
@@ -3925,14 +3925,43 @@ function finish(r) {
   r.bus.emit('enc:end', { kind: e.kind });
 }
 
+/* the corner: when the road ahead ends at the ring road, the chase turns onto the ring, toward the middle of the city. Toofan keeps his
+   lane: his path is a smooth curve from his lane on this road to the same lane on the ring road (a Bezier through the corner where the
+   two lanes cross); the road frame (f, l) turns with him, so the goons alongside and the car swing round with him. */
+function startTurn(r, e) {
+  var b = r.bike, L = r.map.lines, n = L.length, fx = Math.round(e.f.x), fz = Math.round(e.f.z), along = fx ? b.x : b.z, dir = fx || fz;
+  var Lj = dir > 0 ? L[n - 1] : L[0], d0 = (Lj - along) * dir;
+  if (d0 > 13 || d0 < 3) return;                                          /* only the last road before the ring, from a little way off */
+  var line = fx ? mapMod.nearestLine(b.z) : mapMod.nearestLine(b.x), lat = (b.x - (fx ? b.x : line)) * e.l.x + (b.z - (fx ? line : b.z)) * e.l.z;
+  /* onto the ring toward the middle: which way along it */
+  var d2 = line > 0 ? -1 : 1;
+  var f1 = fx ? { x: 0, z: d2 } : { x: d2, z: 0 }, h1 = Math.atan2(f1.x, f1.z), l1 = { x: Math.cos(h1), z: -Math.sin(h1) };
+  var J = fx ? { x: Lj, z: line } : { x: line, z: Lj };
+  var C = { x: J.x + e.l.x * lat + l1.x * lat, z: J.z + e.l.z * lat + l1.z * lat };
+  var dC = (C.x - b.x) * e.f.x + (C.z - b.z) * e.f.z; if (dC < 1) return;
+  var P1 = { x: C.x + f1.x * dC, z: C.z + f1.z * dC };
+  e.turn = { u: 0, P0: { x: b.x, z: b.z }, C: C, P1: P1, len: dC * 1.7, f1: f1, l1: l1, h1: h1 };
+}
+function stepTurn(r, e, roll) {
+  var T = e.turn, b = r.bike;
+  T.u = Math.min(1, T.u + roll * DT / T.len);
+  var u = T.u, a = (1 - u) * (1 - u), c = 2 * (1 - u) * u, d = u * u;
+  b.x = a * T.P0.x + c * T.C.x + d * T.P1.x; b.z = a * T.P0.z + c * T.C.z + d * T.P1.z;
+  var tx = 2 * (1 - u) * (T.C.x - T.P0.x) + 2 * u * (T.P1.x - T.C.x), tz = 2 * (1 - u) * (T.C.z - T.P0.z) + 2 * u * (T.P1.z - T.C.z);
+  var h = Math.atan2(tx, tz); b.h = h; e.f.x = Math.sin(h); e.f.z = Math.cos(h); e.l.x = Math.cos(h); e.l.z = -Math.sin(h);
+  if (u >= 1) { b.h = T.h1; e.f.x = T.f1.x; e.f.z = T.f1.z; e.l.x = T.l1.x; e.l.z = T.l1.z; e.turn = null; r.bus.emit('enc:corner', {}); }
+}
+
 function step(r, input) {
   var e = r.enc, b = r.bike, H = e.hero;
   b.px = b.x; b.pz = b.z; b.ph = b.h; e.t++;
-  /* the road keeps rolling; at the map's edge everyone comes to a stop and the fight goes on */
-  var roll = runAhead(r.map, b.x, b.z, b.h) > 8 ? e.speed : 0;
+  /* the road keeps rolling; where it meets the ring road at the city's edge, the whole chase sweeps round the corner onto it */
+  var roll = e.speed;
   if (e.phase === 'down') roll = Math.max(0, e.speed * (1 - e.t / 50)); else if (e.phase === 'rise') roll = e.t > RISE - 40 ? e.speed * (e.t - (RISE - 40)) / 40 : 0;
   if (e.phase === 'police') roll = e.kind === 'arrest' ? 0 : Math.max(0, E.SPEED * (1 - e.t / 60));
-  b.speed = roll; b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT;
+  b.speed = roll;
+  if (!e.turn && roll > 0.5 && e.kind !== 'arrest') startTurn(r, e);
+  if (e.turn) stepTurn(r, e, roll); else { b.x += e.f.x * roll * DT; b.z += e.f.z * roll * DT; }
 
   if (e.kind === 'arrest') { stepArrest(r, e, roll); if (e.t > e.arrestEnd) finish(r); return; }
   if (e.phase === 'intro') { if (e.t > 70) { e.phase = 'fight'; e.t = 0; } if (e.kind === 'car') stepCar(r, e); else stepFoes(r, e); return; }
@@ -4314,6 +4343,34 @@ function placeVehicle(r, v) {
   if (v.axis === 'x') { v.x = v.s + Lx * off; v.z = v.line + Lz * off; } else { v.x = v.line + Lx * off; v.z = v.s + Lz * off; }
 }
 
+/* routing at junctions, for traffic and the gang patrols alike: the roads form a closed grid whose outer roads are a ring, so nothing
+   ever runs off the map. On the way to each junction a vehicle picks straight on or a turn (at the ring, where straight on would leave
+   the city, it must turn; on the ring itself it may only turn inward). It turns where its own lane meets the new road's lane, so its
+   position runs on unbroken; the heading turns at once and the view eases it round (hd). */
+function laneAt(axis, line, dir, lane) { var h = headingOf(axis, dir), off = R.LANES[lane]; return axis === 'x' ? line - Math.sin(h) * off : line + Math.cos(h) * off; }
+function route(r, v, rng) {
+  var L = r.map.lines, n = L.length, k;
+  if (!v.plan) {
+    var Lj = null;
+    for (k = 0; k < n; k++) { var d = (L[k] - v.s) * v.dir; if (d > R.HALF + 0.5 && (Lj === null || d < (Lj - v.s) * v.dir)) Lj = L[k]; }
+    if (Lj === null) { v.dir = -v.dir; return; }                                 /* (never on the closed grid; a guard) */
+    var straight = v.dir > 0 ? Lj !== L[n - 1] : Lj !== L[0], turns = [];
+    if (v.line !== L[n - 1]) turns.push(1); if (v.line !== L[0]) turns.push(-1);
+    var d2 = straight && (rng.next() < 0.6 || !turns.length) ? 0 : turns[Math.floor(rng.next() * turns.length)];
+    var na = v.axis === 'x' ? 'z' : 'x';
+    v.plan = { Lj: Lj, d2: d2, at: d2 ? laneAt(na, Lj, d2, v.lane) : 0 };
+  }
+  var P = v.plan;
+  if (!P.d2) { if ((v.s - P.Lj) * v.dir > R.HALF) v.plan = null; return; }
+  if ((v.s - P.at) * v.dir >= 0) {
+    var sNew = v.axis === 'x' ? v.z : v.x;
+    v.axis = v.axis === 'x' ? 'z' : 'x'; v.line = P.Lj; v.dir = P.d2; v.s = sNew; v.plan = null; placeVehicle(r, v);
+  }
+}
+function easeHeading(v) { if (v.hd === undefined) v.hd = v.h; v.hd += Math.atan2(Math.sin(v.h - v.hd), Math.cos(v.h - v.hd)) * 0.16; }
+/* a place along a road inside the ring, clear of the junction boxes */
+function inRing(r, s0) { var L = r.map.lines, lo = L[0] + R.HALF + 2, hi = L[L.length - 1] - R.HALF - 2; return Math.max(lo, Math.min(hi, s0)); }
+
 function spawnVehicle(r, awayFrom) {
   var rng = r.rng, tries = 0, v;
   do {
@@ -4324,7 +4381,7 @@ function spawnVehicle(r, awayFrom) {
     v = { id: r.nextId, kind: pick, look: Math.floor(rng.next() * 4), axis: rng.next() < 0.5 ? 'x' : 'z', line: r.map.lines[Math.floor(rng.next() * R.GRID)],
           dir: rng.next() < 0.5 ? 1 : -1, lane: rng.next() < (pick === 'bus' || pick === 'truck' ? 0.2 : 0.5) ? 0 : 1, s: (rng.next() * 2 - 1) * r.map.ext,
           vmax: K.speed[0] + rng.next() * (K.speed[1] - K.speed[0]), v: 0, wait: 0, x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
-    placeVehicle(r, v); tries++;
+    v.s = inRing(r, v.s); placeVehicle(r, v); tries++;
   } while (awayFrom && Math.hypot(v.x - awayFrom.x, v.z - awayFrom.z) < R.VIEW_R && tries < 30);
   v.v = v.vmax * 0.8; v.px = v.x; v.pz = v.z; v.ph = v.h; r.nextId++;
   return v;
@@ -4340,7 +4397,7 @@ function createRide(seed, bus) {
     traffic: [], nextId: 1,
     missions: {}, target: null, arrivals: 0, crashes: 0,
     hearts: 3, enc: null, encCool: R.ENC.FIRST, nextEnc: 'bikes',
-    patrols: [], patrolCool: 120, prng: rngMod.createRng((seed >>> 0) ^ 0x9a7e), chases: {}
+    patrols: [], patrolCool: 120, prng: rngMod.createRng((seed >>> 0) ^ 0x9a7e), trng: rngMod.createRng((seed >>> 0) ^ 0x7a11), chases: {}
   };
   /* start on the middle east-west road, heading east in the outer left lane */
   var mid = r.map.lines[Math.floor(R.GRID / 2)];
@@ -4373,7 +4430,7 @@ function spawnPatrol(r) {
   if (!open.length) open = r.map.targets;
   var T = open[Math.floor(rng.next() * open.length)], kind = r.patrols.filter(function (q) { return q.kind === 'car'; }).length ? 'bikes' : (rng.next() < 0.5 ? 'car' : 'bikes');
   var axis = rng.next() < 0.5 ? 'x' : 'z', line = mapMod.nearestLine(axis === 'x' ? T.z : T.x), s0 = (axis === 'x' ? T.x : T.z) + (rng.next() - 0.5) * 50;
-  var p = { id: 'p' + (r.nextId++), kind: kind, gang: GANGS.gangOf(T.key), axis: axis, line: line, dir: rng.next() < 0.5 ? 1 : -1, lane: 1, s: Math.max(-r.map.ext + 10, Math.min(r.map.ext - 10, s0)), x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
+  var p = { id: 'p' + (r.nextId++), kind: kind, gang: GANGS.gangOf(T.key), axis: axis, line: line, dir: rng.next() < 0.5 ? 1 : -1, lane: 1, s: inRing(r, s0), x: 0, z: 0, px: 0, pz: 0, h: 0, ph: 0 };
   placeVehicle(r, p); p.px = p.x; p.pz = p.z; p.ph = p.h;
   if (Math.hypot(p.x - r.bike.x, p.z - r.bike.z) < 60) return null;                    /* never pops up right beside him */
   return p;
@@ -4382,15 +4439,9 @@ function stepPatrols(r) {
   var b = r.bike, i;
   if (r.patrols.length < PATROLS && --r.patrolCool <= 0) { var np = spawnPatrol(r); if (np) r.patrols.push(np); r.patrolCool = 240; }
   for (i = 0; i < r.patrols.length; i++) {
-    var p = r.patrols[i], s1 = p.s + p.dir * PATROL_SPEED * DT, lines = r.map.lines, k;
-    p.px = p.x; p.pz = p.z; p.ph = p.h;
-    for (k = 0; k < lines.length; k++) {                                   /* a junction: sometimes turn onto the crossing road */
-      var L = lines[k]; if ((p.s - L) * (s1 - L) > 0 || L === p.line) continue;
-      if (r.prng.next() < 0.35) { var nl = L; s1 = p.line; p.axis = p.axis === 'x' ? 'z' : 'x'; p.line = nl; p.dir = r.prng.next() < 0.5 ? 1 : -1; }
-      break;
-    }
-    if (Math.abs(s1) > r.map.ext - 8) { p.dir = -p.dir; s1 = Math.max(-r.map.ext + 8, Math.min(r.map.ext - 8, s1)); }
-    p.s = s1; placeVehicle(r, p);
+    var p = r.patrols[i];
+    p.px = p.x; p.pz = p.z; p.ph = p.hd !== undefined ? p.hd : p.h;
+    p.s += p.dir * PATROL_SPEED * DT; route(r, p, r.prng); placeVehicle(r, p); easeHeading(p);      /* the roads like all traffic, turning at junctions */
   }
   /* he rides up to one: the chase is on */
   for (i = 0; i < r.patrols.length; i++) {
@@ -4412,7 +4463,7 @@ function chooseTarget(r, key) {
 }
 
 function stepTraffic(r) {
-  var list = r.traffic, i, j, E = r.map.ext;
+  var list = r.traffic, i, j;
   for (i = 0; i < list.length; i++) {
     var v = list[i]; v.px = v.x; v.pz = v.z; v.ph = v.h;
     if (v.wait > 0) { v.wait--; v.v = 0; continue; }
@@ -4437,8 +4488,9 @@ function stepTraffic(r) {
     if (fwd > 0 && fwd < R.KINDS[v.kind].len / 2 + 4 && lat < 1.6) want = Math.min(want, 1);
     v.v += Math.max(-8 * DT, Math.min(3 * DT, want - v.v));
     v.s += v.dir * v.v * DT;
-    if (Math.abs(v.s) > E + 4) { list[i] = spawnVehicle(r, r.bike); continue; }          /* off the map: a new one appears out of sight */
-    placeVehicle(r, v);
+    route(r, v, r.trng);
+    if (Math.hypot(v.x - r.bike.x, v.z - r.bike.z) > 230) { list[i] = spawnVehicle(r, r.bike); continue; }   /* far away: a new one nearer, out of sight */
+    placeVehicle(r, v); easeHeading(v);
   }
 }
 
@@ -4704,18 +4756,12 @@ function generate(seed) {
   var mid = Math.floor(R.GRID / 2), hs = Math.max(0, Math.floor((R.GRID - 1) / 2) - 1), tries2 = 0;
   while (used['x' + mid + ':' + hs] && tries2++ < R.GRID) hs = (hs + 1) % (R.GRID - 1);
   var home = { key: 'home', name: 'Cycle repair shop', x: (lines[hs] + lines[hs + 1]) / 2, z: lines[mid] + (R.HALF + R.PAVE * 0.5), axis: 'x', side: 1 };
-  /* the old mansion: a whole block of its own, walled in, its gate on the street on the side toward the middle of the map. The block is the
-     first corner (then any other) with no trouble spot and not the shop on any of its pavements. No rng: the rest of the map is as before. */
-  function touches(B, P) { return P.x > B.x0 - inset - 0.5 && P.x < B.x1 + inset + 0.5 && P.z > B.z0 - inset - 0.5 && P.z < B.z1 + inset + 0.5; }
-  var G1 = R.GRID - 2, order = [[G1, 0], [0, 0], [G1, G1], [0, G1]], bi, mb = null;
-  for (i = 0; i <= G1; i++) for (j = 0; j <= G1; j++) order.push([i, j]);
-  for (bi = 0; bi < order.length && !mb; bi++) {
-    var cand = blocks[order[bi][0] * (R.GRID - 1) + order[bi][1]];
-    if (!targets.some(function (T) { return touches(cand, T); }) && !touches(cand, home)) mb = cand;
-  }
-  var mcx = (mb.x0 + mb.x1) / 2, mcz = (mb.z0 + mb.z1) / 2, mside = mcz < 0 ? 1 : -1, mline = mside > 0 ? mb.z1 + inset : mb.z0 - inset;
-  var mansion = { key: 'mansion', name: 'The old mansion', block: mb.key, x: mcx, z: mline - mside * (R.HALF + R.PAVE * 0.5), cx: mcx, cz: mcz, side: mside, line: mline,
-    gate: { x: mcx, z: mline - mside * R.LANES[1] } };
+  /* the old mansion: outside the city, beyond its top-left corner (the smallest x and z). The road north out of the corner junction ends at
+     its locked gate in a long wall; past the gate a narrow deserted lane runs on to the house, far off in the fog. The two edge blocks
+     either side of the lane are its grounds (no shop rows there). No rng: the rest of the map is as before. */
+  var L0 = lines[0], E0 = extent();
+  var mansion = { key: 'mansion', name: 'The old mansion', x: L0, z: -E0, wallZ: -E0, gate: { x: L0, z: L0 - R.HALF - 1.0 }, house: { x: L0, z: -E0 - 60 },
+    icon: { x: L0, z: -E0 + 2 }, grounds: [(-1) + ',' + (-1), 0 + ',' + (-1)] };
   return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props, home: home, mansion: mansion };
 }
 
@@ -5377,14 +5423,26 @@ function createDream(renderer) {
   var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8); geos.push(sariGeo, headGeo);
   var maa = person('thug', 0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
   maa.pale = true;
-  /* the two-headed man: big, his own head pushed to one side and a second head grown beside it on the same neck, both with burning eyes */
-  var villain = person('thug', 1.45, function (rig) {
-    rig.head.position.x -= 0.12;
-    var h2 = new THREE.Mesh(box(0.27, 0.31, 0.29), black.plain); h2.position.set(rig.head.position.x + 0.27, rig.head.position.y + 0.16, rig.head.position.z); h2.rotation.z = -0.18; rig.neck.add(h2);
-    var jaw = new THREE.Mesh(box(0.2, 0.08, 0.24), black.plain); jaw.position.set(0, -0.15, 0.02); h2.add(jaw);
-    [[-0.06, 0.03], [0.06, 0.03]].forEach(function (e) {
-      var a = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); a.position.set(e[0], e[1], 0.15); a.userData.keep = true; h2.add(a);
-      var b = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+  /* the two-headed man: nothing like Toofan. Huge (half again his height) and hunched, broad spiked shoulders, a long coat flaring from
+     his waist to his shins with tails behind; two heads splayed apart in a V on one thick neck, each with a pair of short horns, and four
+     burning eyes */
+  var coatGeo = new THREE.CylinderGeometry(0.3, 0.55, 1.05, 10), tails = [];
+  geos.push(coatGeo);
+  var villain = person('thug', 1.6, function (rig) {
+    rig.head.position.x -= 0.15; rig.head.rotation.z = 0.25;
+    var h2 = new THREE.Mesh(box(0.3, 0.34, 0.31), black.plain); h2.position.set(rig.head.position.x + 0.36, rig.head.position.y + 0.12, rig.head.position.z); h2.rotation.z = -0.38; rig.neck.add(h2);
+    var jaw = new THREE.Mesh(box(0.24, 0.1, 0.27), black.plain); jaw.position.set(0, -0.17, 0.02); h2.add(jaw);
+    function horns(parent, y) { [-1, 1].forEach(function (k) { var hn = new THREE.Mesh(box(0.05, 0.16, 0.05), black.plain); hn.position.set(k * 0.09, y, 0); hn.rotation.z = -k * 0.45; parent.add(hn); }); }
+    horns(h2, 0.2); horns(rig.head, 0.36);
+    [[-0.07, 0.03], [0.07, 0.03]].forEach(function (e) {
+      var a = new THREE.Mesh(box(0.06, 0.028, 0.02), ember); a.position.set(e[0], e[1], 0.16); a.userData.keep = true; h2.add(a);
+      var b = new THREE.Mesh(box(0.06, 0.028, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+    });
+    var coat = new THREE.Mesh(coatGeo, black.plain); coat.position.set(0, -0.42, -0.02); rig.hips.add(coat);
+    [-0.14, 0.14].forEach(function (u) { var tl = new THREE.Mesh(box(0.2, 0.8, 0.04), black.plain); tl.position.set(u, -0.6, -0.42); rig.hips.add(tl); tails.push(tl); });
+    ['L', 'R'].forEach(function (sd) {
+      var pad = new THREE.Mesh(box(0.24, 0.12, 0.24), black.plain); pad.position.set(0, 0.05, 0); rig.parts[sd].shoulder.add(pad);
+      [-0.07, 0.07].forEach(function (u) { var sp = new THREE.Mesh(box(0.04, 0.13, 0.04), black.plain); sp.position.set(u, 0.15, 0); pad.add(sp); });
     });
   });
   var hero = person(undefined, 1.0);
@@ -5472,7 +5530,8 @@ function createDream(renderer) {
          her son. Through the gate he hauls her faster, up the drive and the steps, and the door shuts on them. */
       var vz = villainZ(T), vx = 0.6, yank = Math.max(0, Math.sin(T * 2.6)) * 0.12, gone = T > 16.1;
       var stride = T < 9 ? T * 2.0 : 18 + (T - 9) * 3.0;
-      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 22, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
+      tails.forEach(function (tl, k) { tl.rotation.x = 0.35 + Math.sin(T * 4 + k) * 0.15; });
+      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 30, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
         'armB.sx': -62, 'armB.sz': -8, 'armB.e': 4, 'armB.pr': 20, 'armA.sx': 25 + Math.sin(stride) * 20, 'armA.e': 50 }, 1, 1, 1, 1));
       villain.rig.root.position.y = vz < -14.2 ? (vz + 14.2) * -0.85 : 0;                             /* up the steps */
       var sk = Math.sin(T * 5.2);
@@ -5507,16 +5566,16 @@ function createDream(renderer) {
       /* ---- the six shots ---- */
       var roll = 0, Gp = function (x, y, z) { return new THREE.Vector3(x, y, z); };
       if (shot === 0) {            /* 1. wide and low: the mansion behind the shut gate, the blood trail, him hauling her toward it */
-        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.6), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
+        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
         cam.position.y = Math.max(0.6, cam.position.y - 1.2); cam.lookAt(FC.x, FC.y + 1.0, FC.z); roll = -0.03;
       } else if (shot === 1) {     /* 2. side on, medium, tracking: the drag in profile, his fist on her wrist in the middle */
-        frame([-1, -0.04, -0.12], body(vx, 0, vz, 2.75).concat(body(mx, 0, mz, 1.75)), 40, aspect, 0.8, 3);
+        frame([-1, -0.04, -0.12], body(vx, 0, vz, 3.05).concat(body(mx, 0, mz, 1.75)), 40, aspect, 0.8, 3);
         roll = -0.04;
       } else if (shot === 2) {     /* 3. in front of him, low, tilted, slow motion: running at us, the after-images behind */
         frame([0.22, 0.2, 1], body(hx, hy, hz, 1.9).concat(body(hx, 0, hz + 0.6, 1.9)), 44, aspect, 0.82, 2.4);
         roll = 0.13 + Math.sin(t * 0.6) * 0.02;
       } else if (shot === 3) {     /* 4. over his shoulder, long lens: the gate opens, he drags her through and up the drive */
-        frame([0.55, -0.05, -1], [Gp(hx - 0.4, 1.0, hz), Gp(hx + 0.4, 2.0, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.6), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
+        frame([0.55, -0.05, -1], [Gp(hx - 0.4, 1.0, hz), Gp(hx + 0.4, 2.0, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
         roll = 0.03;
       } else if (shot === 4) {     /* 5. beside the gate, low: it swings shut, the chain snaps across, he slams into the bars */
         frame([-1, -0.04, -0.5], [Gp(-2.0, 0, GZ), Gp(2.0, 4.0, GZ)].concat(body(hx, 0, hz, 1.95)), 44, aspect, 0.85, 3);
@@ -6260,13 +6319,13 @@ function createFullMap() {
     if (hcur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(hx - 15, hz - 16, 30, 30); }
     g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = '#bfe3ff'; g.fillText('HOME', hx, hz + 13);
     hits.push({ key: 'home', x: hx, z: hz, r: 22 });
-    /* the old mansion: its whole block dark, walled; a padlock while it is shut */
+    /* the old mansion: its gate at the top of the road north out of the top-left corner (the house itself lies beyond the map's edge);
+       a padlock while it is shut */
     var Mn = r.map.mansion;
     if (Mn) {
-      var mb = r.map.blocks.filter(function (q) { return q.key === Mn.block; })[0], mopen = rideSimOpen(r);
-      if (mb) { g.fillStyle = '#1a0d14'; g.fillRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 3; g.strokeRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); }
-      var mx2 = X(Mn.cx), mz2 = Z(Mn.cz);
+      var mopen = rideSimOpen(r), mx2 = X(Mn.icon.x), mz2 = Z(Mn.icon.z);
       g.fillStyle = '#3a2430'; g.fillRect(mx2 - 10, mz2 - 4, 20, 12); g.beginPath(); g.moveTo(mx2 - 12, mz2 - 4); g.lineTo(mx2, mz2 - 13); g.lineTo(mx2 + 12, mz2 - 4); g.closePath(); g.fill();
+      g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 2; g.strokeRect(mx2 - 10, mz2 - 4, 20, 12);
       if (!mopen) { g.strokeStyle = '#ff3a2a'; g.lineWidth = 2; g.beginPath(); g.arc(mx2, mz2 + 1, 3, Math.PI, 0); g.stroke(); g.fillStyle = '#ff3a2a'; g.fillRect(mx2 - 4, mz2 + 1, 8, 6); }
       g.font = "10px 'ToofanPx',monospace"; g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = mopen ? '#ffd21f' : '#ff8a8a'; g.fillText(mopen ? 'OPEN' : 'LOCKED', mx2, mz2 + 11);
       if (r.target === Mn) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(mx2 - 16, mz2 - 17, 32, 38); }
@@ -7725,10 +7784,11 @@ module.exports = { createMaa: createMaa };
 
 };
 defs["view/mansionvox"]=function(module,exports,require){
-/* view: the old mansion on the ride map, the same place as in Toofan's nightmare: a whole block walled in with old stone, spikes along
-   the top, a tall iron gate on the street (chained and padlocked until it opens), a gravel drive through dead grass and bare trees up to
-   a big weathered house with a steep roof, a tower, chimneys, boarded windows and two still glowing red. Built in a local frame (block
-   centred on the origin, the gate's street toward +z) and turned to face it. open(u) swings the gate (0 shut, 1 open). */
+/* view: the old mansion, the same place as in Toofan's nightmare, outside the city past its top-left corner. The road north out of the
+   corner junction ends at a tall iron gate in a long old wall (spikes along the top), chained and padlocked until it opens. Past the gate a
+   narrow deserted lane, cracked and weedy, lined with dead trees and dark broken lamps, runs on to the house far off in the fog: a big
+   weathered house with a steep roof, a tower, chimneys, boarded windows and two still glowing red. Built in a local frame (the gate at the
+   origin, the city toward +z, the lane toward -z). open(u) swings the gate (0 shut, 1 open). */
 'use strict';
 
 var CONFIG = require('../data/config');
@@ -7744,59 +7804,57 @@ function maker(list) { return function (x0, y0, z0, x1, y1, z1, c) { list.push({
 
 function createMansion(scene, map) {
   var M = map.mansion; if (!M) return { open: function () {}, dispose: function () {} };
-  var root = new THREE.Group(), mat = new THREE.MeshLambertMaterial({ vertexColors: true }), geos = [], fixed = [], B = maker(fixed), H = 25.6, x, z, i;
-  /* the grounds: dead grass, the gravel drive, bare trees */
-  B(-H, 0.0, -H, H, 0.05, H, C.OLIVE); for (i = 0; i < 40; i++) { var gx = ((i * 37) % 48) - 24, gz = ((i * 53) % 48) - 24; B(gx, 0.05, gz, gx + 2.2, 0.07, gz + 1.6, i % 3 ? C.SAND : C.BROWN); }
-  B(-2.2, 0.05, -4, 2.2, 0.09, H, C.STONE2); for (z = -3; z < H; z += 1.4) B(-2.3, 0.05, z, -2.0, 0.14, z + 0.6, C.STONE3);
-  [[-12, 12], [12, 15], [-17, -2], [15, 2], [-8, 20]].forEach(function (t, k) {
-    B(t[0] - 0.25, 0, t[1] - 0.25, t[0] + 0.25, 4.6, t[1] + 0.25, C.BROWN);
-    B(t[0], 3.2, t[1] - 0.1, t[0] + 1.8, 3.4, t[1] + 0.1, C.BROWN); B(t[0] - 1.6, 3.8, t[1] - 0.1, t[0], 4.0, t[1] + 0.1, C.BROWN); B(t[0] + 1.6, 3.4, t[1] - 0.1, t[0] + 1.8, 4.6, t[1] + 0.1, C.BROWN);
-    B(t[0] - 0.1, 4.0, t[1], t[0] + 0.1, 4.2, t[1] + 1.4, C.BROWN); if (k % 2) B(t[0] - 1.6, 3.8, t[1] - 0.1, t[0] - 1.4, 5.0, t[1] + 0.1, C.BROWN);
+  var root = new THREE.Group(), mat = new THREE.MeshLambertMaterial({ vertexColors: true }), geos = [], fixed = [], B = maker(fixed), x, z, i;
+  var WL = -19, WR = 72, WD = 78;                              /* the wall: from just west of the gate to the east edge of the grounds, then north */
+  /* the grounds inside the wall: dead grass and bare earth */
+  B(WL, 0.0, -WD, WR, 0.04, 0, C.OLIVE); for (i = 0; i < 70; i++) { var gx = WL + ((i * 37) % (WR - WL - 3)), gz = -((i * 53) % (WD - 3)) - 1; B(gx, 0.04, gz - 1.4, gx + 2.4, 0.06, gz, i % 3 ? C.SAND : C.BROWN); }
+  /* the lane: narrow, cracked, weeds through it, running from the gate to the house */
+  var LANE = 58;
+  B(-1.9, 0.04, -LANE, 1.9, 0.08, 0, C.CHAR); for (z = -1; z > -LANE; z -= 2.3) { B(-1.2 + (z * 7 % 3) * 0.4, 0.08, z - 0.7, -0.2 + (z * 7 % 3) * 0.4, 0.09, z, C.DARK); B(1.0, 0.04, z - 0.4, 1.9 + 0.3, 0.2, z, C.LEAF); B(-2.2, 0.04, z - 1.2, -1.6, 0.25, z - 0.8, C.OLIVE); }
+  /* dead trees and dark, bent lamp posts along it */
+  for (z = -6; z > -LANE + 4; z -= 9) [-4.6, 4.6].forEach(function (u, k) {
+    var tz = z - k * 4.5, bend = (k ? 1 : -1) * 0.5;
+    if ((Math.round(z) + k) % 2) { B(u - 0.25, 0, tz - 0.25, u + 0.25, 4.8, tz + 0.25, C.BROWN); B(u, 3.4, tz - 0.1, u + 1.9, 3.6, tz + 0.1, C.BROWN); B(u - 1.6, 3.9, tz - 0.1, u, 4.1, tz + 0.1, C.BROWN); B(u + 1.7, 3.6, tz - 0.1, u + 1.9, 4.9, tz + 0.1, C.BROWN); B(u - 0.1, 4.1, tz, u + 0.1, 4.3, tz + 1.5, C.BROWN); }
+    else { B(u - 0.08, 0, tz - 0.08, u + 0.08, 4.2, tz + 0.08, C.DARK); B(u, 4.0, tz - 0.06, u - bend * 1.4, 4.15, tz + 0.06, C.DARK); B(u - bend * 1.4 - 0.18, 3.7, tz - 0.15, u - bend * 1.4 + 0.18, 4.0, tz + 0.15, C.CHAR); }
   });
-  /* the wall round the block, pillars every few metres, spikes along the top; the gap for the gate in the middle of the street side */
+  /* the wall: stone, pillars every few metres, spikes along the top, moss; the gap for the gate at the origin */
   function wallRun(x0, z0, x1, z1) {
-    B(x0, 0, z0, x1, 2.8, z1, C.STONE3); B(x0 - 0.05, 2.8, z0 - 0.05, x1 + 0.05, 2.95, z1 + 0.05, C.STONE);
+    B(x0, 0, z0, x1, 3.0, z1, C.STONE3); B(x0 - 0.05, 3.0, z0 - 0.05, x1 + 0.05, 3.15, z1 + 0.05, C.STONE);
     var len = Math.max(x1 - x0, z1 - z0), along = x1 - x0 > z1 - z0, k;
-    for (k = 0; k <= len; k += 0.8) { var px = along ? x0 + k : (x0 + x1) / 2, pz = along ? (z0 + z1) / 2 : z0 + k; B(px - 0.04, 2.95, pz - 0.04, px + 0.04, 3.45, pz + 0.04, C.DARK); }
-    for (k = 0; k <= len; k += 6) { var qx = along ? x0 + k : (x0 + x1) / 2, qz = along ? (z0 + z1) / 2 : z0 + k; B(qx - 0.45, 0, qz - 0.45, qx + 0.45, 3.3, qz + 0.45, C.STONE); B(qx - 0.55, 3.3, qz - 0.55, qx + 0.55, 3.5, qz + 0.55, C.STONE3); }
-    for (k = 0; k < len; k += 2.3) { var mx = along ? x0 + k : x0 - 0.02, mz = along ? z0 - 0.02 : z0 + k; if ((k * 7) % 3 < 1) B(mx, 0.2, mz, mx + (along ? 0.9 : 0.05), 1.0, mz + (along ? 0.05 : 0.9), C.DGREEN); }   /* moss */
+    for (k = 0; k <= len; k += 0.8) { var px = along ? x0 + k : (x0 + x1) / 2, pz = along ? (z0 + z1) / 2 : z0 + k; B(px - 0.04, 3.15, pz - 0.04, px + 0.04, 3.7, pz + 0.04, C.DARK); }
+    for (k = 0; k <= len; k += 6) { var qx = along ? x0 + k : (x0 + x1) / 2, qz = along ? (z0 + z1) / 2 : z0 + k; B(qx - 0.45, 0, qz - 0.45, qx + 0.45, 3.5, qz + 0.45, C.STONE); B(qx - 0.55, 3.5, qz - 0.55, qx + 0.55, 3.7, qz + 0.55, C.STONE3); }
+    for (k = 0; k < len; k += 2.3) { var mx = along ? x0 + k : x1 + 0.01, mz = along ? z1 + 0.01 : z0 + k; if ((k * 7) % 3 < 1) B(mx, 0.2, mz, mx + (along ? 0.9 : 0.05), 1.2, mz + (along ? 0.05 : 0.9), C.DGREEN); }
   }
-  wallRun(-H, H - 0.6, -2.1, H); wallRun(2.1, H - 0.6, H, H); wallRun(-H, -H, H, -H + 0.6); wallRun(-H, -H, -H + 0.6, H); wallRun(H - 0.6, -H, H, H);
-  /* the gate posts, orbs on top */
-  [-2.1, 2.1].forEach(function (u) { B(u - 0.5, 0, H - 0.8, u + 0.5, 4.2, H + 0.2, C.STONE); B(u - 0.6, 4.2, H - 0.9, u + 0.6, 4.4, H + 0.3, C.STONE3); B(u - 0.3, 4.4, H - 0.6, u + 0.3, 5.0, H, C.STONE3); });
-  B(-2.1, 4.6, H - 0.5, 2.1, 4.8, H - 0.1, C.DARK); for (x = -1.8; x <= 1.8; x += 0.3) B(x - 0.03, 4.8, H - 0.33, x + 0.03, 5.3 - Math.abs(x) * 0.2, H - 0.27, C.DARK);   /* the arch over it */
-  /* the house */
-  var HZ = -9;
-  B(-11, 0, HZ - 5, 11, 0.6, HZ + 5.4, C.STONE3); for (i = 0; i < 3; i++) B(-2.4, 0, HZ + 5.4 + i * 0.4, 2.4, 0.6 - i * 0.2, HZ + 5.8 + i * 0.4, C.STONE);
-  B(-10.5, 0.6, HZ - 4.6, 10.5, 8.6, HZ + 4.6, C.GREYP); B(-10.6, 4.4, HZ - 4.7, 10.6, 4.7, HZ + 4.7, C.STONE3);
-  for (i = 0; i < 8; i++) { var rw = 10.9 - i * 0.12, ry = 8.6 + i * 0.55, rd = 4.9 - i * 0.62; B(-rw, ry, HZ - rd, rw, ry + 0.55, HZ + rd, i % 2 ? C.CHAR : C.DARK); }   /* the steep roof */
-  B(-11.2, 8.5, HZ + 4.85, 11.2, 8.7, HZ + 5.05, C.BROWN);
-  [[-7, -1.5], [-3, 2.5], [6.5, -2]].forEach(function (c) { B(c[0] - 0.5, 9.5, HZ + c[1] - 0.5, c[0] + 0.5, 13.4, HZ + c[1] + 0.5, C.BRICK2); B(c[0] - 0.6, 13.4, HZ + c[1] - 0.6, c[0] + 0.6, 13.6, HZ + c[1] + 0.6, C.STONE3); });
-  /* the tower on the right, its pointed roof */
-  B(5.4, 0.6, HZ + 1.0, 9.6, 15.5, HZ + 5.2, C.STONE); for (i = 0; i < 7; i++) { var tw = 2.4 - i * 0.34; B(7.5 - tw, 15.5 + i * 0.7, HZ + 3.1 - tw, 7.5 + tw, 16.2 + i * 0.7, HZ + 3.1 + tw, i % 2 ? C.CHAR : C.DARK); }
-  B(7.45, 20.4, HZ + 3.05, 7.55, 22.0, HZ + 3.15, C.DARK);
-  /* windows: boarded up, but two still glow red; a porch with columns and a black door */
-  function win(wx, wy, wz, glow) { B(wx - 0.7, wy - 0.95, wz, wx + 0.7, wy + 0.95, wz + 0.08, glow ? C.CRIMSON : C.BLACK); B(wx - 0.85, wy - 1.1, wz + 0.02, wx + 0.85, wy - 0.95, wz + 0.14, C.STONE3); B(wx - 0.85, wy + 0.95, wz + 0.02, wx + 0.85, wy + 1.1, wz + 0.14, C.STONE3);
-    if (!glow) { B(wx - 0.8, wy - 0.3, wz + 0.08, wx + 0.8, wy - 0.1, wz + 0.12, C.WOOD2); B(wx - 0.8, wy + 0.25, wz + 0.08, wx + 0.8, wy + 0.45, wz + 0.12, C.WOOD); } }
-  [-8.5, -5.2, -1.4, 1.4, 3.6].forEach(function (wx, k) { win(wx, 2.6, HZ + 4.6, false); win(wx, 6.6, HZ + 4.6, k === 1); });
-  win(7.5, 9.5, HZ + 5.2, true); win(7.5, 13.0, HZ + 5.2, false);
-  B(-1.0, 0.6, HZ + 4.6, 1.0, 3.6, HZ + 4.66, C.BLACK); B(-1.2, 3.6, HZ + 4.6, 1.2, 3.9, HZ + 4.7, C.STONE3);
-  [-2.2, 2.2].forEach(function (u) { B(u - 0.25, 0.6, HZ + 5.2, u + 0.25, 4.6, HZ + 5.7, C.OFFWHITE); }); B(-2.8, 4.6, HZ + 4.6, 2.8, 5.0, HZ + 5.9, C.STONE);
+  wallRun(WL, -0.6, -2.1, 0); wallRun(2.1, -0.6, WR, 0); wallRun(WL, -WD, WL + 0.6, 0); wallRun(WR - 0.6, -WD, WR, 0); wallRun(WL, -WD, WR, -WD + 0.6);
+  [-2.1, 2.1].forEach(function (u) { B(u - 0.55, 0, -0.8, u + 0.55, 4.6, 0.25, C.STONE); B(u - 0.65, 4.6, -0.9, u + 0.65, 4.8, 0.35, C.STONE3); B(u - 0.32, 4.8, -0.6, u + 0.32, 5.4, 0.05, C.STONE3); });
+  B(-2.1, 5.0, -0.5, 2.1, 5.2, -0.1, C.DARK); for (x = -1.8; x <= 1.8; x += 0.3) B(x - 0.03, 5.2, -0.33, x + 0.03, 5.7 - Math.abs(x) * 0.2, -0.27, C.DARK);
+  /* the house, at the end of the lane */
+  var HZ = -LANE - 6, S = 1.25;
+  function H(x0, y0, z0, x1, y1, z1, c) { B(x0 * S, y0 * S, HZ + z0 * S, x1 * S, y1 * S, HZ + z1 * S, c); }
+  H(-11, 0, -5, 11, 0.6, 5.4, C.STONE3); for (i = 0; i < 3; i++) H(-2.4, 0, 5.4 + i * 0.4, 2.4, 0.6 - i * 0.2, 5.8 + i * 0.4, C.STONE);
+  H(-10.5, 0.6, -4.6, 10.5, 8.6, 4.6, C.GREYP); H(-10.6, 4.4, -4.7, 10.6, 4.7, 4.7, C.STONE3);
+  for (i = 0; i < 8; i++) { var rw = 10.9 - i * 0.12, ry = 8.6 + i * 0.55, rd = 4.9 - i * 0.62; H(-rw, ry, -rd, rw, ry + 0.55, rd, i % 2 ? C.CHAR : C.DARK); }
+  [[-7, -1.5], [-3, 2.5], [6.5, -2]].forEach(function (c) { H(c[0] - 0.5, 9.5, c[1] - 0.5, c[0] + 0.5, 13.4, c[1] + 0.5, C.BRICK2); });
+  H(5.4, 0.6, 1.0, 9.6, 15.5, 5.2, C.STONE); for (i = 0; i < 7; i++) { var tw = 2.4 - i * 0.34; H(7.5 - tw, 15.5 + i * 0.7, 3.1 - tw, 7.5 + tw, 16.2 + i * 0.7, 3.1 + tw, i % 2 ? C.CHAR : C.DARK); }
+  function win(wx, wy, wz, glow) { H(wx - 0.7, wy - 0.95, wz, wx + 0.7, wy + 0.95, wz + 0.08, glow ? C.CRIMSON : C.BLACK); if (!glow) { H(wx - 0.8, wy - 0.3, wz + 0.08, wx + 0.8, wy - 0.1, wz + 0.12, C.WOOD2); H(wx - 0.8, wy + 0.25, wz + 0.08, wx + 0.8, wy + 0.45, wz + 0.12, C.WOOD); } }
+  [-8.5, -5.2, -1.4, 1.4, 3.6].forEach(function (wx, k) { win(wx, 2.6, 4.6, false); win(wx, 6.6, 4.6, k === 1); });
+  win(7.5, 9.5, 5.2, true); win(7.5, 13.0, 5.2, false);
+  H(-1.0, 0.6, 4.6, 1.0, 3.6, 4.66, C.BLACK); [-2.2, 2.2].forEach(function (u) { H(u - 0.25, 0.6, 5.2, u + 0.25, 4.6, 5.7, C.OFFWHITE); }); H(-2.8, 4.6, 4.6, 2.8, 5.0, 5.9, C.STONE);
   geos.push(geoOf(fixed)); root.add(new THREE.Mesh(geos[0], mat));
   /* the gate's two leaves, each turning on its post, and the chain and padlock across them while it is shut */
   function leaf(side) {
     var bx = [], LB = maker(bx), k;
-    for (k = 0; k < 9; k++) { var px = side * (0.1 + k * 0.2); LB(px - 0.03, 0.1, -0.03, px + 0.03, 3.6, 0.03, C.DARK); LB(px - 0.05, 3.6, -0.05, px + 0.05, 3.85, 0.05, C.DARK); }
-    [0.4, 1.8, 3.2].forEach(function (y) { LB(0, y, -0.04, side * 1.85, y + 0.08, 0.04, C.DARK); });
-    var g = geoOf(bx); geos.push(g); var m = new THREE.Mesh(g, mat), piv = new THREE.Group(); piv.position.set(-side * 1.85, 0, H - 0.3); piv.add(m); root.add(piv); return piv;
+    for (k = 0; k < 9; k++) { var px = side * (0.1 + k * 0.2); LB(px - 0.03, 0.1, -0.03, px + 0.03, 3.9, 0.03, C.DARK); LB(px - 0.05, 3.9, -0.05, px + 0.05, 4.15, 0.05, C.DARK); }
+    [0.4, 2.0, 3.6].forEach(function (y) { LB(0, y, -0.04, side * 1.85, y + 0.08, 0.04, C.DARK); });
+    var g = geoOf(bx); geos.push(g); var m = new THREE.Mesh(g, mat), piv = new THREE.Group(); piv.position.set(-side * 1.85, 0, -0.3); piv.add(m); root.add(piv); return piv;
   }
   var L = leaf(1), Rt = leaf(-1);
   var cb = [], CB = maker(cb); for (i = 0; i < 9; i++) CB(-0.95 + i * 0.22, 1.7 + Math.abs(i - 4) * -0.05, -0.06, -0.8 + i * 0.22, 1.82 + Math.abs(i - 4) * -0.05, 0.06, C.STEEL);
   CB(-0.22, 1.25, -0.1, 0.22, 1.6, 0.1, C.BRASS); CB(-0.12, 1.6, -0.04, 0.12, 1.78, 0.04, C.STEEL);
-  var cg = geoOf(cb); geos.push(cg); var chain = new THREE.Mesh(cg, mat); chain.position.set(0, 0, H - 0.25); root.add(chain);
-  /* the block, turned so the gate faces its street */
-  root.position.set(M.cx, 0.02, M.cz); root.rotation.y = M.side > 0 ? 0 : Math.PI; scene.add(root);
-  function open(u) { L.rotation.y = u * 1.35; Rt.rotation.y = -u * 1.35;                   /* (both swing in, away from the street) */ chain.visible = u < 0.02; }
+  var cg = geoOf(cb); geos.push(cg); var chain = new THREE.Mesh(cg, mat); chain.position.set(0, 0, -0.2); root.add(chain);
+  /* the gate stands at the top of the road north out of the corner, facing the city */
+  root.position.set(M.x, 0.02, M.wallZ); scene.add(root);
+  function open(u) { L.rotation.y = u * 1.35; Rt.rotation.y = -u * 1.35; chain.visible = u < 0.02; }     /* (both swing in, away from the street) */
   open(0);
   return { root: root, open: open, dispose: function () { scene.remove(root); geos.forEach(function (g) { g.dispose(); }); mat.dispose(); } };
 }
@@ -8446,11 +8504,12 @@ function roadBoxes(map) {
   } else out.push({ x0: G0.x0, x1: G0.x1, z0: G0.z0, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND });
   ['x', 'z'].forEach(function (axis) {
     for (i = 0; i < L.length; i++) {
-      strip(axis, L[i], -E, E, -H, H, 0, axis === 'x' ? 0.02 : 0.021, ROAD);
+      strip(axis, L[i], L[0] - H, L[L.length - 1] + H, -H, H, 0, axis === 'x' ? 0.02 : 0.021, ROAD);       /* (the roads end at the ring road: no stubs past it) */
       var ends = [-E].concat(L).concat([E]);
       for (k = 0; k < ends.length - 1; k++) {
         var a0 = ends[k] + (k === 0 ? 0 : H), a1 = ends[k + 1] - (k === ends.length - 2 ? 0 : H);
         if (a1 - a0 < 2) continue;
+        if (k === 0 || k === ends.length - 2) { strip(axis, L[i], a0, a1, -H - P, H + P, 0, 0.16, PAVE); continue; }     /* past the ring: pavement right across */
         for (sd = -1; sd <= 1; sd += 2) {
           var p0 = a0 + (k === 0 ? 0 : P), p1 = a1 - (k === ends.length - 2 ? 0 : P);
           strip(axis, L[i], p0, p1, sd > 0 ? H + 0.25 : -H - P, sd > 0 ? H + P : -H - 0.25, 0, 0.16, PAVE);
@@ -8463,6 +8522,23 @@ function roadBoxes(map) {
       }
     }
   });
+  /* the ring road's outer edge: pavement and kerb unbroken along its whole length (nothing leaves the city) */
+  ['x', 'z'].forEach(function (axis) { [[L[0], -1], [L[L.length - 1], 1]].forEach(function (q) {
+    strip(axis, q[0], -E, E, q[1] > 0 ? H + 0.25 : -H - P, q[1] > 0 ? H + P : -H - 0.25, 0, 0.16, PAVE);
+    strip(axis, q[0], L[0] - H, L[L.length - 1] + H, q[1] > 0 ? H : -H - 0.25, q[1] > 0 ? H + 0.25 : -H, 0, 0.2, KERB);
+  }); });
+  /* past the ring, where every road used to run on, a building closes the gap between the edge blocks (the road north out of the top-left
+     corner is the old mansion's: its gate and wall stand there instead) */
+  var FILL = [C('#c9b79c'), C('#b98f6a'), C('#9fb0a8'), C('#d7c7a0'), C('#a88c7c')], WIN = C('#3b3a44'), PARA = C('#8a7f72');
+  ['x', 'z'].forEach(function (axis) { L.forEach(function (Lc, li) { [-1, 1].forEach(function (end) {
+    if (map.mansion && axis === 'z' && Lc === map.mansion.x && end < 0) return;
+    var hgt = 8 + ((li * 7 + (axis === 'x' ? 3 : 0) + (end > 0 ? 5 : 0)) % 4) * 2.5, col = FILL[(li + (end > 0 ? 2 : 0) + (axis === 'x' ? 1 : 0)) % FILL.length];
+    var a0 = end > 0 ? E : -E - 9, a1 = end > 0 ? E + 9 : -E, face = end > 0 ? E : -E;
+    strip(axis, Lc, a0, a1, -H - P - 0.5, H + P + 0.5, 0, hgt, col);
+    strip(axis, Lc, a0 - 0.1, a1 + 0.1, -H - P - 0.6, H + P + 0.6, hgt, hgt + 0.6, PARA);
+    for (var fl = 1.2; fl < hgt - 1.5; fl += 3) for (var wx = -H - P + 1; wx < H + P - 1; wx += 2.6)
+      strip(axis, Lc, face - (end > 0 ? 0.06 : -0.0), face + (end > 0 ? 0 : 0.06), wx, wx + 1.3, fl, fl + 1.4, WIN);
+  }); }); });
   /* electric poles: a wooden post, a cross arm and a transformer box */
   map.props.list.forEach(function (p) {
     if (p.kind !== 'pole') return;
@@ -8640,7 +8716,7 @@ function createRideView(scene) {
   var allBlocks = blockList();
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
-    var B = (map && map.mansion && map.mansion.block === b.key) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the mansion's block has no shop rows: view/mansionvox stands there) */
+    var B = (map && map.mansion && map.mansion.grounds.indexOf(b.key) >= 0) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the old mansion's grounds have no shop rows: view/mansionvox stands there) */
     /* gaps in the row: the cycle-repair shop's, and each trouble spot's for its landmark; boxes reaching in are cut back to the edge */
     var GL = [];
     if (map && map.home) { var H = map.home; GL.push({ axis: 'x', x0: H.x - 4.3, x1: H.x + 4.3, z0: H.z, z1: H.z + 1.5 + 7.9, c: H.x }); }

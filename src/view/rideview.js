@@ -70,11 +70,12 @@ function roadBoxes(map) {
   } else out.push({ x0: G0.x0, x1: G0.x1, z0: G0.z0, z1: G0.z1, y0: -0.2, y1: -0.01, c: GROUND });
   ['x', 'z'].forEach(function (axis) {
     for (i = 0; i < L.length; i++) {
-      strip(axis, L[i], -E, E, -H, H, 0, axis === 'x' ? 0.02 : 0.021, ROAD);
+      strip(axis, L[i], L[0] - H, L[L.length - 1] + H, -H, H, 0, axis === 'x' ? 0.02 : 0.021, ROAD);       /* (the roads end at the ring road: no stubs past it) */
       var ends = [-E].concat(L).concat([E]);
       for (k = 0; k < ends.length - 1; k++) {
         var a0 = ends[k] + (k === 0 ? 0 : H), a1 = ends[k + 1] - (k === ends.length - 2 ? 0 : H);
         if (a1 - a0 < 2) continue;
+        if (k === 0 || k === ends.length - 2) { strip(axis, L[i], a0, a1, -H - P, H + P, 0, 0.16, PAVE); continue; }     /* past the ring: pavement right across */
         for (sd = -1; sd <= 1; sd += 2) {
           var p0 = a0 + (k === 0 ? 0 : P), p1 = a1 - (k === ends.length - 2 ? 0 : P);
           strip(axis, L[i], p0, p1, sd > 0 ? H + 0.25 : -H - P, sd > 0 ? H + P : -H - 0.25, 0, 0.16, PAVE);
@@ -87,6 +88,23 @@ function roadBoxes(map) {
       }
     }
   });
+  /* the ring road's outer edge: pavement and kerb unbroken along its whole length (nothing leaves the city) */
+  ['x', 'z'].forEach(function (axis) { [[L[0], -1], [L[L.length - 1], 1]].forEach(function (q) {
+    strip(axis, q[0], -E, E, q[1] > 0 ? H + 0.25 : -H - P, q[1] > 0 ? H + P : -H - 0.25, 0, 0.16, PAVE);
+    strip(axis, q[0], L[0] - H, L[L.length - 1] + H, q[1] > 0 ? H : -H - 0.25, q[1] > 0 ? H + 0.25 : -H, 0, 0.2, KERB);
+  }); });
+  /* past the ring, where every road used to run on, a building closes the gap between the edge blocks (the road north out of the top-left
+     corner is the old mansion's: its gate and wall stand there instead) */
+  var FILL = [C('#c9b79c'), C('#b98f6a'), C('#9fb0a8'), C('#d7c7a0'), C('#a88c7c')], WIN = C('#3b3a44'), PARA = C('#8a7f72');
+  ['x', 'z'].forEach(function (axis) { L.forEach(function (Lc, li) { [-1, 1].forEach(function (end) {
+    if (map.mansion && axis === 'z' && Lc === map.mansion.x && end < 0) return;
+    var hgt = 8 + ((li * 7 + (axis === 'x' ? 3 : 0) + (end > 0 ? 5 : 0)) % 4) * 2.5, col = FILL[(li + (end > 0 ? 2 : 0) + (axis === 'x' ? 1 : 0)) % FILL.length];
+    var a0 = end > 0 ? E : -E - 9, a1 = end > 0 ? E + 9 : -E, face = end > 0 ? E : -E;
+    strip(axis, Lc, a0, a1, -H - P - 0.5, H + P + 0.5, 0, hgt, col);
+    strip(axis, Lc, a0 - 0.1, a1 + 0.1, -H - P - 0.6, H + P + 0.6, hgt, hgt + 0.6, PARA);
+    for (var fl = 1.2; fl < hgt - 1.5; fl += 3) for (var wx = -H - P + 1; wx < H + P - 1; wx += 2.6)
+      strip(axis, Lc, face - (end > 0 ? 0.06 : -0.0), face + (end > 0 ? 0 : 0.06), wx, wx + 1.3, fl, fl + 1.4, WIN);
+  }); }); });
   /* electric poles: a wooden post, a cross arm and a transformer box */
   map.props.list.forEach(function (p) {
     if (p.kind !== 'pole') return;
@@ -264,7 +282,7 @@ function createRideView(scene) {
   var allBlocks = blockList();
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
-    var B = (map && map.mansion && map.mansion.block === b.key) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the mansion's block has no shop rows: view/mansionvox stands there) */
+    var B = (map && map.mansion && map.mansion.grounds.indexOf(b.key) >= 0) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the old mansion's grounds have no shop rows: view/mansionvox stands there) */
     /* gaps in the row: the cycle-repair shop's, and each trouble spot's for its landmark; boxes reaching in are cut back to the edge */
     var GL = [];
     if (map && map.home) { var H = map.home; GL.push({ axis: 'x', x0: H.x - 4.3, x1: H.x + 4.3, z0: H.z, z1: H.z + 1.5 + 7.9, c: H.x }); }
