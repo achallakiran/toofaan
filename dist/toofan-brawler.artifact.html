@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 81',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 82',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -5423,36 +5423,76 @@ function createDream(renderer) {
   function place(f, x, z, ry, pose) { f.rig.root.position.set(x, 0, z); f.rig.root.rotation.y = ry; f.rig.applyPose(pose, { plant: true }); f.rig.root.visible = true; }
   function clamp01(v) { return Math.max(0, Math.min(1, v)); }
   /* the story, by its own clock T (the three shots run on from one another: 0-4, 4-8, 8-11) */
-  var START = [0, 4.0, 8.0], RT = new THREE.Vector3(), UP = new THREE.Vector3();
+  var START = [0, 4.0, 8.0], RT = new THREE.Vector3(), UP = new THREE.Vector3(), HV = new THREE.Vector3(), HM = new THREE.Vector3(), ghostTrail = [];
+  var ghost = { skin: new THREE.MeshBasicMaterial({ color: 0xff2a1a, skinning: true, transparent: true, opacity: 0.2, depthWrite: false }), plain: new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.2, depthWrite: false }) };
+  /* dust from her skidding heels */
+  var dustGeo = new THREE.PlaneGeometry(0.22, 0.14); geos.push(dustGeo);
+  var dust = [0, 1, 2, 3, 4, 5].map(function () { var m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: 0x8a2a2a, transparent: true, opacity: 0.4, depthWrite: false })); m.userData.dust = true; world.add(m); return m; });    /* (in the world group: drawn once, with the world) */
   return {
     /* draw shot `shot` at time t (seconds since that shot began) */
     render: function (shot, t) {
       var w = renderer.domElement.clientWidth || 800, h = renderer.domElement.clientHeight || 600, T = START[shot] + t, s = Math.sin(T * 1.3);
       U.uT.value = T;
-      /* he walks steadily to the gate and through it, pulling her by the wrist; she is dragged backwards, leaning away, reaching for her son */
-      var vz = -1.2 - T * 0.72, vx = 0.45, mz = vz + 0.7, mx = vx - 0.95;          /* she is to his side, so both read */
-      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(T * 2.2, 0.9), { 'armB.sx': -35, 'armB.sz': 12, 'armB.e': 8, 'spine.rx': 8, 'head.rx': 6 }, 1, 1, 1, 1));
-      place(maa, mx, mz, 0.15, posemath.layer(stand, { 'spine.rx': -14 + s * 3, 'hip.z': -0.06, 'armA.sx': 95 + s * 6, 'armA.sz': 20, 'armA.e': 10, 'armB.sx': -55, 'armB.sz': -10, 'armB.e': 5,
-        'legA.hx': 18 + s * 12, 'legB.hx': -12 - s * 12, 'legA.k': 10, 'legB.k': 14, 'head.rx': -10, 'head.ry': 12 }, 1, 1, 1, 1));
+      /* THE DRAG. He strides to the gate, bent forward into it, his pulling arm stretched back behind him with her wrist in his fist; one of
+         his heads turned back to her. She is hauled along behind him: leaning right back against the pull, her heels dug in and skidding,
+         her held arm stretched out straight to his fist, her free arm flung back toward her son, her head turned to him. Her hand is put
+         exactly in his: she is placed so that her wrist meets his. Every few steps she stumbles and is yanked on. */
+      var vz = -1.0 - T * 0.62, vx = 0.6, yank = Math.max(0, Math.sin(T * 2.6)) * 0.12;
+      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(T * 2.0, 1.0), { 'spine.rx': 22, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
+        'armB.sx': -62, 'armB.sz': -8, 'armB.e': 4, 'armB.pr': 20, 'armA.sx': 25 + Math.sin(T * 2.0) * 20, 'armA.e': 50 }, 1, 1, 1, 1));
+      var sk = Math.sin(T * 5.2);
+      var mpose = posemath.layer(stand, { 'spine.rx': -30 - yank * 60, 'hip.rx': -12, 'hip.y': -0.08, 'head.rx': -6, 'head.ry': 55, 'neck.ry': 25,
+        'armA.sx': 92, 'armA.sz': 6, 'armA.e': 0, 'armA.pr': 0, 'armB.sx': -70 + sk * 6, 'armB.sz': 40, 'armB.e': 12,
+        'legA.hx': 42 + sk * 6, 'legA.k': 6, 'legA.a': 22, 'legB.hx': -8 - sk * 6, 'legB.k': 38, 'legB.a': 10 }, 1, 1, 1, 1);
+      place(maa, 0, 0, Math.PI - 0.35, mpose);
+      villain.rig.root.updateMatrixWorld(true); maa.rig.root.updateMatrixWorld(true);
+      villain.rig.parts.R.wrist.getWorldPosition(HV); maa.rig.parts.L.wrist.getWorldPosition(HM);
+      maa.rig.root.position.set(HV.x - HM.x, 0, HV.z - HM.z + yank * 0.4);                     /* her hand in his fist */
+      var mx = maa.rig.root.position.x, mz = maa.rig.root.position.z;
+      dust.forEach(function (d, k) {                                          /* her heels skid: dust kicked up behind them */
+        var a = ((T * 1.7 + k * 0.37) % 1); d.position.set(mx + (k % 2 ? 0.12 : -0.12) + (k % 3 - 1) * 0.1, 0.05 + a * 0.35, mz + 0.25 + a * 0.5);
+        d.scale.setScalar(0.4 + a * 1.2); d.material.opacity = 0.55 * (1 - a);
+      });
       /* the gate swings open as they reach it and shuts behind them, in front of him */
-      var open = clamp01((T - 5.6) / 1.6) * (1 - clamp01((T - 9.7) / 1.0));
+      var open = clamp01((T - 5.4) / 1.4) * (1 - clamp01((T - 9.8) / 0.9));
       leafL.rotation.y = open * 1.35; leafR.rotation.y = -open * 1.35;
-      /* Toofan running after them in slow motion, never closing the gap */
-      var hz = 4.4 - T * 0.5, ph = T * 2.4;
-      place(hero, -0.25, hz, Math.PI, posemath.layer(posemath.walkPose(ph, 2.2), { 'spine.rx': 18, 'armA.sx': T > 8.6 ? 120 : 40 + Math.sin(ph) * 40, 'armA.e': T > 8.6 ? 8 : 60, 'head.rx': -10 }, 1, 1, 1, 1));
+      /* TOOFAN, in slow motion: the long heavy stride of a man running all out, at a third of the speed, leaning into it, arms pumping, the
+         reaching arm thrown forward at the end; he gains nothing on them. Red after-images trail him. */
+      var hz = 4.6 - T * 0.42, hx = -0.3, ph = T * 1.55;
+      function runPose(q) { return posemath.layer(posemath.walkPose(q, 2.9), { 'spine.rx': 24, 'head.rx': -16, 'armA.sx': T > 8.4 ? 125 : 55 + Math.sin(q) * 65, 'armA.e': T > 8.4 ? 6 : 85,
+        'armB.sx': 55 - Math.sin(q) * 65, 'armB.e': 85, 'hip.y': -0.06 + Math.abs(Math.sin(q)) * 0.1 }, 1, 1, 1, 1); }
+      var hy = Math.abs(Math.sin(ph)) * 0.16;
+      place(hero, hx, hz, Math.PI, runPose(ph)); hero.rig.root.position.y = hy; hero.rig.flutter(T * 0.35, 0);
+      ghostTrail = [0.32, 0.64, 0.96].map(function (lag) { return { z: hz + lag * 0.42 * 1.6, ph: ph - lag * 1.55 * 1.6, y: Math.abs(Math.sin(ph - lag * 2.5)) * 0.16 }; });
       world.children.forEach(function (o) { if (o.userData.flick !== undefined) o.material = ember; });
-      if (shot === 0) {                              /* wide: the mansion, the closed gate, and him dragging her toward it */
-        cam.position.set(3.2 - t * 0.12, 2.3, 3.4 - t * 0.1); cam.lookAt(-0.3, 2.0, -6.5); cam.fov = 48;
-      } else if (shot === 1) {                       /* behind Toofan, running: the gate opens ahead, far away */
-        cam.position.set(0.7, 1.55, hz + 2.4); cam.lookAt(0.0, 1.5, -7); cam.fov = 40;
+      var roll = 0;
+      if (shot === 0) {                              /* side on and low: him hauling her toward the gate by the wrist */
+        cam.position.set(vx + 5.4, 1.15, vz + 0.9 - t * 0.1); cam.lookAt(vx - 0.4, 1.35, vz - 0.9); cam.fov = 44; roll = -0.05;      /* side on: the pull reads in profile */
+      } else if (shot === 1) {                       /* Max Payne: low and tilted, tracking beside him as he runs in slow motion, the two of them far ahead at the gate */
+        var tall = h > w, aimT = tall ? 0.85 : 0.72;                       /* aim between him and them (on a tall phone screen, on him) */
+        var ax = hx + (vx - hx) * (1 - aimT), az = hz + (vz - hz) * (1 - aimT);
+        cam.position.set(hx + 5.6, 0.8, hz - 0.4); cam.lookAt(ax, 1.2, az); cam.fov = 56; roll = 0.13 + Math.sin(t * 0.6) * 0.02;
       } else {                                        /* the long lens over his shoulder: they pass through, the gate shuts in front of him */
-        cam.position.set(0.55, 1.6, hz + 1.5); cam.lookAt(0.1, 1.4, -7.5); cam.fov = 24;
+        cam.position.set(hx + 0.75, 1.6, hz + 1.5); cam.lookAt(0.2, 1.4, -7.5); cam.fov = 24; roll = 0.05;
       }
+      cam.rotateZ(roll);
+      dust.forEach(function (d) { d.quaternion.copy(cam.quaternion); });
       cam.aspect = w / h; if (h > w) cam.fov *= 1.35; cam.updateProjectionMatrix();
       var ac = renderer.autoClear; renderer.autoClear = false; renderer.clear();
       renderer.render(bgScene, bgCam);
       /* the burning edge is drawn over the gate and the mansion (edge materials are 'transparent', so they come after the black world; the
          world's depth stays, so nobody shows through the wall), then the black bodies over it */
+      /* the after-images: Toofan's run a moment ago, faint and red, drawn first (behind everything of this moment) */
+      var keepP = hero.rig.root.position.clone();
+      all.forEach(function (f) { f.rig.root.visible = f === hero; }); world.visible = false;
+      hero.meshes.forEach(function (m) { if (!m.userData.keep) m.material = m.isSkinnedMesh ? ghost.skin : ghost.plain; });
+      ghostTrail.slice().reverse().forEach(function (g2, k) {
+        ghost.skin.opacity = ghost.plain.opacity = 0.12 + k * 0.08;
+        hero.rig.root.position.set(hx, g2.y, g2.z); hero.rig.applyPose(runPose(g2.ph), { plant: true }); hero.rig.root.position.y = g2.y; renderer.render(scene, cam);
+      });
+      hero.rig.root.position.copy(keepP); hero.rig.applyPose(runPose(ph), { plant: true }); hero.rig.root.position.y = hy;
+      all.forEach(function (f) { f.rig.root.visible = true; }); world.visible = true;
+      renderer.clearDepth();
       cam.updateMatrixWorld(); RT.setFromMatrixColumn(cam.matrixWorld, 0); UP.setFromMatrixColumn(cam.matrixWorld, 1);
       paint(edge, halo);
       [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7]].forEach(function (d, i) {   /* the outline: the figure nudged round on screen */
@@ -5464,7 +5504,7 @@ function createDream(renderer) {
       renderer.autoClear = ac;
     },
     dispose: function () {
-      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember].forEach(function (m) { m.dispose(); });
+      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember, ghost.skin, ghost.plain].forEach(function (m) { m.dispose(); }); dust.forEach(function (d) { d.material.dispose(); });
       geos.forEach(function (g) { g.dispose(); }); floor.material.dispose();
     }
   };
