@@ -4,6 +4,8 @@
 'use strict';
 
 var GANGS = require('../data/gangs');
+var rideSim = require('../sim/ride');
+function rideSimOpen(r) { return rideSim.mansionOpen(r); }
 var R = require('../data/ride');
 
 function createFullMap() {
@@ -47,6 +49,18 @@ function createFullMap() {
     if (hcur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(hx - 15, hz - 16, 30, 30); }
     g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = '#bfe3ff'; g.fillText('HOME', hx, hz + 13);
     hits.push({ key: 'home', x: hx, z: hz, r: 22 });
+    /* the old mansion: its whole block dark, walled; a padlock while it is shut */
+    var Mn = r.map.mansion;
+    if (Mn) {
+      var mb = r.map.blocks.filter(function (q) { return q.key === Mn.block; })[0], mopen = rideSimOpen(r);
+      if (mb) { g.fillStyle = '#1a0d14'; g.fillRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 3; g.strokeRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); }
+      var mx2 = X(Mn.cx), mz2 = Z(Mn.cz);
+      g.fillStyle = '#3a2430'; g.fillRect(mx2 - 10, mz2 - 4, 20, 12); g.beginPath(); g.moveTo(mx2 - 12, mz2 - 4); g.lineTo(mx2, mz2 - 13); g.lineTo(mx2 + 12, mz2 - 4); g.closePath(); g.fill();
+      if (!mopen) { g.strokeStyle = '#ff3a2a'; g.lineWidth = 2; g.beginPath(); g.arc(mx2, mz2 + 1, 3, Math.PI, 0); g.stroke(); g.fillStyle = '#ff3a2a'; g.fillRect(mx2 - 4, mz2 + 1, 8, 6); }
+      g.font = "10px 'ToofanPx',monospace"; g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = mopen ? '#ffd21f' : '#ff8a8a'; g.fillText(mopen ? 'OPEN' : 'LOCKED', mx2, mz2 + 11);
+      if (r.target === Mn) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(mx2 - 16, mz2 - 17, 32, 38); }
+      hits.push({ key: 'mansion', x: mx2, z: mz2, r: 24 });
+    }
     /* gang patrols: ride up to one to take them on */
     (r.patrols || []).forEach(function (p) {
       var G = GANGS.GANGS[p.gang], px2 = X(p.x), pz2 = Z(p.z);
@@ -66,7 +80,8 @@ function createFullMap() {
       return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:12px;height:12px;background:' + G.color + ';border:1px solid #000;display:inline-block"></span><span style="flex:1">' + G.name.toUpperCase() + '</span><span style="color:#9fd8aa">' + c + '/' + n + '</span></div>';
     }).join('') + '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#ff5a5a"><span style="width:12px;text-align:center">?</span><span style="flex:1">THE MAN BEHIND THEM</span></div>' +
       '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#bfe3ff"><span style="width:12px;text-align:center;color:#4aa8ff">&#8962;</span><span style="flex:1">HOME</span></div>' +
-      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ffb0b0"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2a2a;display:inline-block"></span><span style="flex:1">GANG ON THE ROAD</span></div>';
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ffb0b0"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2a2a;display:inline-block"></span><span style="flex:1">GANG ON THE ROAD</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ff8a8a"><span style="width:12px;height:12px;background:#3a2430;border:2px solid #7a1020;display:inline-block"></span><span style="flex:1">THE OLD MANSION</span></div>';
   }
   return {
     isOpen: function () { return !!el; },

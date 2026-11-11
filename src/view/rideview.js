@@ -264,7 +264,7 @@ function createRideView(scene) {
   var allBlocks = blockList();
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
-    var B = buildBlock(b, b.seed, detail), g = new THREE.Group();
+    var B = (map && map.mansion && map.mansion.block === b.key) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the mansion's block has no shop rows: view/mansionvox stands there) */
     /* gaps in the row: the cycle-repair shop's, and each trouble spot's for its landmark; boxes reaching in are cut back to the edge */
     var GL = [];
     if (map && map.home) { var H = map.home; GL.push({ axis: 'x', x0: H.x - 4.3, x1: H.x + 4.3, z0: H.z, z1: H.z + 1.5 + 7.9, c: H.x }); }

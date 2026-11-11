@@ -18,6 +18,7 @@ var thappadMod = require('./thappad');
 var skybolt = require('../view/skybolt');
 var shopvox = require('../view/shopvox');
 var landmarks = require('../view/landmarks');
+var mansionvox = require('../view/mansionvox');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -76,6 +77,8 @@ function createRide() {
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       S.shop = shopvox.createShop(view.scene, S.r.map.home); scope.add(function () { S.shop.dispose(); });
       S.marks = landmarks.createLandmarks(view.scene, S.r.map); scope.add(function () { S.marks.dispose(); });      /* each place's landmark */
+      S.r.bosses = ctx.save.get('bosses', []) || [];                                          /* the gangs whose boss he has beaten */
+      S.mansion = mansionvox.createMansion(view.scene, S.r.map); S.mansion.open(rideSim.mansionOpen(S.r) ? 1 : 0); scope.add(function () { S.mansion.dispose(); });
       scope.add(function () { S.v.dispose(); ctx.touchRoot.style.visibility = ''; });
       var park = function () { var B = S.r.bike; if (S.r.state === 'ride' && !S.r.enc) ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); };   /* leaving the page parks Bijli where she is */
       var hid = function () { if (document.hidden) park(); };
@@ -126,6 +129,8 @@ function createRide() {
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
       scope.add(ctx.bus.on('ride:signal', function (e) { say(e.key === 'home' ? 'GHAR CHALO: CYCLE REPAIR SHOP' : 'Signal: ' + e.name, 2); }));
       scope.add(ctx.bus.on('ride:home', function () { startHome(); }));
+      scope.add(ctx.bus.on('ride:locked', function (e) { S.say('LOCKED: BEAT ' + e.left.length + ' MORE GANG BOSS' + (e.left.length === 1 ? '' : 'ES'), 3); S.sfx.hit && S.sfx.hit('block', 0.4); }));
+      scope.add(ctx.bus.on('ride:mansion', function () { S.say('THE GATE STANDS OPEN', 3); }));
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
@@ -300,6 +305,9 @@ function drawMap(cv, r, t, yaw) {
     g.fillStyle = cur ? (Math.sin(t * 8) > 0 ? '#ff3b30' : '#ffc21a') : (st === 'open' ? '#ffc21a' : '#4fc08d');
     g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
   });
+  var Mn = r.map.mansion;                                                 /* the old mansion: a dark house, a red padlock while shut */
+  if (Mn) { var mx = Mn.cx * sc, mz = Mn.cz * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
+    if (!rideSim.mansionOpen(r)) { g.fillStyle = '#ff3a2a'; g.fillRect(mx - 2.5, mz + 1, 5, 4); } }
   var H = r.map.home, hc = r.target === H;                                /* home: a little blue house */
   g.fillStyle = hc && Math.sin(t * 8) > 0 ? '#ff3b30' : '#4aa8ff'; g.beginPath(); g.moveTo(H.x * sc, H.z * sc - 7); g.lineTo(H.x * sc + 6, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc - 1); g.lineTo(H.x * sc - 6, H.z * sc - 1); g.closePath(); g.fill();
   (r.patrols || []).forEach(function (p) {                                /* gang patrols: their gang's colour, ringed in red */

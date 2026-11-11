@@ -328,7 +328,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 80',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 81',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1572,6 +1572,7 @@ var thappadMod = require('./thappad');
 var skybolt = require('../view/skybolt');
 var shopvox = require('../view/shopvox');
 var landmarks = require('../view/landmarks');
+var mansionvox = require('../view/mansionvox');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -1630,6 +1631,8 @@ function createRide() {
       S.v = rideview.createRideView(view.scene); S.v.build(S.r.map); S.v.prime(S.r.bike.x, S.r.bike.z);
       S.shop = shopvox.createShop(view.scene, S.r.map.home); scope.add(function () { S.shop.dispose(); });
       S.marks = landmarks.createLandmarks(view.scene, S.r.map); scope.add(function () { S.marks.dispose(); });      /* each place's landmark */
+      S.r.bosses = ctx.save.get('bosses', []) || [];                                          /* the gangs whose boss he has beaten */
+      S.mansion = mansionvox.createMansion(view.scene, S.r.map); S.mansion.open(rideSim.mansionOpen(S.r) ? 1 : 0); scope.add(function () { S.mansion.dispose(); });
       scope.add(function () { S.v.dispose(); ctx.touchRoot.style.visibility = ''; });
       var park = function () { var B = S.r.bike; if (S.r.state === 'ride' && !S.r.enc) ctx.save.set('ride.pos', { x: +B.x.toFixed(2), z: +B.z.toFixed(2), h: +B.h.toFixed(3) }); };   /* leaving the page parks Bijli where she is */
       var hid = function () { if (document.hidden) park(); };
@@ -1680,6 +1683,8 @@ function createRide() {
       scope.add(ctx.bus.on('ride:arrive', function (e) { S.sfx.engineOff(); S.cut = { kind: 'arrive', t: 0, key: e.key, name: e.name, card: false, gone: false }; ctx.save.set('ride.missions', S.r.missions); }));
       scope.add(ctx.bus.on('ride:signal', function (e) { say(e.key === 'home' ? 'GHAR CHALO: CYCLE REPAIR SHOP' : 'Signal: ' + e.name, 2); }));
       scope.add(ctx.bus.on('ride:home', function () { startHome(); }));
+      scope.add(ctx.bus.on('ride:locked', function (e) { S.say('LOCKED: BEAT ' + e.left.length + ' MORE GANG BOSS' + (e.left.length === 1 ? '' : 'ES'), 3); S.sfx.hit && S.sfx.hit('block', 0.4); }));
+      scope.add(ctx.bus.on('ride:mansion', function () { S.say('THE GATE STANDS OPEN', 3); }));
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
@@ -1854,6 +1859,9 @@ function drawMap(cv, r, t, yaw) {
     g.fillStyle = cur ? (Math.sin(t * 8) > 0 ? '#ff3b30' : '#ffc21a') : (st === 'open' ? '#ffc21a' : '#4fc08d');
     g.beginPath(); g.arc(T.x * sc, T.z * sc, cur ? 6 : 4, 0, 7); g.fill();
   });
+  var Mn = r.map.mansion;                                                 /* the old mansion: a dark house, a red padlock while shut */
+  if (Mn) { var mx = Mn.cx * sc, mz = Mn.cz * sc; g.fillStyle = '#3a2430'; g.fillRect(mx - 6, mz - 2, 12, 8); g.beginPath(); g.moveTo(mx - 7, mz - 2); g.lineTo(mx, mz - 8); g.lineTo(mx + 7, mz - 2); g.closePath(); g.fill();
+    if (!rideSim.mansionOpen(r)) { g.fillStyle = '#ff3a2a'; g.fillRect(mx - 2.5, mz + 1, 5, 4); } }
   var H = r.map.home, hc = r.target === H;                                /* home: a little blue house */
   g.fillStyle = hc && Math.sin(t * 8) > 0 ? '#ff3b30' : '#4aa8ff'; g.beginPath(); g.moveTo(H.x * sc, H.z * sc - 7); g.lineTo(H.x * sc + 6, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc - 1); g.lineTo(H.x * sc + 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc + 5); g.lineTo(H.x * sc - 4, H.z * sc - 1); g.lineTo(H.x * sc - 6, H.z * sc - 1); g.closePath(); g.fill();
   (r.patrols || []).forEach(function (p) {                                /* gang patrols: their gang's colour, ringed in red */
@@ -2473,7 +2481,7 @@ module.exports = { createTraining: createTraining, GAMES: GAMES };
 };
 defs["modes/wake"]=function(module,exports,require){
 /* modes: the New Game opening. Night, in Toofan's bed corner of the underground hideout. He is asleep and the nightmare comes: he tosses, the dream world flashes in
-   (Maa calling, his father falling, a shadow with a "?" for a face), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
+   (the two-headed man dragging Maa through a closed gate toward an old mansion while Toofan runs after them in slow motion and cannot reach her), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
    awake and sits up, and the player takes over in the hideout (modes/hideout). The dream is its own world (view/dreamview), separate from the title
    video; each dream shot holds long enough to read, with a fade in and out and a line of what is said. Skippable. The room, the dog and the dream are built here and freed
    on the way out. */
@@ -2553,7 +2561,7 @@ function createWake() {
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         view.scene.remove(S.quiltLie); view.scene.remove(S.quiltSit); S.quiltLie.geometry.dispose(); S.quiltSit.geometry.dispose();
-        S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
+        S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); if (S.rig.root.parent) S.rig.root.parent.remove(S.rig.root);   /* (he is moved out of the bed group when he sits up: take him away wherever he is) */ view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
       });
     },
@@ -2564,7 +2572,7 @@ function createWake() {
       if (t > 1.0 && !S.nightOn) { S.nightOn = true; S.music.play('night'); }
       /* the timeline: three dream shots, each faded in and out of the room, then the scream, Raka, waking */
       var DREAM = [[3.5, 7.5], [8.6, 12.6], [13.7, 16.6]], SCREAM = 16.6, DOG = 18.2, LICK = 20.0, BARK = 21.2, UP = 21.6, END = 25.2;
-      var LINES = ['BETA... TOOFAN...', 'PAPA!', 'MAA... RUKO!'];
+      var LINES = ['BETA... TOOFAN...', 'MAA!', 'MAA... RUKO!'];
       /* ---- Toofan ---- */
       if (t < UP) {
         var restless = t > 2.5 && t < SCREAM + 1.4, hard = t > 8 ? 1 : 0.6, toss = restless ? Math.sin(t * (t > 8 ? 7 : 4)) * hard : 0, scream = t > SCREAM && t < SCREAM + 1.6;
@@ -4409,6 +4417,7 @@ function stepPatrols(r) {
 
 /* the player picked a place on the full map: it becomes the signal (if it is still open) */
 function chooseTarget(r, key) {
+  if (key === 'mansion' && r.map.mansion) { if (r.state !== 'ride' || r.enc) return false; r.target = r.map.mansion; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: 'mansion', name: r.map.mansion.name, chosen: true }); return true; }
   if (key === 'home') { if (r.state !== 'ride' || r.enc) return false; r.target = r.map.home; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: 'home', name: r.map.home.name, chosen: true }); return true; }
   var T = r.map.targets.filter(function (t) { return t.key === key; })[0];
   if (!T || r.missions[key] !== 'open' || r.state !== 'ride' || r.enc) return false;
@@ -4504,7 +4513,7 @@ function step(r, input) {
     /* arrival */
     var T = r.target;
     /* riding away from the signal leaves it open for later: once he is well past his closest approach, the pointer moves on */
-    if (r.state === 'ride' && T && !r.enc && T.key !== 'home') {
+    if (r.state === 'ride' && T && !r.enc && T.key !== 'home' && T.key !== 'mansion') {
       var dT = Math.hypot(T.x - b.x, T.z - b.z);
       if (r.tKey !== T.key) { r.tKey = T.key; r.tBest = dT; }
       else if (dT < r.tBest) r.tBest = dT;
@@ -4516,12 +4525,13 @@ function step(r, input) {
     if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome && (Math.abs(b.speed) < GATE_STOP || (T && T.key === 'home'))) {  /* home: the shop is always a place he can ride in to, signal or not */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.atHome = true; r.bus.emit('ride:home', {}); return;
     }
-    if (r.state === 'ride' && T && T.key !== 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
+    if (r.state === 'ride' && T && T.key !== 'home' && T.key !== 'mansion' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
     /* road fights only when Toofan chooses one: the gang patrols drive their roads; ride up to one and the chase is on */
     if (r.state === 'ride' && !r.enc) stepPatrols(r);
+    if (r.state === 'ride' && !r.enc) stepMansion(r);
   } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
     hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
     if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
@@ -4536,6 +4546,17 @@ function step(r, input) {
     /* Toofan waits here: the game steps into the fight area (the brawler) and comes back with the area cleared */
   }
   r.tick++;
+}
+
+/* the old mansion's gate: locked until every gang's boss is beaten (r.bosses: the gangs whose boss he has beaten, set from the save).
+   Riding up to the locked gate only says so; once it is open, riding up to it is the way in. */
+var MANSION_R = 6;
+function mansionOpen(r) { var b = r.bosses || []; return GANGS.ORDER.every(function (g) { return b.indexOf(g) >= 0; }); }
+function stepMansion(r) {
+  var M = r.map.mansion, b = r.bike; if (!M) return;
+  var d = Math.hypot(M.gate.x - b.x, M.gate.z - b.z);
+  if (d > MANSION_R + 14) r.mansionSaid = false;
+  if (d < MANSION_R && !r.mansionSaid) { r.mansionSaid = true; if (r.target === M) { r.target = null; pickTarget(r); } r.bus.emit(mansionOpen(r) ? 'ride:mansion' : 'ride:locked', { name: M.name, left: GANGS.ORDER.filter(function (g) { return (r.bosses || []).indexOf(g) < 0; }) }); }
 }
 
 /* the shop's gate: the blue ring on the near lane in front of the shop. He goes in when he comes to a stop inside it (or rides into it
@@ -4569,7 +4590,7 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { mansionOpen: mansionOpen, leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
 
 };
 defs["sim/ridemap"]=function(module,exports,require){
@@ -4696,7 +4717,19 @@ function generate(seed) {
   var mid = Math.floor(R.GRID / 2), hs = Math.max(0, Math.floor((R.GRID - 1) / 2) - 1), tries2 = 0;
   while (used['x' + mid + ':' + hs] && tries2++ < R.GRID) hs = (hs + 1) % (R.GRID - 1);
   var home = { key: 'home', name: 'Cycle repair shop', x: (lines[hs] + lines[hs + 1]) / 2, z: lines[mid] + (R.HALF + R.PAVE * 0.5), axis: 'x', side: 1 };
-  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props, home: home };
+  /* the old mansion: a whole block of its own, walled in, its gate on the street on the side toward the middle of the map. The block is the
+     first corner (then any other) with no trouble spot and not the shop on any of its pavements. No rng: the rest of the map is as before. */
+  function touches(B, P) { return P.x > B.x0 - inset - 0.5 && P.x < B.x1 + inset + 0.5 && P.z > B.z0 - inset - 0.5 && P.z < B.z1 + inset + 0.5; }
+  var G1 = R.GRID - 2, order = [[G1, 0], [0, 0], [G1, G1], [0, G1]], bi, mb = null;
+  for (i = 0; i <= G1; i++) for (j = 0; j <= G1; j++) order.push([i, j]);
+  for (bi = 0; bi < order.length && !mb; bi++) {
+    var cand = blocks[order[bi][0] * (R.GRID - 1) + order[bi][1]];
+    if (!targets.some(function (T) { return touches(cand, T); }) && !touches(cand, home)) mb = cand;
+  }
+  var mcx = (mb.x0 + mb.x1) / 2, mcz = (mb.z0 + mb.z1) / 2, mside = mcz < 0 ? 1 : -1, mline = mside > 0 ? mb.z1 + inset : mb.z0 - inset;
+  var mansion = { key: 'mansion', name: 'The old mansion', block: mb.key, x: mcx, z: mline - mside * (R.HALF + R.PAVE * 0.5), cx: mcx, cz: mcz, side: mside, line: mline,
+    gate: { x: mcx, z: mline - mside * R.LANES[1] } };
+  return { seed: seed, lines: lines, ext: extent(), blocks: blocks, targets: targets, props: props, home: home, mansion: mansion };
 }
 
 module.exports = { generate: generate, clearOfProps: clearOfProps, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };
@@ -5311,11 +5344,11 @@ module.exports = { createDog: createDog };
 
 };
 defs["view/dreamview"]=function(module,exports,require){
-/* view: Toofan's nightmare, its own world (not the title video). A dark red void with drifting mist, broken pieces of his childhood
-   home floating in it, and the people of that night as black silhouettes with a burning edge: Maa calling for him with open arms, his
-   father falling to his knees, a tall shadow standing over them with a glowing "?" where a face should be (Taka), and the boy Toofan
-   running and never getting closer. Maa is drawn pale and glowing (white hair, white sari), the others as dark shapes with a burning edge,
-   so she reads at once. Every motion is slow, so each shot can be followed. Three shots, picked by `shot` (0, 1, 2); `t` drives the slow motion. Built for the scene, freed after. */
+/* view: Toofan's nightmare, its own world (not the title video). A dark red void with drifting mist, and in it, all in black silhouette
+   with a burning edge: an old mansion behind a tall closed iron gate, and the two-headed man dragging Maa toward it. Maa is drawn pale
+   and glowing (white hair, white sari) so she reads at once; she is pulled along backwards, reaching for her son. Toofan runs after them
+   in slow motion and never gets closer: the gate swings open, they pass through, and it shuts in front of him. One continuous story told
+   in three shots (shot 0, 1, 2; `t` is the time within the shot); every motion is slow, so it can be followed. Built for the scene, freed after. */
 'use strict';
 
 var herorig = require('./herorig');
@@ -5336,69 +5369,110 @@ var BG_FS = [
   '}'].join('\n');
 
 function createDream(renderer) {
-  var scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 80), bgScene = new THREE.Scene(), bgCam = new THREE.Camera();
+  var scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 120), bgScene = new THREE.Scene(), bgCam = new THREE.Camera();
   var U = { uT: { value: 0 } }, bgMat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: BG_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false });
   bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat));
   var black = { skin: new THREE.MeshBasicMaterial({ color: 0x050204, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0x050204 }) };
   var pale = { skin: new THREE.MeshBasicMaterial({ color: 0xf2ece2, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0xf2ece2 }) };
-  var halo = { skin: new THREE.MeshBasicMaterial({ color: 0xffd9a0, skinning: true, depthWrite: false }), plain: new THREE.MeshBasicMaterial({ color: 0xffd9a0, depthWrite: false }) };
-  var edge = { skin: new THREE.MeshBasicMaterial({ color: 0xff3a2a, skinning: true, depthWrite: false }), plain: new THREE.MeshBasicMaterial({ color: 0xff3a2a, depthWrite: false }) };
-  /* the people: Maa (with a long sari silhouette), the father, the shadow, the boy */
-  function person(scale, extra) {
-    var rig = herorig.createHeroRig('thug'), meshes = [];
+  var halo = { skin: new THREE.MeshBasicMaterial({ color: 0xffd9a0, skinning: true, depthWrite: false, transparent: true }), plain: new THREE.MeshBasicMaterial({ color: 0xffd9a0, depthWrite: false, transparent: true }) };
+  var edge = { skin: new THREE.MeshBasicMaterial({ color: 0xff3a2a, skinning: true, depthWrite: false, transparent: true }), plain: new THREE.MeshBasicMaterial({ color: 0xff3a2a, depthWrite: false, transparent: true }) };
+  var ember = new THREE.MeshBasicMaterial({ color: 0xff3a2a }), geos = [];
+  function box(w, h, d) { var g = new THREE.BoxGeometry(w, h, d); geos.push(g); return g; }
+  /* the people */
+  function person(variant, scale, extra) {
+    var rig = herorig.createHeroRig(variant), meshes = [];
     if (extra) extra(rig);
     rig.root.traverse(function (m) { if (m.isMesh) meshes.push(m); }); rig.root.scale.setScalar(scale); scene.add(rig.root);
     return { rig: rig, meshes: meshes, scale: scale };
   }
-  var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8), qGeo = new THREE.TorusGeometry(0.16, 0.05, 6, 14, Math.PI * 1.4);
-  var maa = person(0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
-  var father = person(1.0);
-  var shadow = person(1.35, function (rig) { var q = new THREE.Mesh(qGeo, new THREE.MeshBasicMaterial({ color: 0xff2a1a })), dot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), q.material); q.position.set(0.02, 0.32, 0.3); q.rotation.z = -0.6; dot.position.set(0, 0.06, 0.3); q.userData.keep = dot.userData.keep = true; rig.head.add(q); rig.head.add(dot); });
-  var boy = person(0.6);
-  var all = [maa, father, shadow, boy];
-  /* pieces of the old home floating in the void: a door frame, a window, a broken wall, a fallen chair */
-  var debris = new THREE.Group(), dm = new THREE.MeshBasicMaterial({ color: 0x14060a });
-  [[-3, 1.4, -6, 0.15, 2.2, 0.15], [-2.0, 1.4, -6, 0.15, 2.2, 0.15], [-2.5, 2.5, -6, 1.15, 0.15, 0.15], [3.2, 2.2, -7, 1.4, 1.0, 0.1], [2.6, 0.3, -4.5, 1.8, 0.6, 0.12], [-1.2, 3.4, -8, 2.2, 0.15, 0.15], [1.2, 0.2, -2.6, 0.5, 0.4, 0.5]].forEach(function (b) {
-    var m = new THREE.Mesh(new THREE.BoxGeometry(b[3], b[4], b[5]), dm); m.position.set(b[0], b[1], b[2]); m.rotation.z = (b[0] * 0.13) % 0.4; debris.add(m);
-  });
-  scene.add(debris);
-  var floor = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0x1a0408, transparent: true, opacity: 0.85 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8); geos.push(sariGeo, headGeo);
+  var maa = person('thug', 0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
   maa.pale = true;
+  /* the two-headed man: big, his own head pushed to one side and a second head grown beside it on the same neck, both with burning eyes */
+  var villain = person('thug', 1.45, function (rig) {
+    rig.head.position.x -= 0.12;
+    var h2 = new THREE.Mesh(box(0.27, 0.31, 0.29), black.plain); h2.position.set(rig.head.position.x + 0.27, rig.head.position.y + 0.16, rig.head.position.z); h2.rotation.z = -0.18; rig.neck.add(h2);
+    var jaw = new THREE.Mesh(box(0.2, 0.08, 0.24), black.plain); jaw.position.set(0, -0.15, 0.02); h2.add(jaw);
+    [[-0.06, 0.03], [0.06, 0.03]].forEach(function (e) {
+      var a = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); a.position.set(e[0], e[1], 0.15); a.userData.keep = true; h2.add(a);
+      var b = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+    });
+  });
+  var hero = person(undefined, 1.0);
+  var all = [maa, villain, hero];
+
+  /* the gate and the mansion behind it */
+  var GZ = -7.0, world = new THREE.Group(); scene.add(world);
+  function add(g, x, y, z, parent, m) { var o = new THREE.Mesh(g, m || black.plain); o.position.set(x, y, z); (parent || world).add(o); return o; }
+  [-1.75, 1.75].forEach(function (x) { add(box(0.5, 3.4, 0.5), x, 1.7, GZ); add(box(0.62, 0.2, 0.62), x, 3.5, GZ); var orb = add(new THREE.SphereGeometry(0.22, 8, 6), x, 3.8, GZ); geos.push(orb.geometry); });
+  add(box(7.4, 2.5, 0.35), -5.2, 1.25, GZ); add(box(7.4, 2.5, 0.35), 5.2, 1.25, GZ);
+  for (var x = -8.7; x <= 8.7; x += 0.7) if (Math.abs(x) > 1.9) add(box(0.06, 0.4, 0.06), x, 2.7, GZ);                  /* spikes along the wall */
+  function leaf(side) {
+    var g = new THREE.Group(); g.position.set(side * -1.5, 0, GZ); world.add(g);
+    for (var i = 0; i < 9; i++) { var bx = side * (0.09 + i * 0.165); add(box(0.05, 3.0, 0.05), bx, 1.5, 0, g); add(box(0.08, 0.2, 0.08), bx, 3.08, 0, g); }
+    add(box(1.5, 0.08, 0.06), side * 0.75, 0.4, 0, g); add(box(1.5, 0.08, 0.06), side * 0.75, 2.6, 0, g); add(box(1.5, 0.08, 0.06), side * 0.75, 1.6, 0, g);
+    var arc = add(new THREE.TorusGeometry(0.38, 0.035, 4, 12, Math.PI), side * 0.75, 2.6, 0, g); geos.push(arc.geometry);
+    return g;
+  }
+  var leafL = leaf(1), leafR = leaf(-1);
+  /* the old mansion: a wide body with a steep roof, a tower, chimneys, a few windows glowing like coals */
+  var MZ = -17;
+  add(box(11, 6, 4), 0, 3, MZ); add(box(4, 4.2, 3.4), -7, 2.1, MZ + 0.4);
+  var r1 = add(box(11.6, 0.4, 3.1), 0, 7.0, MZ + 1.0); r1.rotation.x = 0.75; var r2 = add(box(11.6, 0.4, 3.1), 0, 7.0, MZ - 1.0); r2.rotation.x = -0.75;
+  add(box(2.6, 11, 2.6), 4.2, 5.5, MZ + 0.6); var spire = add(new THREE.ConeGeometry(2.0, 3.4, 4), 4.2, 12.7, MZ + 0.6); spire.rotation.y = Math.PI / 4; geos.push(spire.geometry);
+  add(box(0.6, 2.4, 0.6), -3.5, 8.0, MZ); add(box(0.6, 1.8, 0.6), -1.4, 7.8, MZ - 0.6);
+  [[-4, 2], [-2, 2], [2, 2], [-4, 4.4], [2, 4.4], [0, 4.4], [4.2, 8.4], [-7, 2]].forEach(function (w, i) { var o = add(box(0.7, 1.1, 0.05), w[0], w[1], (w[0] === 4.2 ? MZ + 1.92 : (w[0] === -7 ? MZ + 2.12 : MZ + 2.03)), null, ember); o.userData.flick = i; });
+  var dead = add(box(0.18, 3.2, 0.18), -3.2, 1.6, GZ + 1.6); dead.rotation.z = 0.12; var br1 = add(box(1.4, 0.1, 0.1), -2.7, 2.7, GZ + 1.6); br1.rotation.z = 0.6; var br2 = add(box(1.0, 0.08, 0.08), -3.7, 2.4, GZ + 1.6); br2.rotation.z = -0.7;
+  var floor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshBasicMaterial({ color: 0x1a0408, transparent: true, opacity: 0.85 })); floor.rotation.x = -Math.PI / 2; scene.add(floor); geos.push(floor.geometry);
+
   function paint(set, alt) { all.forEach(function (f) { var u = f.pale ? alt : set; f.meshes.forEach(function (m) { if (!m.userData.keep) m.material = m.isSkinnedMesh ? u.skin : u.plain; }); }); }
   var stand = posemath.named('stand');
   function place(f, x, z, ry, pose) { f.rig.root.position.set(x, 0, z); f.rig.root.rotation.y = ry; f.rig.applyPose(pose, { plant: true }); f.rig.root.visible = true; }
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+  /* the story, by its own clock T (the three shots run on from one another: 0-4, 4-8, 8-11) */
+  var START = [0, 4.0, 8.0], RT = new THREE.Vector3(), UP = new THREE.Vector3();
   return {
-    /* draw shot `shot` at time t (seconds since the dream began) */
+    /* draw shot `shot` at time t (seconds since that shot began) */
     render: function (shot, t) {
-      var w = renderer.domElement.clientWidth || 800, h = renderer.domElement.clientHeight || 600, s = Math.sin(t * 1.2);
-      U.uT.value = t; all.forEach(function (f) { f.rig.root.visible = false; });
-      debris.children.forEach(function (m, i) { m.position.y += Math.sin(t * 0.8 + i) * 0.002; m.rotation.y = t * 0.1 * (i % 2 ? 1 : -1); });
-      if (shot === 0) {                              /* Maa calling for him, arms open, the boy reaching */
-        place(maa, 0, -2.5, 0, posemath.layer(stand, { 'armA.sx': 60 + Math.min(1, t / 2) * 20 + s * 4, 'armB.sx': 60 + Math.min(1, t / 2) * 20 - s * 4, 'armA.sz': 45, 'armB.sz': 45, 'armA.e': 15, 'armB.e': 15, 'head.rx': -8 }, 1, 1, 1, 1));
-        place(boy, 0.2, 0.6, Math.PI, posemath.layer(stand, { 'armA.sx': 100, 'armA.sz': 10, 'armB.sx': 30, 'spine.rx': 12 }, 1, 1, 1, 1));
-        cam.position.set(0.9 - t * 0.05, 1.0, 2.6 - t * 0.08); cam.lookAt(0, 1.1, -2);
-      } else if (shot === 1) {                       /* the father falls to his knees; the shadow stands over him */
-        var k = Math.min(1, Math.max(0, (t - 0.6) / 2.4));
-        place(father, -0.75, -1.6, 0.55, posemath.layer(stand, { 'legA.hx': 70 * k, 'legB.hx': 70 * k, 'legA.k': 110 * k, 'legB.k': 110 * k, 'hip.y': -0.45 * k, 'spine.rx': 30 * k, 'head.rx': 25 * k, 'armA.sx': 20, 'armB.sx': 20 }, 1, 1, 1, 1));
-        place(shadow, 1.0, -2.7, -0.45, posemath.layer(stand, { 'head.rx': 10, 'armA.sz': 15, 'armB.sz': 15, 'armA.sx': 25 * k, 'armA.e': 30 * k }, 1, 1, 1, 1));
-        cam.position.set(0.1 - t * 0.05, 1.0, 2.2); cam.lookAt(0.1, 1.2, -2.1);
-      } else {                                        /* the boy running toward them and never getting closer */
-        var ph = t * 5;
-        place(boy, 0, 0.5, Math.PI, posemath.walkPose(ph, 2.0));
-        place(maa, -0.9, -5, 0, posemath.layer(stand, { 'armA.sx': 70, 'armA.sz': 45, 'armB.sx': 70, 'armB.sz': 45 }, 1, 1, 1, 1));
-        place(shadow, 1.0, -5.6, 0, stand);
-        cam.position.set(0.0, 0.9, 2.2 + Math.sin(t * 5) * 0.02); cam.lookAt(0, 0.8, -3);
+      var w = renderer.domElement.clientWidth || 800, h = renderer.domElement.clientHeight || 600, T = START[shot] + t, s = Math.sin(T * 1.3);
+      U.uT.value = T;
+      /* he walks steadily to the gate and through it, pulling her by the wrist; she is dragged backwards, leaning away, reaching for her son */
+      var vz = -1.2 - T * 0.72, vx = 0.45, mz = vz + 0.7, mx = vx - 0.95;          /* she is to his side, so both read */
+      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(T * 2.2, 0.9), { 'armB.sx': -35, 'armB.sz': 12, 'armB.e': 8, 'spine.rx': 8, 'head.rx': 6 }, 1, 1, 1, 1));
+      place(maa, mx, mz, 0.15, posemath.layer(stand, { 'spine.rx': -14 + s * 3, 'hip.z': -0.06, 'armA.sx': 95 + s * 6, 'armA.sz': 20, 'armA.e': 10, 'armB.sx': -55, 'armB.sz': -10, 'armB.e': 5,
+        'legA.hx': 18 + s * 12, 'legB.hx': -12 - s * 12, 'legA.k': 10, 'legB.k': 14, 'head.rx': -10, 'head.ry': 12 }, 1, 1, 1, 1));
+      /* the gate swings open as they reach it and shuts behind them, in front of him */
+      var open = clamp01((T - 5.6) / 1.6) * (1 - clamp01((T - 9.7) / 1.0));
+      leafL.rotation.y = open * 1.35; leafR.rotation.y = -open * 1.35;
+      /* Toofan running after them in slow motion, never closing the gap */
+      var hz = 4.4 - T * 0.5, ph = T * 2.4;
+      place(hero, -0.25, hz, Math.PI, posemath.layer(posemath.walkPose(ph, 2.2), { 'spine.rx': 18, 'armA.sx': T > 8.6 ? 120 : 40 + Math.sin(ph) * 40, 'armA.e': T > 8.6 ? 8 : 60, 'head.rx': -10 }, 1, 1, 1, 1));
+      world.children.forEach(function (o) { if (o.userData.flick !== undefined) o.material = ember; });
+      if (shot === 0) {                              /* wide: the mansion, the closed gate, and him dragging her toward it */
+        cam.position.set(3.2 - t * 0.12, 2.3, 3.4 - t * 0.1); cam.lookAt(-0.3, 2.0, -6.5); cam.fov = 48;
+      } else if (shot === 1) {                       /* behind Toofan, running: the gate opens ahead, far away */
+        cam.position.set(0.7, 1.55, hz + 2.4); cam.lookAt(0.0, 1.5, -7); cam.fov = 40;
+      } else {                                        /* the long lens over his shoulder: they pass through, the gate shuts in front of him */
+        cam.position.set(0.55, 1.6, hz + 1.5); cam.lookAt(0.1, 1.4, -7.5); cam.fov = 24;
       }
-      cam.aspect = w / h; cam.fov = h > w ? 60 : 45; cam.updateProjectionMatrix();
+      cam.aspect = w / h; if (h > w) cam.fov *= 1.35; cam.updateProjectionMatrix();
       var ac = renderer.autoClear; renderer.autoClear = false; renderer.clear();
       renderer.render(bgScene, bgCam);
-      paint(edge, halo); all.forEach(function (f) { f.rig.root.scale.setScalar(f.scale * 1.04); }); renderer.render(scene, cam);
-      renderer.clearDepth(); paint(black, pale); all.forEach(function (f) { f.rig.root.scale.setScalar(f.scale); }); renderer.render(scene, cam);
+      /* the burning edge is drawn over the gate and the mansion (edge materials are 'transparent', so they come after the black world; the
+         world's depth stays, so nobody shows through the wall), then the black bodies over it */
+      cam.updateMatrixWorld(); RT.setFromMatrixColumn(cam.matrixWorld, 0); UP.setFromMatrixColumn(cam.matrixWorld, 1);
+      paint(edge, halo);
+      [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7]].forEach(function (d, i) {   /* the outline: the figure nudged round on screen */
+        all.forEach(function (f) { var k = 0.03 * f.scale; f.rig.root.position.addScaledVector(RT, d[0] * k).addScaledVector(UP, d[1] * k); });
+        world.visible = i === 0; renderer.render(scene, cam);
+        all.forEach(function (f) { var k = 0.03 * f.scale; f.rig.root.position.addScaledVector(RT, -d[0] * k).addScaledVector(UP, -d[1] * k); });
+      });
+      world.visible = false; paint(black, pale); renderer.render(scene, cam); world.visible = true;     /* (the world is drawn once: drawn again it would paint over the outline) */
       renderer.autoClear = ac;
     },
     dispose: function () {
-      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, dm].forEach(function (m) { m.dispose(); });
-      debris.children.forEach(function (m) { m.geometry.dispose(); }); sariGeo.dispose(); headGeo.dispose(); qGeo.dispose(); floor.geometry.dispose();
+      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember].forEach(function (m) { m.dispose(); });
+      geos.forEach(function (g) { g.dispose(); }); floor.material.dispose();
     }
   };
 }
@@ -5546,9 +5620,11 @@ function makeMark(color) {                            /* the warning flash: a bu
 
 /* poses for the new scenes */
 var CUFFED = { 'armA.sx': -38, 'armB.sx': -38, 'armA.sz': 8, 'armB.sz': 8, 'armA.e': 85, 'armB.e': 85, 'armA.pr': 50, 'armB.pr': 50, 'head.rx': 20, 'spine.rx': 10, 'neck.rx': 6 };
-/* flat on the roof, Spider-Man style: arms flung wide and forward, elbows bent, gripping both edges; legs splayed with knees bent; head up */
+/* flat on the roof, Spider-Man style: arms flung wide and forward, elbows bent, gripping both edges; head up. His body lies on the roof
+   tipped forward from the feet, so the legs bend down to it: thighs angled down to the roof, knees on it, shins lying flat along it
+   (hips flexed, knees bent back by as much), splayed wide */
 var CLING = { 'armA.sx': 105, 'armB.sx': 105, 'armA.sz': 72, 'armB.sz': 72, 'armA.e': 55, 'armB.e': 55, 'armA.pr': -30, 'armB.pr': -30, 'head.rx': -62, 'neck.rx': -24, 'spine.rx': -8,
-              'legA.hx': 4, 'legB.hx': 4, 'legA.hz': 26, 'legB.hz': 26, 'legA.k': 14, 'legB.k': 14, 'legA.a': -25, 'legB.a': -25, 'hip.y': 0 };
+              'legA.hx': 52, 'legB.hx': 52, 'legA.hz': 30, 'legB.hz': 30, 'legA.k': 60, 'legB.k': 60, 'legA.a': -30, 'legB.a': -30, 'hip.y': 0 };
 var LEAN_OUT = { 'spine.rx': -32, 'hip.rx': -14, 'legA.hx': 70, 'legB.hx': 70, 'legA.k': 90, 'legB.k': 90, 'hip.y': -0.45, 'armA.sx': 40, 'armB.sx': 20, 'armA.e': 60, 'armB.e': 70 };
 var SALUTE = { 'armB.sx': 150, 'armB.sz': 30, 'armB.e': 120, 'armB.pr': 30 };
 
@@ -6054,6 +6130,8 @@ defs["view/fullmap"]=function(module,exports,require){
 'use strict';
 
 var GANGS = require('../data/gangs');
+var rideSim = require('../sim/ride');
+function rideSimOpen(r) { return rideSim.mansionOpen(r); }
 var R = require('../data/ride');
 
 function createFullMap() {
@@ -6097,6 +6175,18 @@ function createFullMap() {
     if (hcur) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(hx - 15, hz - 16, 30, 30); }
     g.font = "10px 'ToofanPx',monospace"; g.textBaseline = 'top'; g.fillStyle = '#bfe3ff'; g.fillText('HOME', hx, hz + 13);
     hits.push({ key: 'home', x: hx, z: hz, r: 22 });
+    /* the old mansion: its whole block dark, walled; a padlock while it is shut */
+    var Mn = r.map.mansion;
+    if (Mn) {
+      var mb = r.map.blocks.filter(function (q) { return q.key === Mn.block; })[0], mopen = rideSimOpen(r);
+      if (mb) { g.fillStyle = '#1a0d14'; g.fillRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); g.strokeStyle = mopen ? '#ffd21f' : '#7a1020'; g.lineWidth = 3; g.strokeRect(X(mb.x0), Z(mb.z0), X(mb.x1) - X(mb.x0), Z(mb.z1) - Z(mb.z0)); }
+      var mx2 = X(Mn.cx), mz2 = Z(Mn.cz);
+      g.fillStyle = '#3a2430'; g.fillRect(mx2 - 10, mz2 - 4, 20, 12); g.beginPath(); g.moveTo(mx2 - 12, mz2 - 4); g.lineTo(mx2, mz2 - 13); g.lineTo(mx2 + 12, mz2 - 4); g.closePath(); g.fill();
+      if (!mopen) { g.strokeStyle = '#ff3a2a'; g.lineWidth = 2; g.beginPath(); g.arc(mx2, mz2 + 1, 3, Math.PI, 0); g.stroke(); g.fillStyle = '#ff3a2a'; g.fillRect(mx2 - 4, mz2 + 1, 8, 6); }
+      g.font = "10px 'ToofanPx',monospace"; g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = mopen ? '#ffd21f' : '#ff8a8a'; g.fillText(mopen ? 'OPEN' : 'LOCKED', mx2, mz2 + 11);
+      if (r.target === Mn) { g.strokeStyle = Math.sin(t / 120) > 0 ? '#ff3b30' : '#ffd21f'; g.lineWidth = 3; g.strokeRect(mx2 - 16, mz2 - 17, 32, 38); }
+      hits.push({ key: 'mansion', x: mx2, z: mz2, r: 24 });
+    }
     /* gang patrols: ride up to one to take them on */
     (r.patrols || []).forEach(function (p) {
       var G = GANGS.GANGS[p.gang], px2 = X(p.x), pz2 = Z(p.z);
@@ -6116,7 +6206,8 @@ function createFullMap() {
       return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:12px;height:12px;background:' + G.color + ';border:1px solid #000;display:inline-block"></span><span style="flex:1">' + G.name.toUpperCase() + '</span><span style="color:#9fd8aa">' + c + '/' + n + '</span></div>';
     }).join('') + '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#ff5a5a"><span style="width:12px;text-align:center">?</span><span style="flex:1">THE MAN BEHIND THEM</span></div>' +
       '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 0;color:#bfe3ff"><span style="width:12px;text-align:center;color:#4aa8ff">&#8962;</span><span style="flex:1">HOME</span></div>' +
-      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ffb0b0"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2a2a;display:inline-block"></span><span style="flex:1">GANG ON THE ROAD</span></div>';
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ffb0b0"><span style="width:12px;height:12px;border-radius:50%;border:2px solid #ff2a2a;display:inline-block"></span><span style="flex:1">GANG ON THE ROAD</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:3px 0 0;color:#ff8a8a"><span style="width:12px;height:12px;background:#3a2430;border:2px solid #7a1020;display:inline-block"></span><span style="flex:1">THE OLD MANSION</span></div>';
   }
   return {
     isOpen: function () { return !!el; },
@@ -7548,6 +7639,86 @@ function createMaa() {
 module.exports = { createMaa: createMaa };
 
 };
+defs["view/mansionvox"]=function(module,exports,require){
+/* view: the old mansion on the ride map, the same place as in Toofan's nightmare: a whole block walled in with old stone, spikes along
+   the top, a tall iron gate on the street (chained and padlocked until it opens), a gravel drive through dead grass and bare trees up to
+   a big weathered house with a steep roof, a tower, chimneys, boarded windows and two still glowing red. Built in a local frame (block
+   centred on the origin, the gate's street toward +z) and turned to face it. open(u) swings the gate (0 shut, 1 open). */
+'use strict';
+
+var CONFIG = require('../data/config');
+var boxmesh = require('./boxmesh');
+var C = require('../sim/arenakit').C;
+
+function geoOf(boxes) {
+  var a = boxmesh.boxesToArrays(boxes, CONFIG.PALETTE), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.positions, 3)); g.setAttribute('normal', new THREE.BufferAttribute(a.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.colors, 3)); g.setIndex(new THREE.BufferAttribute(a.indices, 1)); g.computeBoundingSphere(); return g;
+}
+function maker(list) { return function (x0, y0, z0, x1, y1, z1, c) { list.push({ x0: Math.min(x0, x1), y0: Math.min(y0, y1), z0: Math.min(z0, z1), x1: Math.max(x0, x1), y1: Math.max(y0, y1), z1: Math.max(z0, z1), c: c }); }; }
+
+function createMansion(scene, map) {
+  var M = map.mansion; if (!M) return { open: function () {}, dispose: function () {} };
+  var root = new THREE.Group(), mat = new THREE.MeshLambertMaterial({ vertexColors: true }), geos = [], fixed = [], B = maker(fixed), H = 25.6, x, z, i;
+  /* the grounds: dead grass, the gravel drive, bare trees */
+  B(-H, 0.0, -H, H, 0.05, H, C.OLIVE); for (i = 0; i < 40; i++) { var gx = ((i * 37) % 48) - 24, gz = ((i * 53) % 48) - 24; B(gx, 0.05, gz, gx + 2.2, 0.07, gz + 1.6, i % 3 ? C.SAND : C.BROWN); }
+  B(-2.2, 0.05, -4, 2.2, 0.09, H, C.STONE2); for (z = -3; z < H; z += 1.4) B(-2.3, 0.05, z, -2.0, 0.14, z + 0.6, C.STONE3);
+  [[-12, 12], [12, 15], [-17, -2], [15, 2], [-8, 20]].forEach(function (t, k) {
+    B(t[0] - 0.25, 0, t[1] - 0.25, t[0] + 0.25, 4.6, t[1] + 0.25, C.BROWN);
+    B(t[0], 3.2, t[1] - 0.1, t[0] + 1.8, 3.4, t[1] + 0.1, C.BROWN); B(t[0] - 1.6, 3.8, t[1] - 0.1, t[0], 4.0, t[1] + 0.1, C.BROWN); B(t[0] + 1.6, 3.4, t[1] - 0.1, t[0] + 1.8, 4.6, t[1] + 0.1, C.BROWN);
+    B(t[0] - 0.1, 4.0, t[1], t[0] + 0.1, 4.2, t[1] + 1.4, C.BROWN); if (k % 2) B(t[0] - 1.6, 3.8, t[1] - 0.1, t[0] - 1.4, 5.0, t[1] + 0.1, C.BROWN);
+  });
+  /* the wall round the block, pillars every few metres, spikes along the top; the gap for the gate in the middle of the street side */
+  function wallRun(x0, z0, x1, z1) {
+    B(x0, 0, z0, x1, 2.8, z1, C.STONE3); B(x0 - 0.05, 2.8, z0 - 0.05, x1 + 0.05, 2.95, z1 + 0.05, C.STONE);
+    var len = Math.max(x1 - x0, z1 - z0), along = x1 - x0 > z1 - z0, k;
+    for (k = 0; k <= len; k += 0.8) { var px = along ? x0 + k : (x0 + x1) / 2, pz = along ? (z0 + z1) / 2 : z0 + k; B(px - 0.04, 2.95, pz - 0.04, px + 0.04, 3.45, pz + 0.04, C.DARK); }
+    for (k = 0; k <= len; k += 6) { var qx = along ? x0 + k : (x0 + x1) / 2, qz = along ? (z0 + z1) / 2 : z0 + k; B(qx - 0.45, 0, qz - 0.45, qx + 0.45, 3.3, qz + 0.45, C.STONE); B(qx - 0.55, 3.3, qz - 0.55, qx + 0.55, 3.5, qz + 0.55, C.STONE3); }
+    for (k = 0; k < len; k += 2.3) { var mx = along ? x0 + k : x0 - 0.02, mz = along ? z0 - 0.02 : z0 + k; if ((k * 7) % 3 < 1) B(mx, 0.2, mz, mx + (along ? 0.9 : 0.05), 1.0, mz + (along ? 0.05 : 0.9), C.DGREEN); }   /* moss */
+  }
+  wallRun(-H, H - 0.6, -2.1, H); wallRun(2.1, H - 0.6, H, H); wallRun(-H, -H, H, -H + 0.6); wallRun(-H, -H, -H + 0.6, H); wallRun(H - 0.6, -H, H, H);
+  /* the gate posts, orbs on top */
+  [-2.1, 2.1].forEach(function (u) { B(u - 0.5, 0, H - 0.8, u + 0.5, 4.2, H + 0.2, C.STONE); B(u - 0.6, 4.2, H - 0.9, u + 0.6, 4.4, H + 0.3, C.STONE3); B(u - 0.3, 4.4, H - 0.6, u + 0.3, 5.0, H, C.STONE3); });
+  B(-2.1, 4.6, H - 0.5, 2.1, 4.8, H - 0.1, C.DARK); for (x = -1.8; x <= 1.8; x += 0.3) B(x - 0.03, 4.8, H - 0.33, x + 0.03, 5.3 - Math.abs(x) * 0.2, H - 0.27, C.DARK);   /* the arch over it */
+  /* the house */
+  var HZ = -9;
+  B(-11, 0, HZ - 5, 11, 0.6, HZ + 5.4, C.STONE3); for (i = 0; i < 3; i++) B(-2.4, 0, HZ + 5.4 + i * 0.4, 2.4, 0.6 - i * 0.2, HZ + 5.8 + i * 0.4, C.STONE);
+  B(-10.5, 0.6, HZ - 4.6, 10.5, 8.6, HZ + 4.6, C.GREYP); B(-10.6, 4.4, HZ - 4.7, 10.6, 4.7, HZ + 4.7, C.STONE3);
+  for (i = 0; i < 8; i++) { var rw = 10.9 - i * 0.12, ry = 8.6 + i * 0.55, rd = 4.9 - i * 0.62; B(-rw, ry, HZ - rd, rw, ry + 0.55, HZ + rd, i % 2 ? C.CHAR : C.DARK); }   /* the steep roof */
+  B(-11.2, 8.5, HZ + 4.85, 11.2, 8.7, HZ + 5.05, C.BROWN);
+  [[-7, -1.5], [-3, 2.5], [6.5, -2]].forEach(function (c) { B(c[0] - 0.5, 9.5, HZ + c[1] - 0.5, c[0] + 0.5, 13.4, HZ + c[1] + 0.5, C.BRICK2); B(c[0] - 0.6, 13.4, HZ + c[1] - 0.6, c[0] + 0.6, 13.6, HZ + c[1] + 0.6, C.STONE3); });
+  /* the tower on the right, its pointed roof */
+  B(5.4, 0.6, HZ + 1.0, 9.6, 15.5, HZ + 5.2, C.STONE); for (i = 0; i < 7; i++) { var tw = 2.4 - i * 0.34; B(7.5 - tw, 15.5 + i * 0.7, HZ + 3.1 - tw, 7.5 + tw, 16.2 + i * 0.7, HZ + 3.1 + tw, i % 2 ? C.CHAR : C.DARK); }
+  B(7.45, 20.4, HZ + 3.05, 7.55, 22.0, HZ + 3.15, C.DARK);
+  /* windows: boarded up, but two still glow red; a porch with columns and a black door */
+  function win(wx, wy, wz, glow) { B(wx - 0.7, wy - 0.95, wz, wx + 0.7, wy + 0.95, wz + 0.08, glow ? C.CRIMSON : C.BLACK); B(wx - 0.85, wy - 1.1, wz + 0.02, wx + 0.85, wy - 0.95, wz + 0.14, C.STONE3); B(wx - 0.85, wy + 0.95, wz + 0.02, wx + 0.85, wy + 1.1, wz + 0.14, C.STONE3);
+    if (!glow) { B(wx - 0.8, wy - 0.3, wz + 0.08, wx + 0.8, wy - 0.1, wz + 0.12, C.WOOD2); B(wx - 0.8, wy + 0.25, wz + 0.08, wx + 0.8, wy + 0.45, wz + 0.12, C.WOOD); } }
+  [-8.5, -5.2, -1.4, 1.4, 3.6].forEach(function (wx, k) { win(wx, 2.6, HZ + 4.6, false); win(wx, 6.6, HZ + 4.6, k === 1); });
+  win(7.5, 9.5, HZ + 5.2, true); win(7.5, 13.0, HZ + 5.2, false);
+  B(-1.0, 0.6, HZ + 4.6, 1.0, 3.6, HZ + 4.66, C.BLACK); B(-1.2, 3.6, HZ + 4.6, 1.2, 3.9, HZ + 4.7, C.STONE3);
+  [-2.2, 2.2].forEach(function (u) { B(u - 0.25, 0.6, HZ + 5.2, u + 0.25, 4.6, HZ + 5.7, C.OFFWHITE); }); B(-2.8, 4.6, HZ + 4.6, 2.8, 5.0, HZ + 5.9, C.STONE);
+  geos.push(geoOf(fixed)); root.add(new THREE.Mesh(geos[0], mat));
+  /* the gate's two leaves, each turning on its post, and the chain and padlock across them while it is shut */
+  function leaf(side) {
+    var bx = [], LB = maker(bx), k;
+    for (k = 0; k < 9; k++) { var px = side * (0.1 + k * 0.2); LB(px - 0.03, 0.1, -0.03, px + 0.03, 3.6, 0.03, C.DARK); LB(px - 0.05, 3.6, -0.05, px + 0.05, 3.85, 0.05, C.DARK); }
+    [0.4, 1.8, 3.2].forEach(function (y) { LB(0, y, -0.04, side * 1.85, y + 0.08, 0.04, C.DARK); });
+    var g = geoOf(bx); geos.push(g); var m = new THREE.Mesh(g, mat), piv = new THREE.Group(); piv.position.set(-side * 1.85, 0, H - 0.3); piv.add(m); root.add(piv); return piv;
+  }
+  var L = leaf(1), Rt = leaf(-1);
+  var cb = [], CB = maker(cb); for (i = 0; i < 9; i++) CB(-0.95 + i * 0.22, 1.7 + Math.abs(i - 4) * -0.05, -0.06, -0.8 + i * 0.22, 1.82 + Math.abs(i - 4) * -0.05, 0.06, C.STEEL);
+  CB(-0.22, 1.25, -0.1, 0.22, 1.6, 0.1, C.BRASS); CB(-0.12, 1.6, -0.04, 0.12, 1.78, 0.04, C.STEEL);
+  var cg = geoOf(cb); geos.push(cg); var chain = new THREE.Mesh(cg, mat); chain.position.set(0, 0, H - 0.25); root.add(chain);
+  /* the block, turned so the gate faces its street */
+  root.position.set(M.cx, 0.02, M.cz); root.rotation.y = M.side > 0 ? 0 : Math.PI; scene.add(root);
+  function open(u) { L.rotation.y = u * 1.35; Rt.rotation.y = -u * 1.35;                   /* (both swing in, away from the street) */ chain.visible = u < 0.02; }
+  open(0);
+  return { root: root, open: open, dispose: function () { scene.remove(root); geos.forEach(function (g) { g.dispose(); }); mat.dispose(); } };
+}
+
+module.exports = { createMansion: createMansion };
+
+};
 defs["view/moveplayer"]=function(module,exports,require){
 /* view: plays move clips from data/moves.js as poses, and chains presses into the combo string.
    Pure maths on time; the caller feeds dt. The combat phase will drive the same clips from the tick loop. */
@@ -8384,7 +8555,7 @@ function createRideView(scene) {
   var allBlocks = blockList();
   /* each block: a plain far version (walls, awnings, window bands, signs, shadows) always loaded within range, and a detailed near version swapped in close by */
   function makeGroup(b, detail) {
-    var B = buildBlock(b, b.seed, detail), g = new THREE.Group();
+    var B = (map && map.mansion && map.mansion.block === b.key) ? { boxes: [], signs: [], shadows: [] } : buildBlock(b, b.seed, detail), g = new THREE.Group();   /* (the mansion's block has no shop rows: view/mansionvox stands there) */
     /* gaps in the row: the cycle-repair shop's, and each trouble spot's for its landmark; boxes reaching in are cut back to the edge */
     var GL = [];
     if (map && map.home) { var H = map.home; GL.push({ axis: 'x', x0: H.x - 4.3, x1: H.x + 4.3, z0: H.z, z1: H.z + 1.5 + 7.9, c: H.x }); }

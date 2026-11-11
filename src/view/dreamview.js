@@ -1,8 +1,8 @@
-/* view: Toofan's nightmare, its own world (not the title video). A dark red void with drifting mist, broken pieces of his childhood
-   home floating in it, and the people of that night as black silhouettes with a burning edge: Maa calling for him with open arms, his
-   father falling to his knees, a tall shadow standing over them with a glowing "?" where a face should be (Taka), and the boy Toofan
-   running and never getting closer. Maa is drawn pale and glowing (white hair, white sari), the others as dark shapes with a burning edge,
-   so she reads at once. Every motion is slow, so each shot can be followed. Three shots, picked by `shot` (0, 1, 2); `t` drives the slow motion. Built for the scene, freed after. */
+/* view: Toofan's nightmare, its own world (not the title video). A dark red void with drifting mist, and in it, all in black silhouette
+   with a burning edge: an old mansion behind a tall closed iron gate, and the two-headed man dragging Maa toward it. Maa is drawn pale
+   and glowing (white hair, white sari) so she reads at once; she is pulled along backwards, reaching for her son. Toofan runs after them
+   in slow motion and never gets closer: the gate swings open, they pass through, and it shuts in front of him. One continuous story told
+   in three shots (shot 0, 1, 2; `t` is the time within the shot); every motion is slow, so it can be followed. Built for the scene, freed after. */
 'use strict';
 
 var herorig = require('./herorig');
@@ -23,69 +23,110 @@ var BG_FS = [
   '}'].join('\n');
 
 function createDream(renderer) {
-  var scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 80), bgScene = new THREE.Scene(), bgCam = new THREE.Camera();
+  var scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 120), bgScene = new THREE.Scene(), bgCam = new THREE.Camera();
   var U = { uT: { value: 0 } }, bgMat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: BG_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false });
   bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat));
   var black = { skin: new THREE.MeshBasicMaterial({ color: 0x050204, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0x050204 }) };
   var pale = { skin: new THREE.MeshBasicMaterial({ color: 0xf2ece2, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0xf2ece2 }) };
-  var halo = { skin: new THREE.MeshBasicMaterial({ color: 0xffd9a0, skinning: true, depthWrite: false }), plain: new THREE.MeshBasicMaterial({ color: 0xffd9a0, depthWrite: false }) };
-  var edge = { skin: new THREE.MeshBasicMaterial({ color: 0xff3a2a, skinning: true, depthWrite: false }), plain: new THREE.MeshBasicMaterial({ color: 0xff3a2a, depthWrite: false }) };
-  /* the people: Maa (with a long sari silhouette), the father, the shadow, the boy */
-  function person(scale, extra) {
-    var rig = herorig.createHeroRig('thug'), meshes = [];
+  var halo = { skin: new THREE.MeshBasicMaterial({ color: 0xffd9a0, skinning: true, depthWrite: false, transparent: true }), plain: new THREE.MeshBasicMaterial({ color: 0xffd9a0, depthWrite: false, transparent: true }) };
+  var edge = { skin: new THREE.MeshBasicMaterial({ color: 0xff3a2a, skinning: true, depthWrite: false, transparent: true }), plain: new THREE.MeshBasicMaterial({ color: 0xff3a2a, depthWrite: false, transparent: true }) };
+  var ember = new THREE.MeshBasicMaterial({ color: 0xff3a2a }), geos = [];
+  function box(w, h, d) { var g = new THREE.BoxGeometry(w, h, d); geos.push(g); return g; }
+  /* the people */
+  function person(variant, scale, extra) {
+    var rig = herorig.createHeroRig(variant), meshes = [];
     if (extra) extra(rig);
     rig.root.traverse(function (m) { if (m.isMesh) meshes.push(m); }); rig.root.scale.setScalar(scale); scene.add(rig.root);
     return { rig: rig, meshes: meshes, scale: scale };
   }
-  var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8), qGeo = new THREE.TorusGeometry(0.16, 0.05, 6, 14, Math.PI * 1.4);
-  var maa = person(0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
-  var father = person(1.0);
-  var shadow = person(1.35, function (rig) { var q = new THREE.Mesh(qGeo, new THREE.MeshBasicMaterial({ color: 0xff2a1a })), dot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), q.material); q.position.set(0.02, 0.32, 0.3); q.rotation.z = -0.6; dot.position.set(0, 0.06, 0.3); q.userData.keep = dot.userData.keep = true; rig.head.add(q); rig.head.add(dot); });
-  var boy = person(0.6);
-  var all = [maa, father, shadow, boy];
-  /* pieces of the old home floating in the void: a door frame, a window, a broken wall, a fallen chair */
-  var debris = new THREE.Group(), dm = new THREE.MeshBasicMaterial({ color: 0x14060a });
-  [[-3, 1.4, -6, 0.15, 2.2, 0.15], [-2.0, 1.4, -6, 0.15, 2.2, 0.15], [-2.5, 2.5, -6, 1.15, 0.15, 0.15], [3.2, 2.2, -7, 1.4, 1.0, 0.1], [2.6, 0.3, -4.5, 1.8, 0.6, 0.12], [-1.2, 3.4, -8, 2.2, 0.15, 0.15], [1.2, 0.2, -2.6, 0.5, 0.4, 0.5]].forEach(function (b) {
-    var m = new THREE.Mesh(new THREE.BoxGeometry(b[3], b[4], b[5]), dm); m.position.set(b[0], b[1], b[2]); m.rotation.z = (b[0] * 0.13) % 0.4; debris.add(m);
-  });
-  scene.add(debris);
-  var floor = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0x1a0408, transparent: true, opacity: 0.85 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8); geos.push(sariGeo, headGeo);
+  var maa = person('thug', 0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
   maa.pale = true;
+  /* the two-headed man: big, his own head pushed to one side and a second head grown beside it on the same neck, both with burning eyes */
+  var villain = person('thug', 1.45, function (rig) {
+    rig.head.position.x -= 0.12;
+    var h2 = new THREE.Mesh(box(0.27, 0.31, 0.29), black.plain); h2.position.set(rig.head.position.x + 0.27, rig.head.position.y + 0.16, rig.head.position.z); h2.rotation.z = -0.18; rig.neck.add(h2);
+    var jaw = new THREE.Mesh(box(0.2, 0.08, 0.24), black.plain); jaw.position.set(0, -0.15, 0.02); h2.add(jaw);
+    [[-0.06, 0.03], [0.06, 0.03]].forEach(function (e) {
+      var a = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); a.position.set(e[0], e[1], 0.15); a.userData.keep = true; h2.add(a);
+      var b = new THREE.Mesh(box(0.05, 0.025, 0.02), ember); b.position.set(e[0], 0.17, 0.15); b.userData.keep = true; rig.head.add(b);
+    });
+  });
+  var hero = person(undefined, 1.0);
+  var all = [maa, villain, hero];
+
+  /* the gate and the mansion behind it */
+  var GZ = -7.0, world = new THREE.Group(); scene.add(world);
+  function add(g, x, y, z, parent, m) { var o = new THREE.Mesh(g, m || black.plain); o.position.set(x, y, z); (parent || world).add(o); return o; }
+  [-1.75, 1.75].forEach(function (x) { add(box(0.5, 3.4, 0.5), x, 1.7, GZ); add(box(0.62, 0.2, 0.62), x, 3.5, GZ); var orb = add(new THREE.SphereGeometry(0.22, 8, 6), x, 3.8, GZ); geos.push(orb.geometry); });
+  add(box(7.4, 2.5, 0.35), -5.2, 1.25, GZ); add(box(7.4, 2.5, 0.35), 5.2, 1.25, GZ);
+  for (var x = -8.7; x <= 8.7; x += 0.7) if (Math.abs(x) > 1.9) add(box(0.06, 0.4, 0.06), x, 2.7, GZ);                  /* spikes along the wall */
+  function leaf(side) {
+    var g = new THREE.Group(); g.position.set(side * -1.5, 0, GZ); world.add(g);
+    for (var i = 0; i < 9; i++) { var bx = side * (0.09 + i * 0.165); add(box(0.05, 3.0, 0.05), bx, 1.5, 0, g); add(box(0.08, 0.2, 0.08), bx, 3.08, 0, g); }
+    add(box(1.5, 0.08, 0.06), side * 0.75, 0.4, 0, g); add(box(1.5, 0.08, 0.06), side * 0.75, 2.6, 0, g); add(box(1.5, 0.08, 0.06), side * 0.75, 1.6, 0, g);
+    var arc = add(new THREE.TorusGeometry(0.38, 0.035, 4, 12, Math.PI), side * 0.75, 2.6, 0, g); geos.push(arc.geometry);
+    return g;
+  }
+  var leafL = leaf(1), leafR = leaf(-1);
+  /* the old mansion: a wide body with a steep roof, a tower, chimneys, a few windows glowing like coals */
+  var MZ = -17;
+  add(box(11, 6, 4), 0, 3, MZ); add(box(4, 4.2, 3.4), -7, 2.1, MZ + 0.4);
+  var r1 = add(box(11.6, 0.4, 3.1), 0, 7.0, MZ + 1.0); r1.rotation.x = 0.75; var r2 = add(box(11.6, 0.4, 3.1), 0, 7.0, MZ - 1.0); r2.rotation.x = -0.75;
+  add(box(2.6, 11, 2.6), 4.2, 5.5, MZ + 0.6); var spire = add(new THREE.ConeGeometry(2.0, 3.4, 4), 4.2, 12.7, MZ + 0.6); spire.rotation.y = Math.PI / 4; geos.push(spire.geometry);
+  add(box(0.6, 2.4, 0.6), -3.5, 8.0, MZ); add(box(0.6, 1.8, 0.6), -1.4, 7.8, MZ - 0.6);
+  [[-4, 2], [-2, 2], [2, 2], [-4, 4.4], [2, 4.4], [0, 4.4], [4.2, 8.4], [-7, 2]].forEach(function (w, i) { var o = add(box(0.7, 1.1, 0.05), w[0], w[1], (w[0] === 4.2 ? MZ + 1.92 : (w[0] === -7 ? MZ + 2.12 : MZ + 2.03)), null, ember); o.userData.flick = i; });
+  var dead = add(box(0.18, 3.2, 0.18), -3.2, 1.6, GZ + 1.6); dead.rotation.z = 0.12; var br1 = add(box(1.4, 0.1, 0.1), -2.7, 2.7, GZ + 1.6); br1.rotation.z = 0.6; var br2 = add(box(1.0, 0.08, 0.08), -3.7, 2.4, GZ + 1.6); br2.rotation.z = -0.7;
+  var floor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshBasicMaterial({ color: 0x1a0408, transparent: true, opacity: 0.85 })); floor.rotation.x = -Math.PI / 2; scene.add(floor); geos.push(floor.geometry);
+
   function paint(set, alt) { all.forEach(function (f) { var u = f.pale ? alt : set; f.meshes.forEach(function (m) { if (!m.userData.keep) m.material = m.isSkinnedMesh ? u.skin : u.plain; }); }); }
   var stand = posemath.named('stand');
   function place(f, x, z, ry, pose) { f.rig.root.position.set(x, 0, z); f.rig.root.rotation.y = ry; f.rig.applyPose(pose, { plant: true }); f.rig.root.visible = true; }
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+  /* the story, by its own clock T (the three shots run on from one another: 0-4, 4-8, 8-11) */
+  var START = [0, 4.0, 8.0], RT = new THREE.Vector3(), UP = new THREE.Vector3();
   return {
-    /* draw shot `shot` at time t (seconds since the dream began) */
+    /* draw shot `shot` at time t (seconds since that shot began) */
     render: function (shot, t) {
-      var w = renderer.domElement.clientWidth || 800, h = renderer.domElement.clientHeight || 600, s = Math.sin(t * 1.2);
-      U.uT.value = t; all.forEach(function (f) { f.rig.root.visible = false; });
-      debris.children.forEach(function (m, i) { m.position.y += Math.sin(t * 0.8 + i) * 0.002; m.rotation.y = t * 0.1 * (i % 2 ? 1 : -1); });
-      if (shot === 0) {                              /* Maa calling for him, arms open, the boy reaching */
-        place(maa, 0, -2.5, 0, posemath.layer(stand, { 'armA.sx': 60 + Math.min(1, t / 2) * 20 + s * 4, 'armB.sx': 60 + Math.min(1, t / 2) * 20 - s * 4, 'armA.sz': 45, 'armB.sz': 45, 'armA.e': 15, 'armB.e': 15, 'head.rx': -8 }, 1, 1, 1, 1));
-        place(boy, 0.2, 0.6, Math.PI, posemath.layer(stand, { 'armA.sx': 100, 'armA.sz': 10, 'armB.sx': 30, 'spine.rx': 12 }, 1, 1, 1, 1));
-        cam.position.set(0.9 - t * 0.05, 1.0, 2.6 - t * 0.08); cam.lookAt(0, 1.1, -2);
-      } else if (shot === 1) {                       /* the father falls to his knees; the shadow stands over him */
-        var k = Math.min(1, Math.max(0, (t - 0.6) / 2.4));
-        place(father, -0.75, -1.6, 0.55, posemath.layer(stand, { 'legA.hx': 70 * k, 'legB.hx': 70 * k, 'legA.k': 110 * k, 'legB.k': 110 * k, 'hip.y': -0.45 * k, 'spine.rx': 30 * k, 'head.rx': 25 * k, 'armA.sx': 20, 'armB.sx': 20 }, 1, 1, 1, 1));
-        place(shadow, 1.0, -2.7, -0.45, posemath.layer(stand, { 'head.rx': 10, 'armA.sz': 15, 'armB.sz': 15, 'armA.sx': 25 * k, 'armA.e': 30 * k }, 1, 1, 1, 1));
-        cam.position.set(0.1 - t * 0.05, 1.0, 2.2); cam.lookAt(0.1, 1.2, -2.1);
-      } else {                                        /* the boy running toward them and never getting closer */
-        var ph = t * 5;
-        place(boy, 0, 0.5, Math.PI, posemath.walkPose(ph, 2.0));
-        place(maa, -0.9, -5, 0, posemath.layer(stand, { 'armA.sx': 70, 'armA.sz': 45, 'armB.sx': 70, 'armB.sz': 45 }, 1, 1, 1, 1));
-        place(shadow, 1.0, -5.6, 0, stand);
-        cam.position.set(0.0, 0.9, 2.2 + Math.sin(t * 5) * 0.02); cam.lookAt(0, 0.8, -3);
+      var w = renderer.domElement.clientWidth || 800, h = renderer.domElement.clientHeight || 600, T = START[shot] + t, s = Math.sin(T * 1.3);
+      U.uT.value = T;
+      /* he walks steadily to the gate and through it, pulling her by the wrist; she is dragged backwards, leaning away, reaching for her son */
+      var vz = -1.2 - T * 0.72, vx = 0.45, mz = vz + 0.7, mx = vx - 0.95;          /* she is to his side, so both read */
+      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(T * 2.2, 0.9), { 'armB.sx': -35, 'armB.sz': 12, 'armB.e': 8, 'spine.rx': 8, 'head.rx': 6 }, 1, 1, 1, 1));
+      place(maa, mx, mz, 0.15, posemath.layer(stand, { 'spine.rx': -14 + s * 3, 'hip.z': -0.06, 'armA.sx': 95 + s * 6, 'armA.sz': 20, 'armA.e': 10, 'armB.sx': -55, 'armB.sz': -10, 'armB.e': 5,
+        'legA.hx': 18 + s * 12, 'legB.hx': -12 - s * 12, 'legA.k': 10, 'legB.k': 14, 'head.rx': -10, 'head.ry': 12 }, 1, 1, 1, 1));
+      /* the gate swings open as they reach it and shuts behind them, in front of him */
+      var open = clamp01((T - 5.6) / 1.6) * (1 - clamp01((T - 9.7) / 1.0));
+      leafL.rotation.y = open * 1.35; leafR.rotation.y = -open * 1.35;
+      /* Toofan running after them in slow motion, never closing the gap */
+      var hz = 4.4 - T * 0.5, ph = T * 2.4;
+      place(hero, -0.25, hz, Math.PI, posemath.layer(posemath.walkPose(ph, 2.2), { 'spine.rx': 18, 'armA.sx': T > 8.6 ? 120 : 40 + Math.sin(ph) * 40, 'armA.e': T > 8.6 ? 8 : 60, 'head.rx': -10 }, 1, 1, 1, 1));
+      world.children.forEach(function (o) { if (o.userData.flick !== undefined) o.material = ember; });
+      if (shot === 0) {                              /* wide: the mansion, the closed gate, and him dragging her toward it */
+        cam.position.set(3.2 - t * 0.12, 2.3, 3.4 - t * 0.1); cam.lookAt(-0.3, 2.0, -6.5); cam.fov = 48;
+      } else if (shot === 1) {                       /* behind Toofan, running: the gate opens ahead, far away */
+        cam.position.set(0.7, 1.55, hz + 2.4); cam.lookAt(0.0, 1.5, -7); cam.fov = 40;
+      } else {                                        /* the long lens over his shoulder: they pass through, the gate shuts in front of him */
+        cam.position.set(0.55, 1.6, hz + 1.5); cam.lookAt(0.1, 1.4, -7.5); cam.fov = 24;
       }
-      cam.aspect = w / h; cam.fov = h > w ? 60 : 45; cam.updateProjectionMatrix();
+      cam.aspect = w / h; if (h > w) cam.fov *= 1.35; cam.updateProjectionMatrix();
       var ac = renderer.autoClear; renderer.autoClear = false; renderer.clear();
       renderer.render(bgScene, bgCam);
-      paint(edge, halo); all.forEach(function (f) { f.rig.root.scale.setScalar(f.scale * 1.04); }); renderer.render(scene, cam);
-      renderer.clearDepth(); paint(black, pale); all.forEach(function (f) { f.rig.root.scale.setScalar(f.scale); }); renderer.render(scene, cam);
+      /* the burning edge is drawn over the gate and the mansion (edge materials are 'transparent', so they come after the black world; the
+         world's depth stays, so nobody shows through the wall), then the black bodies over it */
+      cam.updateMatrixWorld(); RT.setFromMatrixColumn(cam.matrixWorld, 0); UP.setFromMatrixColumn(cam.matrixWorld, 1);
+      paint(edge, halo);
+      [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7]].forEach(function (d, i) {   /* the outline: the figure nudged round on screen */
+        all.forEach(function (f) { var k = 0.03 * f.scale; f.rig.root.position.addScaledVector(RT, d[0] * k).addScaledVector(UP, d[1] * k); });
+        world.visible = i === 0; renderer.render(scene, cam);
+        all.forEach(function (f) { var k = 0.03 * f.scale; f.rig.root.position.addScaledVector(RT, -d[0] * k).addScaledVector(UP, -d[1] * k); });
+      });
+      world.visible = false; paint(black, pale); renderer.render(scene, cam); world.visible = true;     /* (the world is drawn once: drawn again it would paint over the outline) */
       renderer.autoClear = ac;
     },
     dispose: function () {
-      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, dm].forEach(function (m) { m.dispose(); });
-      debris.children.forEach(function (m) { m.geometry.dispose(); }); sariGeo.dispose(); headGeo.dispose(); qGeo.dispose(); floor.geometry.dispose();
+      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember].forEach(function (m) { m.dispose(); });
+      geos.forEach(function (g) { g.dispose(); }); floor.material.dispose();
     }
   };
 }

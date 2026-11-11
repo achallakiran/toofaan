@@ -489,6 +489,18 @@ console.log('ride mode (Phase 4)');
       var a = go(), c = go();
       assert(a.far, 'spawned beside him'); assert(a.onRoad, 'left the road'); assert(a.most >= 1 && a.most <= 3, 'patrols ' + a.most); assert.strictEqual(a.h, c.h);
     });
+    test('the old mansion: a block of its own (no trouble spot, not the shop), its gate locked until every gang boss is beaten', function () {
+      var m1 = rmap.generate(7), m2 = rmap.generate(7), M = m1.mansion;
+      assert(M && M.block); assert.deepStrictEqual(m1.mansion, m2.mansion);
+      var B = m1.blocks.filter(function (q) { return q.key === M.block; })[0], pad = RD2.HALF + RD2.PAVE + 0.5;
+      function near(P) { return P.x > B.x0 - pad && P.x < B.x1 + pad && P.z > B.z0 - pad && P.z < B.z1 + pad; }
+      assert(!m1.targets.some(near), 'a trouble spot on its pavement'); assert(!near(m1.home), 'the shop on its pavement');
+      var ev = [], r = rideMod.createRide(7, { emit: function (n) { ev.push(n); } }), inp = inputMod.createInput(); r.patrolCool = 1e9;
+      r.bike.x = r.bike.px = r.map.mansion.gate.x + 1; r.bike.z = r.bike.pz = r.map.mansion.gate.z; inp.tick(r.tick); rideMod.step(r, inp);
+      assert(ev.indexOf('ride:locked') >= 0 && ev.indexOf('ride:mansion') < 0); assert.strictEqual(r.state, 'ride', 'the locked gate changes nothing');
+      assert(!rideMod.mansionOpen(r)); r.bosses = ['antu', 'kalia', 'bhairav', 'teja']; assert(!rideMod.mansionOpen(r), 'one boss still left');
+      r.bosses.push('raju'); assert(rideMod.mansionOpen(r)); r.mansionSaid = false; inp.tick(r.tick); rideMod.step(r, inp); assert(ev.indexOf('ride:mansion') >= 0);
+    });
     test('ride home: HOME signals the cycle-repair shop; arriving there opens the way to the hideout and touches no mission; leaving starts at the shop', function () {
       var ev = [], r = rideMod.createRide(5, { emit: function (n) { ev.push(n); } }), inp = inputMod.createInput(), H = r.map.home, before = JSON.stringify(r.missions);
       assert(H && H.key === 'home'); assert(r.map.targets.every(function (T) { return Math.hypot(T.x - H.x, T.z - H.z) > 20; }), 'the shop sits on its own stretch');

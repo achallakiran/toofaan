@@ -1,5 +1,5 @@
 /* modes: the New Game opening. Night, in Toofan's bed corner of the underground hideout. He is asleep and the nightmare comes: he tosses, the dream world flashes in
-   (Maa calling, his father falling, a shadow with a "?" for a face), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
+   (the two-headed man dragging Maa through a closed gate toward an old mansion while Toofan runs after them in slow motion and cannot reach her), and he shouts "NOOO MAAA!". Raka trots in, licks his face and barks; Toofan jolts
    awake and sits up, and the player takes over in the hideout (modes/hideout). The dream is its own world (view/dreamview), separate from the title
    video; each dream shot holds long enough to read, with a fade in and out and a line of what is said. Skippable. The room, the dog and the dream are built here and freed
    on the way out. */
@@ -79,7 +79,7 @@ function createWake() {
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         view.scene.remove(S.quiltLie); view.scene.remove(S.quiltSit); S.quiltLie.geometry.dispose(); S.quiltSit.geometry.dispose();
-        S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); view.scene.remove(S.dog.root); S.dog.dispose();
+        S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); if (S.rig.root.parent) S.rig.root.parent.remove(S.rig.root);   /* (he is moved out of the bed group when he sits up: take him away wherever he is) */ view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
       });
     },
@@ -90,7 +90,7 @@ function createWake() {
       if (t > 1.0 && !S.nightOn) { S.nightOn = true; S.music.play('night'); }
       /* the timeline: three dream shots, each faded in and out of the room, then the scream, Raka, waking */
       var DREAM = [[3.5, 7.5], [8.6, 12.6], [13.7, 16.6]], SCREAM = 16.6, DOG = 18.2, LICK = 20.0, BARK = 21.2, UP = 21.6, END = 25.2;
-      var LINES = ['BETA... TOOFAN...', 'PAPA!', 'MAA... RUKO!'];
+      var LINES = ['BETA... TOOFAN...', 'MAA!', 'MAA... RUKO!'];
       /* ---- Toofan ---- */
       if (t < UP) {
         var restless = t > 2.5 && t < SCREAM + 1.4, hard = t > 8 ? 1 : 0.6, toss = restless ? Math.sin(t * (t > 8 ? 7 : 4)) * hard : 0, scream = t > SCREAM && t < SCREAM + 1.6;

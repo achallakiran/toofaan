@@ -50,9 +50,11 @@ function makeMark(color) {                            /* the warning flash: a bu
 
 /* poses for the new scenes */
 var CUFFED = { 'armA.sx': -38, 'armB.sx': -38, 'armA.sz': 8, 'armB.sz': 8, 'armA.e': 85, 'armB.e': 85, 'armA.pr': 50, 'armB.pr': 50, 'head.rx': 20, 'spine.rx': 10, 'neck.rx': 6 };
-/* flat on the roof, Spider-Man style: arms flung wide and forward, elbows bent, gripping both edges; legs splayed with knees bent; head up */
+/* flat on the roof, Spider-Man style: arms flung wide and forward, elbows bent, gripping both edges; head up. His body lies on the roof
+   tipped forward from the feet, so the legs bend down to it: thighs angled down to the roof, knees on it, shins lying flat along it
+   (hips flexed, knees bent back by as much), splayed wide */
 var CLING = { 'armA.sx': 105, 'armB.sx': 105, 'armA.sz': 72, 'armB.sz': 72, 'armA.e': 55, 'armB.e': 55, 'armA.pr': -30, 'armB.pr': -30, 'head.rx': -62, 'neck.rx': -24, 'spine.rx': -8,
-              'legA.hx': 4, 'legB.hx': 4, 'legA.hz': 26, 'legB.hz': 26, 'legA.k': 14, 'legB.k': 14, 'legA.a': -25, 'legB.a': -25, 'hip.y': 0 };
+              'legA.hx': 52, 'legB.hx': 52, 'legA.hz': 30, 'legB.hz': 30, 'legA.k': 60, 'legB.k': 60, 'legA.a': -30, 'legB.a': -30, 'hip.y': 0 };
 var LEAN_OUT = { 'spine.rx': -32, 'hip.rx': -14, 'legA.hx': 70, 'legB.hx': 70, 'legA.k': 90, 'legB.k': 90, 'hip.y': -0.45, 'armA.sx': 40, 'armB.sx': 20, 'armA.e': 60, 'armB.e': 70 };
 var SALUTE = { 'armB.sx': 150, 'armB.sz': 30, 'armB.e': 120, 'armB.pr': 30 };
 

@@ -110,6 +110,7 @@ function stepPatrols(r) {
 
 /* the player picked a place on the full map: it becomes the signal (if it is still open) */
 function chooseTarget(r, key) {
+  if (key === 'mansion' && r.map.mansion) { if (r.state !== 'ride' || r.enc) return false; r.target = r.map.mansion; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: 'mansion', name: r.map.mansion.name, chosen: true }); return true; }
   if (key === 'home') { if (r.state !== 'ride' || r.enc) return false; r.target = r.map.home; r.skipped = null; r.tKey = null; r.bus.emit('ride:signal', { key: 'home', name: r.map.home.name, chosen: true }); return true; }
   var T = r.map.targets.filter(function (t) { return t.key === key; })[0];
   if (!T || r.missions[key] !== 'open' || r.state !== 'ride' || r.enc) return false;
@@ -205,7 +206,7 @@ function step(r, input) {
     /* arrival */
     var T = r.target;
     /* riding away from the signal leaves it open for later: once he is well past his closest approach, the pointer moves on */
-    if (r.state === 'ride' && T && !r.enc && T.key !== 'home') {
+    if (r.state === 'ride' && T && !r.enc && T.key !== 'home' && T.key !== 'mansion') {
       var dT = Math.hypot(T.x - b.x, T.z - b.z);
       if (r.tKey !== T.key) { r.tKey = T.key; r.tBest = dT; }
       else if (dT < r.tBest) r.tBest = dT;
@@ -217,12 +218,13 @@ function step(r, input) {
     if (r.state === 'ride' && !r.enc && r.homeArmed !== false && atHome && (Math.abs(b.speed) < GATE_STOP || (T && T.key === 'home'))) {  /* home: the shop is always a place he can ride in to, signal or not */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.target = null; r.atHome = true; r.bus.emit('ride:home', {}); return;
     }
-    if (r.state === 'ride' && T && T.key !== 'home' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
+    if (r.state === 'ride' && T && T.key !== 'home' && T.key !== 'mansion' && Math.hypot(T.x - b.x, T.z - b.z) < R.ARRIVE_R) {   /* (home is its own gate, above) */
       r.state = 'arrived'; r.t = 0; b.speed = 0; r.missions[T.key] = 'active'; r.arrivals++; r.skipped = null;
       r.bus.emit('ride:arrive', { key: T.key, name: T.name });
     }
     /* road fights only when Toofan chooses one: the gang patrols drive their roads; ride up to one and the chase is on */
     if (r.state === 'ride' && !r.enc) stepPatrols(r);
+    if (r.state === 'ride' && !r.enc) stepMansion(r);
   } else if (r.state === 'fly') {                                     /* thrown off: he tumbles along the road, the bike skids to a stop */
     hero.x += hero.vx * DT; hero.z += hero.vz * DT; hero.vx *= 0.94; hero.vz *= 0.94; hero.spin += 0.25 * Math.max(0, 1 - r.t / R.FLY_TICKS);
     if (!mapMod.onRoad(hero.x, hero.z, 0.3)) { hero.x = hero.px; hero.z = hero.pz; hero.vx = hero.vz = 0; }
@@ -237,6 +239,17 @@ function step(r, input) {
     /* Toofan waits here: the game steps into the fight area (the brawler) and comes back with the area cleared */
   }
   r.tick++;
+}
+
+/* the old mansion's gate: locked until every gang's boss is beaten (r.bosses: the gangs whose boss he has beaten, set from the save).
+   Riding up to the locked gate only says so; once it is open, riding up to it is the way in. */
+var MANSION_R = 6;
+function mansionOpen(r) { var b = r.bosses || []; return GANGS.ORDER.every(function (g) { return b.indexOf(g) >= 0; }); }
+function stepMansion(r) {
+  var M = r.map.mansion, b = r.bike; if (!M) return;
+  var d = Math.hypot(M.gate.x - b.x, M.gate.z - b.z);
+  if (d > MANSION_R + 14) r.mansionSaid = false;
+  if (d < MANSION_R && !r.mansionSaid) { r.mansionSaid = true; if (r.target === M) { r.target = null; pickTarget(r); } r.bus.emit(mansionOpen(r) ? 'ride:mansion' : 'ride:locked', { name: M.name, left: GANGS.ORDER.filter(function (g) { return (r.bosses || []).indexOf(g) < 0; }) }); }
 }
 
 /* the shop's gate: the blue ring on the near lane in front of the shop. He goes in when he comes to a stop inside it (or rides into it
@@ -270,4 +283,4 @@ function hash(r) {
   return h >>> 0;
 }
 
-module.exports = { leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
+module.exports = { mansionOpen: mansionOpen, leaveHome: leaveHome, inHomeZone: inHomeZone, homeGate: homeGate, chooseTarget: chooseTarget, afterFight: afterFight, startEncounter: enc.start, createRide: createRide, step: step, pickTarget: pickTarget, hash: hash, hitVehicle: hitVehicle };
