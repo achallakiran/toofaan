@@ -89,8 +89,7 @@ function createWake() {
       var t = S.t, rig = S.rig, view = ctx.view, sleepP = posemath.named('stand'), shot;
       if (t > 1.0 && !S.nightOn) { S.nightOn = true; S.music.play('night'); }
       /* the timeline: three dream shots, each faded in and out of the room, then the scream, Raka, waking */
-      var DREAM = [[3.5, 7.5], [8.6, 12.6], [13.7, 16.6]], SCREAM = 16.6, DOG = 18.2, LICK = 20.0, BARK = 21.2, UP = 21.6, END = 25.2;
-      var LINES = ['BETA... TOOFAN...', 'MAA!', 'MAA... RUKO!'];
+      var D0 = 3.5, D1 = D0 + S.dream.LENGTH, SCREAM = D1, DOG = SCREAM + 1.6, LICK = DOG + 1.8, BARK = LICK + 1.2, UP = BARK + 0.4, END = UP + 3.6;   /* the dream: one piece, six shots (view/dreamview) */
       /* ---- Toofan ---- */
       if (t < UP) {
         var restless = t > 2.5 && t < SCREAM + 1.4, hard = t > 8 ? 1 : 0.6, toss = restless ? Math.sin(t * (t > 8 ? 7 : 4)) * hard : 0, scream = t > SCREAM && t < SCREAM + 1.6;
@@ -124,21 +123,16 @@ function createWake() {
       else shot = { x: 0.9, y: 1.5, z: 1.5, lx: -0.5, ly: 0.9, lz: -0.8, fov: 48 };
       view.followCamera(0, 0, shot);
       /* ---- the dream: each shot fades up from black, holds, says its line, fades back to the room ---- */
-      var dreamShot = -1, fadeB = 0, k;
-      for (k = 0; k < 3; k++) {
-        var a0 = DREAM[k][0], a1 = DREAM[k][1];
-        if (t > a0 && t < a1) dreamShot = k;
-        fadeB = Math.max(fadeB, 1 - Math.abs(t - a0) / 0.45, 1 - Math.abs(t - a1) / 0.45);
-      }
+      var dreamOn = t > D0 && t < D1, fadeB = Math.max(0, 1 - Math.abs(t - D0) / 0.45, 1 - Math.abs(t - D1) / 0.45);
       fadeB = Math.max(fadeB, t > END - 0.9 ? ease((t - (END - 0.9)) / 0.8) : 0);
       S.black.style.opacity = Math.max(0, fadeB).toFixed(3);
-      var dreamOn = dreamShot >= 0, capOn = dreamOn && t - DREAM[dreamShot][0] > 1.0 && DREAM[dreamShot][1] - t > 0.6;
-      if (capOn) S.cap.textContent = LINES[dreamShot]; S.cap.style.opacity = capOn ? 1 : 0;
+      var line = dreamOn ? S.dream.caption(t - D0) : '';
+      if (line) S.cap.textContent = line; S.cap.style.opacity = line ? 1 : 0;
       S.red.style.opacity = t > SCREAM && t < SCREAM + 1.4 ? 0.25 + 0.2 * Math.sin(t * 30) : 0;
       S.red.style.background = t > UP - 0.1 && t < UP + 0.15 ? '#fff' : '#b0102a';
       if (t > UP - 0.1 && t < UP + 0.15) S.red.style.opacity = 0.85;
       S.tint.style.opacity = dreamOn ? 0 : 1; S.hide.update(t);
-      if (dreamOn) S.dream.render(dreamShot, t - DREAM[dreamShot][0]); else view.render();
+      if (dreamOn) S.dream.render(t - D0); else view.render();
       /* ---- awake: the player takes over in the hideout ---- */
       if (t > END) S.finish();
     },
