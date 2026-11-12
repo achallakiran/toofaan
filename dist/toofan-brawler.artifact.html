@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 89',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 90',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -2021,10 +2021,10 @@ module.exports = { createRide: createRide, ensureRide: ensureRide };
 };
 defs["modes/stealth"]=function(module,exports,require){
 /* modes: the stealth stage demo (from the title menu, or #stealth). Antu's container yard at night: get to the head sniper on the site
-   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with a high
-   camera from the south so the men's view fans and the snipers' lasers can be read, and keeps the screen talk short:
-     top        HIDDEN / SUSPICIOUS / SPOTTED, with how close they are to seeing him; his two hits
-     bottom     STUN when a man is within reach from behind (the Attack button), CROUCH on the Block button
+   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with the game's own
+   follow camera, and keeps the screen talk short:
+     top right  the fights' panel: his life (two hits), how close they are to seeing him (HIDDEN / SUSPICIOUS / SPOTTED), KO count
+     bottom     STUN when a man is within reach from behind, CLIMB at a ladder (both on Attack), CROUCH on the Block button
      middle     the brief at the start, CHECKPOINT, the shot, back to the checkpoint, and STAGE CLEAR with play-again / title */
 'use strict';
 
@@ -2063,8 +2063,14 @@ function createStealth() {
       /* the screen */
       var ui = S.ui = el('position:fixed;inset:0;z-index:30;pointer-events:none;font-family:' + FONT + ';color:#fff;letter-spacing:.08em');
       scope.add(function () { ui.remove(); clearTimeout(S.msgT); });
-      S.state = el('position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);padding:7px 12px 9px;background:rgba(0,0,0,.6);border:2px solid #222;font-size:13px;text-align:center;min-width:150px', '', ui);
-      S.hits = el('position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));padding:7px 10px;background:rgba(0,0,0,.6);font-size:13px', '', ui);
+      /* the panel in the fights' own layout (view/fightui): name and who's left, his life bar, then how seen he is in place of rage */
+      var pan = el('position:absolute;top:max(56px,calc(env(safe-area-inset-top) + 48px));right:max(14px,env(safe-area-inset-right));width:min(260px,44vw);font:700 11px system-ui,sans-serif;letter-spacing:.1em;color:#fff;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.6)',
+        '<div style="display:flex;justify-content:space-between"><span>Toofan</span><span id="sLeft" style="color:#ffc21a"></span></div>' +
+        '<div style="height:12px;margin:4px 0;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:3px;overflow:hidden"><div id="sHp" style="height:100%;width:100%;background:linear-gradient(90deg,#d63a2f,#ff7a3d);transition:width .25s"></div></div>' +
+        '<div style="height:7px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);border-radius:3px;overflow:hidden"><div id="sSeen" style="height:100%;width:0"></div></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-top:4px;opacity:.9"><span id="sState">Hidden</span><span id="sKo">KO 0</span></div>' +
+        '<div id="sWhere" style="margin-top:3px;opacity:.6;font-size:10px"></div>', ui);
+      S.pan = { left: pan.querySelector('#sLeft'), hp: pan.querySelector('#sHp'), seen: pan.querySelector('#sSeen'), state: pan.querySelector('#sState'), ko: pan.querySelector('#sKo'), where: pan.querySelector('#sWhere') };
       S.prompt = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 150px);right:max(22px,env(safe-area-inset-right));padding:6px 10px;background:#ffd21f;color:#000;font-size:14px;border:2px solid #000;box-shadow:3px 3px 0 #000;display:none', 'STUN ▼', ui);
       S.crouchTag = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 92px);right:calc(max(22px,env(safe-area-inset-right)) + 100px);padding:4px 8px;background:rgba(0,0,0,.6);font-size:11px', 'CROUCH', ui);
       S.msg = el('position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);font-size:clamp(18px,5vw,30px);text-align:center;text-shadow:3px 3px 0 #000,-1px -1px 0 #000;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap', '', ui);
@@ -2075,7 +2081,7 @@ function createStealth() {
         '<div style="font-size:18px;color:#ffd21f;margin-bottom:8px">ANTU KA GODAM · NIGHT</div>' +
         'GET TO THE HEAD SNIPER ON THE SITE OFFICE ROOF AND TAKE HIM DOWN.<br><br>' +
         '· STAY IN THE DARK. LIGHT GIVES YOU AWAY.<br>· <b style="color:#ffd21f">BLOCK</b> = CROUCH. CRATES HIDE YOU FROM MEN ON FOOT, NOT FROM SNIPERS.<br>' +
-        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· THE STAIRS ARE ON THE OFFICE\'S EAST SIDE.' +
+        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· LADDERS: <b style="color:#ffd21f">ATTACK</b> AT THE FOOT OR THE TOP. THE TOWERS AND THE OFFICE HAVE ONE AT THE BACK; THE OFFICE ALSO HAS STAIRS ON ITS EAST SIDE.' +
         '<div style="margin-top:14px;text-align:center;color:#ffd21f">[ TAP TO START ]</div></div>');
       S.paused = true;
       brief.addEventListener('pointerdown', function () { S.sfx.wake(); brief.remove(); S.paused = false; });
@@ -2108,19 +2114,20 @@ function createStealth() {
       S.sv.sync(alpha, dt);
       /* the screen talk */
       var seen = p.seen, lab = lk > 0 ? 'SPOTTED' : seen > 0.05 ? 'SUSPICIOUS' : 'HIDDEN', col = lk > 0 ? '#ff3a2a' : seen > 0.05 ? '#ffd21f' : (p.light > 0.6 ? '#ffe9b0' : '#8fb0c8');
-      var bar = Math.round((lk > 0 ? 1 : seen) * 10), shade = p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW';
-      var html = '<div style="color:' + col + '">' + lab + '</div><div style="font-size:9px;color:#9aa;margin-top:3px">' + shade + (p.crouch ? ' · CROUCHED' : '') + '</div>' +
-        '<div style="margin-top:5px;height:5px;background:#222"><div style="height:5px;width:' + bar * 10 + '%;background:' + col + '"></div></div>';
-      if (html !== S.lastHtml) { S.state.innerHTML = html; S.lastHtml = html; }
-      var hh = 'LIFE ' + (p.hits >= 1 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>') + (p.hits >= 2 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>');
-      if (hh !== S.lastHits) { S.hits.innerHTML = hh; S.lastHits = hh; }
-      var narrow = window.innerWidth < 560; if (narrow !== S.narrow) { S.narrow = narrow; S.state.style.top = narrow ? 'calc(max(14px,env(safe-area-inset-top)) + 42px)' : 'max(14px,env(safe-area-inset-top))'; }
-      S.prompt.style.display = ST.prompt(st) ? 'block' : 'none';
+      var P = S.pan, sv = lk > 0 ? 1 : seen, key = lab + '|' + Math.round(sv * 20) + '|' + p.hits + '|' + st.stunned + '|' + (p.light > 0.6) + p.crouch + !!p.climb + p.plat;
+      if (key !== S.lastKey) {
+        S.lastKey = key; P.state.textContent = lab; P.state.style.color = col;
+        P.seen.style.width = sv * 100 + '%'; P.seen.style.background = lk > 0 ? '#ff3a2a' : 'linear-gradient(90deg,#ffc21a,#ff7a3d)';
+        P.hp.style.width = (2 - p.hits) * 50 + '%'; P.ko.textContent = 'KO ' + st.stunned;
+        var left = st.watchers.filter(function (w) { return w.st !== 'out'; }).length; P.left.textContent = 'GOONS ' + left;
+        P.where.textContent = (p.climb ? 'ON THE LADDER' : p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW') + (p.crouch ? ' · CROUCHED' : '');
+      }
+      var pr = ST.prompt(st), pt = pr ? (pr.kind === 'stun' ? 'STUN ▼' : pr.kind === 'up' ? 'CLIMB ▲' : 'CLIMB ▼') : '';
+      if (pt !== S.lastPrompt) { S.lastPrompt = pt; S.prompt.textContent = pt; S.prompt.style.display = pt ? 'block' : 'none'; S.prompt.style.background = pr && pr.kind !== 'stun' ? '#8fe3ff' : '#ffd21f'; }
       S.crouchTag.textContent = p.crouch ? 'CROUCHING' : 'CROUCH'; S.crouchTag.style.color = p.crouch ? '#ffd21f' : '#fff';
-      /* the camera: high and from the south, a little ahead of where he's going; higher on a tall phone screen */
-      var tall = window.innerHeight > window.innerWidth, H = tall ? 17 : 14.5, B = tall ? 9.5 : 10;
-      var want = { x: p.x, y: p.y + H, z: p.z + B, lx: p.x, ly: p.y + 0.4, lz: p.z - (tall ? 2.2 : 1.6), fov: tall ? 56 : 52 };
-      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-5 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
+      /* the camera: the game's own follow view (as in the fights and the ride), lifted with him when he's up a ladder or on a roof */
+      var want = { x: p.x, y: p.y + 6.4, z: p.z + 6.6, lx: p.x, ly: p.y + 1.0, lz: p.z - 2.2, fov: 46 };
+      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-8 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
       var shot = { x: S.cam.x, y: S.cam.y, z: S.cam.z, lx: S.cam.lx, ly: S.cam.ly, lz: S.cam.lz, fov: S.cam.fov };
       if (S.shake > 0) { S.shake -= dt; var a = S.shake * 0.6; shot.x += Math.sin(S.t * 90) * a; shot.y += Math.sin(S.t * 77) * a; }
       view.followCamera(p.x, p.z, shot);
@@ -5058,7 +5065,7 @@ defs["sim/stealth"]=function(module,exports,require){
    cover, knocks men out from behind, and climbs to the head sniper to take him down. Plain data, seeded and fixed-step; no graphics.
 
    THE RULES
-     Moving     the stick walks him (4.4 m/s); Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
+     Moving     the stick walks him at the fights' pace; Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
      Light      in a floodlight pool he is seen from much further; in the dark, far less. Crouching shrinks it again.
      Sight      every watcher has a view cone and a range. Sight lines are 2.5D: a box blocks it if the line passes below its top, so a
                 crouched man behind a crate is hidden from a man on the ground but not from a sniper up on a tower; a container hides
@@ -5068,22 +5075,26 @@ defs["sim/stealth"]=function(module,exports,require){
                 shot never comes; he searches where he last saw him, then goes back to his round. Hold it and he fires.
      Shots      two hits and Toofan is down: the stage restarts from the last checkpoint he passed (the men he knocked out stay out).
      Noise      walking upright close to a man on foot makes him turn to look.
-     Takedown   Attack within reach of a man from behind (and not locked on him): a chop to the neck, he is out for good.
+     Takedown   Attack within 3 m of a man from behind (and not locked on him): a quick lunge in, a chop to the neck, out for good.
+     Ladders    at the foot of a ladder (or at its top) Attack climbs it - up the backs of the sniper towers and the office.
      Goal       up the stairs onto the site office roof, behind the head sniper (who glances back now and then), and take him down. */
 'use strict';
 
 var M = require('./stealthmap');
+var CONFIG = require('../data/config');
 
 var TPS = 60, DT = 1 / TPS;
-var WALK = 4.4, SNEAK = 2.0, R = 0.34;
+var WALK = CONFIG.PLAYER.walkSpeed, SNEAK = 2.0, R = 0.34, CLIMB = 2.4;          /* walking at the fights' own pace */
 var LOCK = 1.0, REFIRE = 0.85, LOSE = 0.3, SEARCH = 2.6;
-var REACH = 1.7, TAKEDOWN = 1.1, FAIL_WAIT = 2.2;
+var REACH = 3.0, STRIKE = 0.85, TAKEDOWN = 1.1, FAIL_WAIT = 2.2, LADDER_R = 1.0;   /* takedown: from up to 3 m he lunges in, then the chop */
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
-/* the head height of the target a watcher looks for, and whether a point is on the roof or the stairs */
-function onRoof(x, z) { var O = M.OFFICE; return x >= O.x0 && x <= O.x1 && z >= O.z0 && z <= O.z1; }
+/* the places he can stand up off the ground, and whether a point is on the roof or the stairs */
+var PLAT = {}; M.PLATFORMS.forEach(function (q) { PLAT[q.id] = q; });
+function onPlat(id, x, z) { var q = PLAT[id]; return x >= q.x0 && x <= q.x1 && z >= q.z0 && z <= q.z1; }
+function onRoof(x, z) { return onPlat('office', x, z); }
 function onStairs(x, z) { var S = M.STAIRS; return x >= S.x0 && x <= S.x1 && z >= S.z0 && z <= S.z1; }
 function stairY(x) { var S = M.STAIRS; return clamp((S.x1 - x) / (S.x1 - S.x0), 0, 1) * S.top; }
 
@@ -5091,11 +5102,11 @@ function create(opts) {
   opts = opts || {};
   var st = {
     tick: 0, t: 0, bus: opts.bus || { emit: function () {} }, solids: M.solids(),
-    player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
+    player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, plat: null, climb: null, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
     watchers: [], checkpoint: 0, state: 'play', failT: 0, stunned: 0, alarms: 0
   };
-  M.TOWERS.forEach(function (T) { st.watchers.push(watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range)); });
-  var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.glanceT = B.glance; st.watchers.push(b);
+  M.TOWERS.forEach(function (T) { var w = watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range); w.plat = T.id; w.every = T.glance; w.glance = T.glance; st.watchers.push(w); });
+  var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.plat = 'office'; b.every = B.glance; b.glance = B.glance; st.watchers.push(b);
   M.PATROLS.forEach(function (Pt, i) {
     var w = watcher('guard', 'G' + i, Pt.path[0][0], Pt.path[0][1], 1.6, 0, null, 10); w.kind = Pt.kind; w.path = Pt.path; w.wait = Pt.wait; w.wp = 1; w.pause = 0;
     w.face = Math.atan2(Pt.path[1][0] - Pt.path[0][0], Pt.path[1][1] - Pt.path[0][1]); st.watchers.push(w);
@@ -5134,17 +5145,18 @@ function headY(p) { return p.y + (p.crouch ? 1.0 : 1.6); }
 function sees(st, w, p, locked) {
   if (w.st === 'out' || w.st === 'stunned') return 0;
   var dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz);
+  var same = !!w.plat && p.plat === w.plat;                    /* up on his own roof or deck with him */
   var range = w.range * (0.35 + 0.65 * p.light) * (p.crouch ? (w.type === 'guard' ? 0.62 : 0.8) : 1);
-  if (w.type === 'boss' && p.up) range = 8;
+  if (same) range = 8;
   if (locked) range = Math.max(range, w.range * 0.9);
   if (d > range) return 0;
   if (!locked) {
-    var half = w.type === 'guard' ? 0.8 : (w.type === 'boss' && p.up ? 0.9 : 0.24);
+    var half = w.type === 'guard' ? 0.8 : same ? 0.9 : 0.24;
     var a = Math.abs(angDiff(Math.atan2(dx, dz), w.face));
     if (a > half && !(w.type === 'guard' && d < 1.1 && a < 1.7)) return 0;
   }
-  if (w.type === 'boss' && !p.up && d < 4.5) return 0;       /* the head sniper can't see down past his own roof's edge */
-  if (w.type === 'guard' && p.up !== false) return 0;
+  if (w.plat && !p.plat && p.y < 1 && d < (w.type === 'boss' ? 4.5 : 3)) return 0;   /* nobody up high sees straight down past his own edge */
+  if (w.type === 'guard' && p.plat) return 0;
   if (blocked(st, w.x, w.z, w.eye, p.x, p.z, headY(p), w.id)) return 0;
   return 1 - d / (range + 0.01) * 0.6;
 }
@@ -5153,10 +5165,17 @@ function stepPlayer(st, inp) {
   var p = st.player, s = inp.state; p.px = p.x; p.pz = p.z;
   if (s.pressed.block) { p.crouch = !p.crouch; st.bus.emit('st:crouch', { on: p.crouch }); }
   if (p.act) {
-    p.act.t += DT; p.moving = false;
-    if (p.act.t >= TAKEDOWN) { var tw = p.act.w; tw.st = 'out'; p.act = null; st.stunned++; st.bus.emit('st:out', { id: tw.id }); if (tw.type === 'boss') win(st); }
+    var A = p.act; p.moving = false;
+    if (A.lunge > 0 && A.lt < A.lunge) {                                 /* the lunge: a quick low rush in behind him */
+      A.lt = Math.min(A.lunge, A.lt + DT); var k = A.lt / A.lunge;
+      move(st, p, A.sx + (A.ex - A.sx) * k, A.sz + (A.ez - A.sz) * k); p.moving = true; p.face = Math.atan2(A.w.x - p.x, A.w.z - p.z);
+      return;
+    }
+    A.t += DT;
+    if (A.t >= TAKEDOWN) { var tw = A.w; tw.st = 'out'; p.act = null; st.stunned++; st.bus.emit('st:out', { id: tw.id }); if (tw.type === 'boss') win(st); }
     return;
   }
+  if (p.climb) { stepClimb(st, p); return; }
   var mx = s.mx, mz = -s.my, m = Math.hypot(mx, mz);
   p.moving = m > 0.15;
   if (p.moving) {
@@ -5164,23 +5183,49 @@ function stepPlayer(st, inp) {
     p.face = Math.atan2(mx, mz);
     move(st, p, nx, nz);
   }
-  /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof only by the stairs */
-  if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.up = p.y > M.STAIRS.top - 0.35; }
-  else if (p.up) p.y = M.OFFICE.h; else p.y = 0;
-  p.light = p.up ? 0.7 : lightAt(p.x, p.z);
+  /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof by the stairs or the ladder */
+  if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.plat = p.y > M.STAIRS.top - 0.35 ? 'office' : null; }
+  else if (p.plat) p.y = PLAT[p.plat].h; else p.y = 0;
+  p.up = !!p.plat;
+  p.light = p.plat ? 0.7 : lightAt(p.x, p.z);
   /* the checkpoints he passes */
   for (var c = st.checkpoint + 1; c < M.CHECKPOINTS.length; c++) { var K = M.CHECKPOINTS[c]; if (Math.hypot(p.x - K.x, p.z - K.z) < 3.2) { st.checkpoint = c; st.bus.emit('st:checkpoint', { n: c }); } }
   /* a takedown: a man within reach who isn't facing him and isn't locked on him */
+  /* Attack: a takedown if a man is in reach from behind, otherwise a ladder if he's at its foot or its top */
   if (s.pressed.attack) {
     var t = takedownTarget(st);
-    if (t) { p.act = { t: 0, w: t }; t.st = 'stunned'; t.outT = 0; t.moving = false; p.face = Math.atan2(t.x - p.x, t.z - p.z); st.bus.emit('st:takedown', { id: t.id, boss: t.type === 'boss' }); }
+    if (t) {
+      var d = Math.hypot(t.x - p.x, t.z - p.z), ex = t.x - Math.sin(t.face) * STRIKE, ez = t.z - Math.cos(t.face) * STRIKE;
+      p.act = { t: 0, w: t, sx: p.x, sz: p.z, ex: ex, ez: ez, lt: 0, lunge: d > STRIKE + 0.25 ? Math.min(0.42, d / 7.5) : 0 };
+      t.st = 'stunned'; t.outT = 0; t.moving = false; p.face = Math.atan2(t.x - p.x, t.z - p.z); st.bus.emit('st:takedown', { id: t.id, boss: t.type === 'boss', lunge: p.act.lunge });
+    } else {
+      var L = ladderHere(st);
+      if (L) { p.climb = { L: L, dir: p.plat ? -1 : 1 }; p.x = L.x; p.z = L.z; p.face = L.face; p.crouch = false; if (p.plat) p.y = L.h; p.plat = null; p.up = false; st.bus.emit('st:climb', { id: L.id, dir: p.climb.dir }); }
+    }
   }
+}
+/* the ladder he could climb from where he stands: at its foot on the ground, or at its top on its roof or deck */
+function ladderHere(st) {
+  var p = st.player, i; if (p.climb || p.act) return null;
+  for (i = 0; i < M.LADDERS.length; i++) {
+    var L = M.LADDERS[i];
+    if (!p.plat && p.y < 0.5 && Math.hypot(p.x - L.fx, p.z - L.fz) < LADDER_R) return L;
+    if (p.plat === L.plat && Math.hypot(p.x - L.tx, p.z - L.tz) < LADDER_R) return L;
+  }
+  return null;
+}
+/* on the ladder: up or down at a steady pace, facing it; at the top he steps onto the deck, at the bottom onto the ground */
+function stepClimb(st, p) {
+  var C = p.climb, L = C.L; p.moving = true; p.px = p.x; p.pz = p.z;
+  p.y += C.dir * CLIMB * DT; p.light = lightAt(p.x, p.z);
+  if (C.dir > 0 && p.y >= L.h) { p.y = L.h; p.plat = L.plat; p.up = true; p.x = p.px = L.tx; p.z = p.pz = L.tz; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: true }); }
+  else if (C.dir < 0 && p.y <= 0) { p.y = 0; p.plat = null; p.up = false; p.x = p.px = L.fx; p.z = p.pz = L.fz; p.face = L.face + Math.PI; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: false }); }
 }
 function takedownTarget(st) {
   var p = st.player, best = null, bd = REACH, i;
   for (i = 0; i < st.watchers.length; i++) {
-    var w = st.watchers[i]; if (w.type === 'sniper' || w.st === 'out' || w.st === 'stunned' || w.st === 'lock') continue;
-    if ((w.type === 'boss') !== p.up) continue;
+    var w = st.watchers[i]; if (w.st === 'out' || w.st === 'stunned' || w.st === 'lock') continue;
+    if ((w.plat || null) !== (p.plat || null) || p.climb) continue;         /* on the same level: the ground, or his roof or deck */
     var d = Math.hypot(p.x - w.x, p.z - w.z); if (d > bd) continue;
     var a = Math.abs(angDiff(Math.atan2(p.x - w.x, p.z - w.z), w.face));
     if (a < 1.75) continue;                                              /* he has to be behind him */
@@ -5191,10 +5236,13 @@ function takedownTarget(st) {
 /* walking: boxes and the yard's edge push him back; on the roof only the roof and the stairs are under his feet */
 function move(st, p, nx, nz) {
   var B = M.BOUNDS, O = M.OFFICE, S = M.STAIRS;
-  if (p.up) {
+  if (p.plat && p.plat !== 'office') {                                 /* a tower deck: stay on its planks */
+    var q = PLAT[p.plat]; p.x = clamp(nx, q.x0 + 0.25, q.x1 - 0.25); p.z = clamp(nz, q.z0 + 0.25, q.z1 - 0.25); return;
+  }
+  if (p.plat) {
     var inRoof = onRoof(nx, nz), inSt = onStairs(nx, nz);
     if (!inRoof && !inSt) { nx = clamp(nx, O.x0 + 0.25, O.x1 + (Math.abs(nz - (S.z0 + S.z1) / 2) < 0.6 ? 0.5 : -0.25)); nz = clamp(nz, O.z0 + 0.25, O.z1 - 0.25); if (!onRoof(nx, nz) && !onStairs(nx, nz)) { nx = p.x; nz = p.z; } }
-    if (onStairs(nx, nz) && stairY(nx) < M.STAIRS.top - 0.35) p.up = false;
+    if (onStairs(nx, nz) && stairY(nx) < M.STAIRS.top - 0.35) { p.plat = null; p.up = false; }
     p.x = nx; p.z = nz; return;
   }
   p.x = clamp(nx, B.x0, B.x1); p.z = clamp(nz, B.z0, B.z1);
@@ -5268,8 +5316,8 @@ function patrol(st, w) {
 function sweepLook(st, w) {
   w.phase += DT;
   var a = w.base + w.sweep[0] * Math.sin(w.phase * Math.PI * 2 / w.sweep[1]);
-  if (w.type === 'boss') {                          /* the head sniper glances back over his shoulder every so often */
-    var was = w.glance; w.glance -= DT; if (w.glance <= -1.4) w.glance = M.BOSS.glance;
+  if (w.every) {                                     /* the snipers glance back over the shoulder every so often */
+    var was = w.glance; w.glance -= DT; if (w.glance <= -1.4) w.glance = w.every;
     if (was >= 0 && w.glance < 0) st.bus.emit('st:glance', { id: w.id });
     if (w.glance < 0) a = w.base + Math.PI - 0.4;
   }
@@ -5285,11 +5333,11 @@ function win(st) { st.state = 'won'; st.bus.emit('st:won', { stunned: st.stunned
 /* back to the last checkpoint: his health back, every man still standing back on his round and calm, the knocked-out stay out */
 function restart(st) {
   var K = M.CHECKPOINTS[st.checkpoint], p = st.player;
-  p.x = p.px = K.x; p.z = p.pz = K.z; p.face = K.face; p.y = 0; p.up = false; p.crouch = false; p.hits = 0; p.act = null; p.flash = 0;
+  p.x = p.px = K.x; p.z = p.pz = K.z; p.face = K.face; p.y = 0; p.up = false; p.plat = null; p.climb = null; p.crouch = false; p.hits = 0; p.act = null; p.flash = 0;
   st.watchers.forEach(function (w) {
     if (w.st === 'out') return;
     w.st = 'watch'; w.sus = 0; w.lockT = 0; w.loseT = 0; w.aim = null; w.last = null; w.x = w.px = w.home.x; w.z = w.pz = w.home.z; w.face = w.home.face; w.phase = 0; w.pause = 0;
-    if (w.path) w.wp = w.home.wp; if (w.type === 'boss') w.glance = M.BOSS.glance;
+    if (w.path) w.wp = w.home.wp; if (w.every) w.glance = w.every;
   });
   st.state = 'play'; st.bus.emit('st:restart', { checkpoint: st.checkpoint });
 }
@@ -5304,7 +5352,11 @@ function step(st, inp) {
 }
 
 /* who could he take down right now (for the button prompt) */
-function prompt(st) { return st.state === 'play' && !st.player.act ? takedownTarget(st) : null; }
+function prompt(st) {
+  if (st.state !== 'play' || st.player.act || st.player.climb) return null;
+  var t = takedownTarget(st); if (t) return { kind: 'stun', w: t };
+  var L = ladderHere(st); return L ? { kind: st.player.plat ? 'down' : 'up', L: L } : null;
+}
 
 /* a short fingerprint of the stage's state, for replays in the tests */
 function hash(st) {
@@ -5326,8 +5378,9 @@ defs["sim/stealthmap"]=function(module,exports,require){
      containers   tall cover (2.6 m, or 5.2 m stacked two high): hide from everyone behind them
      crates       low cover (1.1 m): crouched behind them a man on the ground can't see him; a sniper up high still can
      floodlights  pools of light: inside one he is seen from much further away; the rest of the yard is dark
-     towers       two scaffold sniper towers (5 m), and the site office whose flat roof the head sniper stands on, reached by
-                  the steel stairs on its east side - the only way up, and it comes out behind him */
+     towers       two scaffold sniper towers (5 m), each with a ladder up its back, and the site office whose flat roof the head
+                  sniper stands on, reached by the steel stairs on its east side or the ladder up its back wall - both come out behind
+                  him */
 'use strict';
 
 var kit = require('./arenakit');
@@ -5356,11 +5409,21 @@ var LIGHTS = [[0, 8.4, 5.6], [-12.4, -1.4, 5.2], [11.2, -3.2, 5.2], [-1.2, -11.6
 /* the watchers: snipers on the towers and the head sniper; men on foot patrolling with pistols. Face: radians, 0 = south (+z), pi/2 = east.
    sweep: [half-angle, seconds for a full sweep]. Patrols: loops of waypoints, with a look-round wait (s) at each. */
 var TOWERS = [
-  { id: 'T1', x: -23.4, z: -3.4, h: 5.0, face: Math.PI / 2 + 0.15, sweep: [0.95, 8.0], range: 23 },
-  { id: 'T2', x: 23.2, z: 8.2, h: 5.0, face: -Math.PI / 2 - 0.25, sweep: [0.85, 10.0], range: 23 }
+  { id: 'T1', x: -22.2, z: -3.4, h: 5.0, face: Math.PI / 2 + 0.15, sweep: [0.95, 8.0], range: 23, glance: 12.0, side: -1 },
+  { id: 'T2', x: 22.2, z: 8.2, h: 5.0, face: -Math.PI / 2 - 0.25, sweep: [0.85, 10.0], range: 23, glance: 15.0, side: 1 }
 ];
 var OFFICE = { x0: -4.4, z0: -21.6, x1: 3.0, z1: -14.6, h: 3.2 };                 /* the head sniper's roof */
 var STAIRS = { x0: 3.0, z0: -21.2, x1: 9.4, z1: -19.6, top: 3.0 };                /* climbing west, from the ground at x 9.4 to the roof at x 3 */
+/* the places up off the ground: the office roof and the two tower decks (the top surface he stands on) */
+var DECK = 5.12;
+var PLATFORMS = [{ id: 'office', x0: OFFICE.x0, z0: OFFICE.z0, x1: OFFICE.x1, z1: OFFICE.z1, h: OFFICE.h }].concat(TOWERS.map(function (T) {
+  return { id: T.id, x0: T.x - 1.3, z0: T.z - 1.3, x1: T.x + 1.3, z1: T.z + 1.3, h: DECK };
+}));
+/* the ladders: one up the back of each tower (the side away from the yard he watches) and one up the back wall of the office.
+   foot = where he stands on the ground to climb, top = where he steps off; face = the way he faces while on it */
+var LADDERS = TOWERS.map(function (T) {
+  return { id: 'L' + T.id, plat: T.id, x: T.x + T.side * 1.42, z: T.z, fx: T.x + T.side * 2.05, fz: T.z, tx: T.x + T.side * 0.75, tz: T.z, face: T.side < 0 ? Math.PI / 2 : -Math.PI / 2, h: DECK };
+}).concat([{ id: 'Loffice', plat: 'office', x: -2.2, z: OFFICE.z0 - 0.14, fx: -2.2, fz: OFFICE.z0 - 0.7, tx: -2.2, tz: OFFICE.z0 + 0.7, face: 0, h: OFFICE.h }]);
 var BOSS = { id: 'BOSS', x: -0.6, z: -15.6, face: 0, sweep: [0.7, 11.0], range: 21, glance: 9.0 };
 var PATROLS = [
   { kind: 'chain', path: [[-10.4, 9.8], [1.8, 9.8], [1.8, 6.8], [-10.4, 6.8]], wait: 1.4 },
@@ -5432,7 +5495,6 @@ function build(seed) {
     for (y = 0.8; y < H; y += 1.4) { K.b(-1.1, y, -1.12, 1.1, y + 0.07, -1.04, C.STEEL); K.b(-1.1, y, 1.04, 1.1, y + 0.07, 1.12, C.STEEL); K.b(-1.12, y, -1.1, -1.04, y + 0.07, 1.1, C.STEEL); K.b(1.04, y, -1.1, 1.12, y + 0.07, 1.1, C.STEEL); }
     K.b(-1.3, H, -1.3, 1.3, H + 0.12, 1.3, C.WOOD);
     K.b(-1.3, H + 0.12, -1.3, 1.3, H + 0.55, -1.15, C.KHAKI); K.b(-1.3, H + 0.12, 1.15, 1.3, H + 0.55, 1.3, C.KHAKI); K.b(-1.3, H + 0.12, -1.3, -1.15, H + 0.55, 1.3, C.KHAKI); K.b(1.15, H + 0.12, -1.3, 1.3, H + 0.55, 1.3, C.KHAKI);
-    for (y = 0.3; y < H; y += 0.35) K.b(-0.3, y, 1.12, 0.3, y + 0.05, 1.18, C.GREYP);
     K.end();
   });
   /* the site office: a block cabin with a flat roof the head sniper stands on, rails round it, steel stairs up the east side */
@@ -5448,6 +5510,13 @@ function build(seed) {
   for (k = 0; k < n; k++) { var u0 = S.x1 - (k + 1) * (S.x1 - S.x0) / n, u1 = S.x1 - k * (S.x1 - S.x0) / n, hy = (k + 1) * S.top / n; K.b(u0, hy - 0.08, S.z0, u1, hy, S.z1, C.STEEL); K.b(u0, 0, S.z1 - 0.06, u0 + 0.08, hy, S.z1, C.GREYP); }
   K.b(S.x0, S.top + 0.9, S.z1, S.x1, S.top + 0.98, S.z1 + 0.06, C.YELLOW);
   K.end();
+  /* the ladders: two steel rails and rungs, with hoops above the top on the towers */
+  LADDERS.forEach(function (L) {
+    at(L.x, L.z, 0); var across = Math.abs(Math.sin(L.face)) > 0.5;           /* a tower ladder's rungs run north-south */
+    function bx(a0, y0, a1, y1, d0, d1, c) { if (across) K.b(d0, y0, a0, d1, y1, a1, c); else K.b(a0, y0, d0, a1, y1, d1, c); }
+    bx(-0.32, 0, -0.26, L.h + 0.9, -0.04, 0.04, C.GREYP); bx(0.26, 0, 0.32, L.h + 0.9, -0.04, 0.04, C.GREYP);
+    for (y = 0.28; y < L.h + 0.1; y += 0.3) bx(-0.28, y, 0.28, y + 0.05, -0.03, 0.03, C.STEEL);
+  });
   /* floodlight masts with their lamps, and a few lit windows of stacked drums and tyres for clutter */
   LIGHTS.forEach(function (L, i) {
     var mx = L[0] + (i % 2 ? 1 : -1) * 0.4, mz = L[1] - 0.4; at(mx, mz, 0);
@@ -5465,7 +5534,7 @@ function build(seed) {
   };
 }
 
-module.exports = { BOUNDS: BOUNDS, START: START, CONTAINERS: CONTAINERS, CRATES: CRATES, LIGHTS: LIGHTS, TOWERS: TOWERS, OFFICE: OFFICE, STAIRS: STAIRS,
+module.exports = { BOUNDS: BOUNDS, START: START, CONTAINERS: CONTAINERS, CRATES: CRATES, LIGHTS: LIGHTS, TOWERS: TOWERS, OFFICE: OFFICE, STAIRS: STAIRS, PLATFORMS: PLATFORMS, LADDERS: LADDERS,
   BOSS: BOSS, PATROLS: PATROLS, CHECKPOINTS: CHECKPOINTS, solids: solids, build: build };
 
 };
@@ -10506,22 +10575,31 @@ function createStealthView(view, st) {
   }
 
   /* Toofan */
-  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face; root.add(hero.root);
+  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root);
   function heroPose(p, dt) {
     var stand = posemath.named('stand'), out;
     if (st.state === 'fail') out = posemath.layer(stand, posemath.named('down'), 1, 1, 1, 1);
-    else if (p.act) {
+    else if (p.climb) {
+      /* on the ladder: hand over hand, knees stepping up, in time with how far he has climbed */
+      var cph = p.y / 0.3 * Math.PI, cs = Math.sin(cph);
+      out = posemath.layer(stand, { 'armA.sx': 150 + 18 * cs, 'armA.e': 40 - 25 * cs, 'armA.sz': 14, 'armB.sx': 150 - 18 * cs, 'armB.e': 40 + 25 * cs, 'armB.sz': 14, 'head.rx': -16,
+        'legA.hx': 45 + 30 * cs, 'legA.k': 60 + 35 * cs, 'legB.hx': 45 - 30 * cs, 'legB.k': 60 - 35 * cs, 'spine.rx': 4 }, 1, 1, 1, 1);
+    } else if (p.act && p.act.lunge > 0 && p.act.lt < p.act.lunge) {
+      /* the lunge: low and quick, arms reaching */
+      hph += dt * 13; var ls = Math.sin(hph);
+      out = posemath.layer(stand, { 'hip.y': -0.3, 'spine.rx': 30, 'head.rx': -20, 'legA.hx': 55 + 35 * ls, 'legA.k': 70 - 20 * ls, 'legB.hx': 55 - 35 * ls, 'legB.k': 70 + 20 * ls, 'armA.sx': 70, 'armA.e': 30, 'armB.sx': 60, 'armB.e': 60 }, 1, 1, 1, 1);
+    } else if (p.act) {
       /* the takedown: a step in, his left hand clamps the man's shoulder, the right hand chops down at the neck, twice */
       var u = p.act.t, chop = Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.25) / 0.35)) * Math.PI)) + Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.62) / 0.3)) * Math.PI)) * 0.8;
       out = posemath.layer(stand, { 'armA.sx': 80, 'armA.sz': 6, 'armA.e': 40, 'armB.sx': 110 - 70 * chop, 'armB.sz': 12, 'armB.e': 80 - 60 * chop, 'spine.rx': 14 + 8 * chop, 'hip.y': -0.12, 'legA.hx': 24, 'legA.k': 30, 'legB.hx': -16, 'legB.k': 18, 'head.rx': 10 }, 1, 1, 1, 1);
     } else if (st.state === 'won') out = posemath.layer(stand, { 'armA.sx': 170, 'armA.e': 0, 'armA.sz': 10, 'head.rx': -14, 'armB.sz': 30 }, 1, 1, 1, 1);
     else if (p.crouch) {
       /* sneaking: low, knees deep, back bent forward, hands up and ready */
-      var mv = p.moving ? 1 : 0; if (p.moving) hph += dt * 6.2;
+      var mv = p.moving ? Math.min(1, spd / 1.5) : 0; if (p.moving) hph += spd * dt / 0.75;
       var s = Math.sin(hph), sk = { 'hip.y': -0.38, 'spine.rx': 26, 'head.rx': -18, 'legA.hx': 62 + 20 * s * mv, 'legA.k': 95 - 15 * s * mv, 'legB.hx': 62 - 20 * s * mv, 'legB.k': 95 + 15 * s * mv,
         'legA.a': -30, 'legB.a': -30, 'armA.sx': 40 - 15 * s * mv, 'armA.e': 70, 'armA.sz': 10, 'armB.sx': 40 + 15 * s * mv, 'armB.e': 70, 'armB.sz': 10 };
       out = posemath.layer(stand, sk, 1, 1, 1, 1);
-    } else if (p.moving) { hph += dt * 8.2; out = posemath.walkPose(hph, 1); }
+    } else if (p.moving) { hph += spd * dt / 1.9; out = posemath.walkPose(hph, 1 + Math.min(0.2, spd / 20)); }     /* the fights' own walk */
     else out = posemath.idlePose(ht);
     if (p.flash > 0.5) out = posemath.layer(out, { 'spine.rx': -18, 'head.rx': -20, 'armA.sz': 30, 'armB.sz': 30 }, 1, 1, 1, 1);
     posemath.approach(cur, out, 16, dt);
@@ -10531,7 +10609,7 @@ function createStealthView(view, st) {
   return {
     hero: hero,
     sync: function (alpha, dt) {
-      var p = st.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha; ht += dt;
+      var p = st.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha; ht += dt; spd = Math.hypot(p.x - p.px, p.z - p.pz) * 60;
       heroFace += Math.atan2(Math.sin(p.face - heroFace), Math.cos(p.face - heroFace)) * (1 - Math.exp(-14 * dt));
       hero.root.position.set(x, p.y, z); hero.root.rotation.y = heroFace; hero.applyPose(heroPose(p, dt), { plant: true }); hero.flutter(ht, p.moving ? 0.6 : 0);
       men.forEach(function (v) {
@@ -10556,7 +10634,7 @@ function createStealthView(view, st) {
           v.rig.root.updateMatrixWorld(true); v.muzzle.getWorldPosition(v3);
           if (w.st === 'lock' && w.aim) v4.set(w.aim.x, w.aim.y + p.y * 0, w.aim.z);
           else { var reach2 = w.type === 'guard' ? 6 : w.range * 0.78; v4.set(wx + Math.sin(v.face) * reach2, w.type === 'boss' ? 0.02 : 0.02, wz + Math.cos(v.face) * reach2); }
-          if (w.st === 'lock') v4.y = (p.up ? p.y : 0) + (p.crouch ? 0.85 : 1.3);
+          if (w.st === 'lock') v4.y = p.y + (p.crouch ? 0.85 : 1.3);
           v.laser.position.copy(v3); v.laser.scale.set(w.st === 'lock' ? 1.6 : 1, w.st === 'lock' ? 1.6 : 1, v3.distanceTo(v4)); v.laser.lookAt(v4);
           v.laser.material.opacity = w.st === 'lock' ? 0.85 + 0.15 * Math.sin(v.t * 30) : 0.55;
           v.dot.position.set(v4.x, w.st === 'lock' ? v4.y : 0.045, v4.z); v.dot.rotation.x = w.st === 'lock' ? 0 : -Math.PI / 2; if (w.st === 'lock') v.dot.lookAt(v3);

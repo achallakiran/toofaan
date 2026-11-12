@@ -749,6 +749,29 @@ test('map: picking an open place on the full map makes it the signal; a cleared 
     ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.3);
     assert.strictEqual(B.st, 'out'); assert.strictEqual(st.state, 'won'); assert.strictEqual(won, 1);
   });
+  test('stealth: up a tower ladder behind the sniper, a takedown on the deck, and back down', function () {
+    var st = ST.create({}), T = st.watchers[0], L = SM.LADDERS[0]; only(st, ['T1']); T.every = 0; T.glance = 999; var p = st.player;
+    assert.strictEqual(L.plat, 'T1');
+    p.x = L.fx + 0.3; p.z = L.fz; ST.step(st, inp());
+    var pr = ST.prompt(st); assert(pr && pr.kind === 'up', 'CLIMB up offered at the foot: ' + JSON.stringify(pr && pr.kind));
+    ST.step(st, inp({ attack: true })); assert(p.climb, 'climbing');
+    run(st, Math.ceil(ST.TPS * (L.h / 2.4)) + 5);
+    assert.strictEqual(p.plat, 'T1', 'on the deck'); assert(Math.abs(p.y - L.h) < 1e-6);
+    assert.strictEqual(T.st, 'watch', 'the sniper never saw him come up behind');
+    pr = ST.prompt(st); assert(pr && pr.kind === 'stun', 'STUN offered on the deck behind him');
+    ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.6); assert.strictEqual(T.st, 'out');
+    p.x = L.tx; p.z = L.tz; ST.step(st, inp()); pr = ST.prompt(st); assert(pr && pr.kind === 'down', 'CLIMB down offered at the top');
+    ST.step(st, inp({ attack: true })); run(st, Math.ceil(ST.TPS * (L.h / 2.4)) + 5);
+    assert.strictEqual(p.plat, null); assert.strictEqual(p.y, 0); assert(Math.hypot(p.x - L.fx, p.z - L.fz) < 1e-6);
+  });
+  test('stealth: from nearly 3 m behind a man the STUN is offered and he lunges in for it', function () {
+    var st = ST.create({}), G = st.watchers.filter(function (w) { return w.type === 'guard'; })[1]; only(st, [G.id]);
+    G.path = [[G.x, G.z], [G.x, G.z]]; G.face = 0; G.pause = 999; G.look = 0; var p = st.player;
+    p.x = G.x; p.z = G.z - 2.8; p.crouch = true; ST.step(st, inp());
+    assert(ST.prompt(st) && ST.prompt(st).kind === 'stun', 'offered at 2.8 m');
+    ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.8);
+    assert.strictEqual(G.st, 'out'); assert(Math.hypot(p.x - G.x, p.z - G.z) < 1.0, 'he ended up right behind him');
+  });
   test('stealth: the same inputs give the same stage, tick for tick', function () {
     function go() { var st = ST.create({}), i; for (i = 0; i < 1200; i++) ST.step(st, inp({ mx: Math.sin(i * 0.01), my: 0.6, block: i === 100, attack: i % 97 === 0 })); return ST.hash(st); }
     assert.strictEqual(go(), go());

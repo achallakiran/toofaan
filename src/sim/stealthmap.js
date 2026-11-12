@@ -6,8 +6,9 @@
      containers   tall cover (2.6 m, or 5.2 m stacked two high): hide from everyone behind them
      crates       low cover (1.1 m): crouched behind them a man on the ground can't see him; a sniper up high still can
      floodlights  pools of light: inside one he is seen from much further away; the rest of the yard is dark
-     towers       two scaffold sniper towers (5 m), and the site office whose flat roof the head sniper stands on, reached by
-                  the steel stairs on its east side - the only way up, and it comes out behind him */
+     towers       two scaffold sniper towers (5 m), each with a ladder up its back, and the site office whose flat roof the head
+                  sniper stands on, reached by the steel stairs on its east side or the ladder up its back wall - both come out behind
+                  him */
 'use strict';
 
 var kit = require('./arenakit');
@@ -36,11 +37,21 @@ var LIGHTS = [[0, 8.4, 5.6], [-12.4, -1.4, 5.2], [11.2, -3.2, 5.2], [-1.2, -11.6
 /* the watchers: snipers on the towers and the head sniper; men on foot patrolling with pistols. Face: radians, 0 = south (+z), pi/2 = east.
    sweep: [half-angle, seconds for a full sweep]. Patrols: loops of waypoints, with a look-round wait (s) at each. */
 var TOWERS = [
-  { id: 'T1', x: -23.4, z: -3.4, h: 5.0, face: Math.PI / 2 + 0.15, sweep: [0.95, 8.0], range: 23 },
-  { id: 'T2', x: 23.2, z: 8.2, h: 5.0, face: -Math.PI / 2 - 0.25, sweep: [0.85, 10.0], range: 23 }
+  { id: 'T1', x: -22.2, z: -3.4, h: 5.0, face: Math.PI / 2 + 0.15, sweep: [0.95, 8.0], range: 23, glance: 12.0, side: -1 },
+  { id: 'T2', x: 22.2, z: 8.2, h: 5.0, face: -Math.PI / 2 - 0.25, sweep: [0.85, 10.0], range: 23, glance: 15.0, side: 1 }
 ];
 var OFFICE = { x0: -4.4, z0: -21.6, x1: 3.0, z1: -14.6, h: 3.2 };                 /* the head sniper's roof */
 var STAIRS = { x0: 3.0, z0: -21.2, x1: 9.4, z1: -19.6, top: 3.0 };                /* climbing west, from the ground at x 9.4 to the roof at x 3 */
+/* the places up off the ground: the office roof and the two tower decks (the top surface he stands on) */
+var DECK = 5.12;
+var PLATFORMS = [{ id: 'office', x0: OFFICE.x0, z0: OFFICE.z0, x1: OFFICE.x1, z1: OFFICE.z1, h: OFFICE.h }].concat(TOWERS.map(function (T) {
+  return { id: T.id, x0: T.x - 1.3, z0: T.z - 1.3, x1: T.x + 1.3, z1: T.z + 1.3, h: DECK };
+}));
+/* the ladders: one up the back of each tower (the side away from the yard he watches) and one up the back wall of the office.
+   foot = where he stands on the ground to climb, top = where he steps off; face = the way he faces while on it */
+var LADDERS = TOWERS.map(function (T) {
+  return { id: 'L' + T.id, plat: T.id, x: T.x + T.side * 1.42, z: T.z, fx: T.x + T.side * 2.05, fz: T.z, tx: T.x + T.side * 0.75, tz: T.z, face: T.side < 0 ? Math.PI / 2 : -Math.PI / 2, h: DECK };
+}).concat([{ id: 'Loffice', plat: 'office', x: -2.2, z: OFFICE.z0 - 0.14, fx: -2.2, fz: OFFICE.z0 - 0.7, tx: -2.2, tz: OFFICE.z0 + 0.7, face: 0, h: OFFICE.h }]);
 var BOSS = { id: 'BOSS', x: -0.6, z: -15.6, face: 0, sweep: [0.7, 11.0], range: 21, glance: 9.0 };
 var PATROLS = [
   { kind: 'chain', path: [[-10.4, 9.8], [1.8, 9.8], [1.8, 6.8], [-10.4, 6.8]], wait: 1.4 },
@@ -112,7 +123,6 @@ function build(seed) {
     for (y = 0.8; y < H; y += 1.4) { K.b(-1.1, y, -1.12, 1.1, y + 0.07, -1.04, C.STEEL); K.b(-1.1, y, 1.04, 1.1, y + 0.07, 1.12, C.STEEL); K.b(-1.12, y, -1.1, -1.04, y + 0.07, 1.1, C.STEEL); K.b(1.04, y, -1.1, 1.12, y + 0.07, 1.1, C.STEEL); }
     K.b(-1.3, H, -1.3, 1.3, H + 0.12, 1.3, C.WOOD);
     K.b(-1.3, H + 0.12, -1.3, 1.3, H + 0.55, -1.15, C.KHAKI); K.b(-1.3, H + 0.12, 1.15, 1.3, H + 0.55, 1.3, C.KHAKI); K.b(-1.3, H + 0.12, -1.3, -1.15, H + 0.55, 1.3, C.KHAKI); K.b(1.15, H + 0.12, -1.3, 1.3, H + 0.55, 1.3, C.KHAKI);
-    for (y = 0.3; y < H; y += 0.35) K.b(-0.3, y, 1.12, 0.3, y + 0.05, 1.18, C.GREYP);
     K.end();
   });
   /* the site office: a block cabin with a flat roof the head sniper stands on, rails round it, steel stairs up the east side */
@@ -128,6 +138,13 @@ function build(seed) {
   for (k = 0; k < n; k++) { var u0 = S.x1 - (k + 1) * (S.x1 - S.x0) / n, u1 = S.x1 - k * (S.x1 - S.x0) / n, hy = (k + 1) * S.top / n; K.b(u0, hy - 0.08, S.z0, u1, hy, S.z1, C.STEEL); K.b(u0, 0, S.z1 - 0.06, u0 + 0.08, hy, S.z1, C.GREYP); }
   K.b(S.x0, S.top + 0.9, S.z1, S.x1, S.top + 0.98, S.z1 + 0.06, C.YELLOW);
   K.end();
+  /* the ladders: two steel rails and rungs, with hoops above the top on the towers */
+  LADDERS.forEach(function (L) {
+    at(L.x, L.z, 0); var across = Math.abs(Math.sin(L.face)) > 0.5;           /* a tower ladder's rungs run north-south */
+    function bx(a0, y0, a1, y1, d0, d1, c) { if (across) K.b(d0, y0, a0, d1, y1, a1, c); else K.b(a0, y0, d0, a1, y1, d1, c); }
+    bx(-0.32, 0, -0.26, L.h + 0.9, -0.04, 0.04, C.GREYP); bx(0.26, 0, 0.32, L.h + 0.9, -0.04, 0.04, C.GREYP);
+    for (y = 0.28; y < L.h + 0.1; y += 0.3) bx(-0.28, y, 0.28, y + 0.05, -0.03, 0.03, C.STEEL);
+  });
   /* floodlight masts with their lamps, and a few lit windows of stacked drums and tyres for clutter */
   LIGHTS.forEach(function (L, i) {
     var mx = L[0] + (i % 2 ? 1 : -1) * 0.4, mz = L[1] - 0.4; at(mx, mz, 0);
@@ -145,5 +162,5 @@ function build(seed) {
   };
 }
 
-module.exports = { BOUNDS: BOUNDS, START: START, CONTAINERS: CONTAINERS, CRATES: CRATES, LIGHTS: LIGHTS, TOWERS: TOWERS, OFFICE: OFFICE, STAIRS: STAIRS,
+module.exports = { BOUNDS: BOUNDS, START: START, CONTAINERS: CONTAINERS, CRATES: CRATES, LIGHTS: LIGHTS, TOWERS: TOWERS, OFFICE: OFFICE, STAIRS: STAIRS, PLATFORMS: PLATFORMS, LADDERS: LADDERS,
   BOSS: BOSS, PATROLS: PATROLS, CHECKPOINTS: CHECKPOINTS, solids: solids, build: build };

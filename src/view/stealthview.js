@@ -105,22 +105,31 @@ function createStealthView(view, st) {
   }
 
   /* Toofan */
-  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face; root.add(hero.root);
+  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root);
   function heroPose(p, dt) {
     var stand = posemath.named('stand'), out;
     if (st.state === 'fail') out = posemath.layer(stand, posemath.named('down'), 1, 1, 1, 1);
-    else if (p.act) {
+    else if (p.climb) {
+      /* on the ladder: hand over hand, knees stepping up, in time with how far he has climbed */
+      var cph = p.y / 0.3 * Math.PI, cs = Math.sin(cph);
+      out = posemath.layer(stand, { 'armA.sx': 150 + 18 * cs, 'armA.e': 40 - 25 * cs, 'armA.sz': 14, 'armB.sx': 150 - 18 * cs, 'armB.e': 40 + 25 * cs, 'armB.sz': 14, 'head.rx': -16,
+        'legA.hx': 45 + 30 * cs, 'legA.k': 60 + 35 * cs, 'legB.hx': 45 - 30 * cs, 'legB.k': 60 - 35 * cs, 'spine.rx': 4 }, 1, 1, 1, 1);
+    } else if (p.act && p.act.lunge > 0 && p.act.lt < p.act.lunge) {
+      /* the lunge: low and quick, arms reaching */
+      hph += dt * 13; var ls = Math.sin(hph);
+      out = posemath.layer(stand, { 'hip.y': -0.3, 'spine.rx': 30, 'head.rx': -20, 'legA.hx': 55 + 35 * ls, 'legA.k': 70 - 20 * ls, 'legB.hx': 55 - 35 * ls, 'legB.k': 70 + 20 * ls, 'armA.sx': 70, 'armA.e': 30, 'armB.sx': 60, 'armB.e': 60 }, 1, 1, 1, 1);
+    } else if (p.act) {
       /* the takedown: a step in, his left hand clamps the man's shoulder, the right hand chops down at the neck, twice */
       var u = p.act.t, chop = Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.25) / 0.35)) * Math.PI)) + Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.62) / 0.3)) * Math.PI)) * 0.8;
       out = posemath.layer(stand, { 'armA.sx': 80, 'armA.sz': 6, 'armA.e': 40, 'armB.sx': 110 - 70 * chop, 'armB.sz': 12, 'armB.e': 80 - 60 * chop, 'spine.rx': 14 + 8 * chop, 'hip.y': -0.12, 'legA.hx': 24, 'legA.k': 30, 'legB.hx': -16, 'legB.k': 18, 'head.rx': 10 }, 1, 1, 1, 1);
     } else if (st.state === 'won') out = posemath.layer(stand, { 'armA.sx': 170, 'armA.e': 0, 'armA.sz': 10, 'head.rx': -14, 'armB.sz': 30 }, 1, 1, 1, 1);
     else if (p.crouch) {
       /* sneaking: low, knees deep, back bent forward, hands up and ready */
-      var mv = p.moving ? 1 : 0; if (p.moving) hph += dt * 6.2;
+      var mv = p.moving ? Math.min(1, spd / 1.5) : 0; if (p.moving) hph += spd * dt / 0.75;
       var s = Math.sin(hph), sk = { 'hip.y': -0.38, 'spine.rx': 26, 'head.rx': -18, 'legA.hx': 62 + 20 * s * mv, 'legA.k': 95 - 15 * s * mv, 'legB.hx': 62 - 20 * s * mv, 'legB.k': 95 + 15 * s * mv,
         'legA.a': -30, 'legB.a': -30, 'armA.sx': 40 - 15 * s * mv, 'armA.e': 70, 'armA.sz': 10, 'armB.sx': 40 + 15 * s * mv, 'armB.e': 70, 'armB.sz': 10 };
       out = posemath.layer(stand, sk, 1, 1, 1, 1);
-    } else if (p.moving) { hph += dt * 8.2; out = posemath.walkPose(hph, 1); }
+    } else if (p.moving) { hph += spd * dt / 1.9; out = posemath.walkPose(hph, 1 + Math.min(0.2, spd / 20)); }     /* the fights' own walk */
     else out = posemath.idlePose(ht);
     if (p.flash > 0.5) out = posemath.layer(out, { 'spine.rx': -18, 'head.rx': -20, 'armA.sz': 30, 'armB.sz': 30 }, 1, 1, 1, 1);
     posemath.approach(cur, out, 16, dt);
@@ -130,7 +139,7 @@ function createStealthView(view, st) {
   return {
     hero: hero,
     sync: function (alpha, dt) {
-      var p = st.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha; ht += dt;
+      var p = st.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha; ht += dt; spd = Math.hypot(p.x - p.px, p.z - p.pz) * 60;
       heroFace += Math.atan2(Math.sin(p.face - heroFace), Math.cos(p.face - heroFace)) * (1 - Math.exp(-14 * dt));
       hero.root.position.set(x, p.y, z); hero.root.rotation.y = heroFace; hero.applyPose(heroPose(p, dt), { plant: true }); hero.flutter(ht, p.moving ? 0.6 : 0);
       men.forEach(function (v) {
@@ -155,7 +164,7 @@ function createStealthView(view, st) {
           v.rig.root.updateMatrixWorld(true); v.muzzle.getWorldPosition(v3);
           if (w.st === 'lock' && w.aim) v4.set(w.aim.x, w.aim.y + p.y * 0, w.aim.z);
           else { var reach2 = w.type === 'guard' ? 6 : w.range * 0.78; v4.set(wx + Math.sin(v.face) * reach2, w.type === 'boss' ? 0.02 : 0.02, wz + Math.cos(v.face) * reach2); }
-          if (w.st === 'lock') v4.y = (p.up ? p.y : 0) + (p.crouch ? 0.85 : 1.3);
+          if (w.st === 'lock') v4.y = p.y + (p.crouch ? 0.85 : 1.3);
           v.laser.position.copy(v3); v.laser.scale.set(w.st === 'lock' ? 1.6 : 1, w.st === 'lock' ? 1.6 : 1, v3.distanceTo(v4)); v.laser.lookAt(v4);
           v.laser.material.opacity = w.st === 'lock' ? 0.85 + 0.15 * Math.sin(v.t * 30) : 0.55;
           v.dot.position.set(v4.x, w.st === 'lock' ? v4.y : 0.045, v4.z); v.dot.rotation.x = w.st === 'lock' ? 0 : -Math.PI / 2; if (w.st === 'lock') v.dot.lookAt(v3);

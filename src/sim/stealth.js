@@ -2,7 +2,7 @@
    cover, knocks men out from behind, and climbs to the head sniper to take him down. Plain data, seeded and fixed-step; no graphics.
 
    THE RULES
-     Moving     the stick walks him (4.4 m/s); Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
+     Moving     the stick walks him at the fights' pace; Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
      Light      in a floodlight pool he is seen from much further; in the dark, far less. Crouching shrinks it again.
      Sight      every watcher has a view cone and a range. Sight lines are 2.5D: a box blocks it if the line passes below its top, so a
                 crouched man behind a crate is hidden from a man on the ground but not from a sniper up on a tower; a container hides
@@ -12,22 +12,26 @@
                 shot never comes; he searches where he last saw him, then goes back to his round. Hold it and he fires.
      Shots      two hits and Toofan is down: the stage restarts from the last checkpoint he passed (the men he knocked out stay out).
      Noise      walking upright close to a man on foot makes him turn to look.
-     Takedown   Attack within reach of a man from behind (and not locked on him): a chop to the neck, he is out for good.
+     Takedown   Attack within 3 m of a man from behind (and not locked on him): a quick lunge in, a chop to the neck, out for good.
+     Ladders    at the foot of a ladder (or at its top) Attack climbs it - up the backs of the sniper towers and the office.
      Goal       up the stairs onto the site office roof, behind the head sniper (who glances back now and then), and take him down. */
 'use strict';
 
 var M = require('./stealthmap');
+var CONFIG = require('../data/config');
 
 var TPS = 60, DT = 1 / TPS;
-var WALK = 4.4, SNEAK = 2.0, R = 0.34;
+var WALK = CONFIG.PLAYER.walkSpeed, SNEAK = 2.0, R = 0.34, CLIMB = 2.4;          /* walking at the fights' own pace */
 var LOCK = 1.0, REFIRE = 0.85, LOSE = 0.3, SEARCH = 2.6;
-var REACH = 1.7, TAKEDOWN = 1.1, FAIL_WAIT = 2.2;
+var REACH = 3.0, STRIKE = 0.85, TAKEDOWN = 1.1, FAIL_WAIT = 2.2, LADDER_R = 1.0;   /* takedown: from up to 3 m he lunges in, then the chop */
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
-/* the head height of the target a watcher looks for, and whether a point is on the roof or the stairs */
-function onRoof(x, z) { var O = M.OFFICE; return x >= O.x0 && x <= O.x1 && z >= O.z0 && z <= O.z1; }
+/* the places he can stand up off the ground, and whether a point is on the roof or the stairs */
+var PLAT = {}; M.PLATFORMS.forEach(function (q) { PLAT[q.id] = q; });
+function onPlat(id, x, z) { var q = PLAT[id]; return x >= q.x0 && x <= q.x1 && z >= q.z0 && z <= q.z1; }
+function onRoof(x, z) { return onPlat('office', x, z); }
 function onStairs(x, z) { var S = M.STAIRS; return x >= S.x0 && x <= S.x1 && z >= S.z0 && z <= S.z1; }
 function stairY(x) { var S = M.STAIRS; return clamp((S.x1 - x) / (S.x1 - S.x0), 0, 1) * S.top; }
 
@@ -35,11 +39,11 @@ function create(opts) {
   opts = opts || {};
   var st = {
     tick: 0, t: 0, bus: opts.bus || { emit: function () {} }, solids: M.solids(),
-    player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
+    player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, plat: null, climb: null, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
     watchers: [], checkpoint: 0, state: 'play', failT: 0, stunned: 0, alarms: 0
   };
-  M.TOWERS.forEach(function (T) { st.watchers.push(watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range)); });
-  var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.glanceT = B.glance; st.watchers.push(b);
+  M.TOWERS.forEach(function (T) { var w = watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range); w.plat = T.id; w.every = T.glance; w.glance = T.glance; st.watchers.push(w); });
+  var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.plat = 'office'; b.every = B.glance; b.glance = B.glance; st.watchers.push(b);
   M.PATROLS.forEach(function (Pt, i) {
     var w = watcher('guard', 'G' + i, Pt.path[0][0], Pt.path[0][1], 1.6, 0, null, 10); w.kind = Pt.kind; w.path = Pt.path; w.wait = Pt.wait; w.wp = 1; w.pause = 0;
     w.face = Math.atan2(Pt.path[1][0] - Pt.path[0][0], Pt.path[1][1] - Pt.path[0][1]); st.watchers.push(w);
@@ -78,17 +82,18 @@ function headY(p) { return p.y + (p.crouch ? 1.0 : 1.6); }
 function sees(st, w, p, locked) {
   if (w.st === 'out' || w.st === 'stunned') return 0;
   var dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz);
+  var same = !!w.plat && p.plat === w.plat;                    /* up on his own roof or deck with him */
   var range = w.range * (0.35 + 0.65 * p.light) * (p.crouch ? (w.type === 'guard' ? 0.62 : 0.8) : 1);
-  if (w.type === 'boss' && p.up) range = 8;
+  if (same) range = 8;
   if (locked) range = Math.max(range, w.range * 0.9);
   if (d > range) return 0;
   if (!locked) {
-    var half = w.type === 'guard' ? 0.8 : (w.type === 'boss' && p.up ? 0.9 : 0.24);
+    var half = w.type === 'guard' ? 0.8 : same ? 0.9 : 0.24;
     var a = Math.abs(angDiff(Math.atan2(dx, dz), w.face));
     if (a > half && !(w.type === 'guard' && d < 1.1 && a < 1.7)) return 0;
   }
-  if (w.type === 'boss' && !p.up && d < 4.5) return 0;       /* the head sniper can't see down past his own roof's edge */
-  if (w.type === 'guard' && p.up !== false) return 0;
+  if (w.plat && !p.plat && p.y < 1 && d < (w.type === 'boss' ? 4.5 : 3)) return 0;   /* nobody up high sees straight down past his own edge */
+  if (w.type === 'guard' && p.plat) return 0;
   if (blocked(st, w.x, w.z, w.eye, p.x, p.z, headY(p), w.id)) return 0;
   return 1 - d / (range + 0.01) * 0.6;
 }
@@ -97,10 +102,17 @@ function stepPlayer(st, inp) {
   var p = st.player, s = inp.state; p.px = p.x; p.pz = p.z;
   if (s.pressed.block) { p.crouch = !p.crouch; st.bus.emit('st:crouch', { on: p.crouch }); }
   if (p.act) {
-    p.act.t += DT; p.moving = false;
-    if (p.act.t >= TAKEDOWN) { var tw = p.act.w; tw.st = 'out'; p.act = null; st.stunned++; st.bus.emit('st:out', { id: tw.id }); if (tw.type === 'boss') win(st); }
+    var A = p.act; p.moving = false;
+    if (A.lunge > 0 && A.lt < A.lunge) {                                 /* the lunge: a quick low rush in behind him */
+      A.lt = Math.min(A.lunge, A.lt + DT); var k = A.lt / A.lunge;
+      move(st, p, A.sx + (A.ex - A.sx) * k, A.sz + (A.ez - A.sz) * k); p.moving = true; p.face = Math.atan2(A.w.x - p.x, A.w.z - p.z);
+      return;
+    }
+    A.t += DT;
+    if (A.t >= TAKEDOWN) { var tw = A.w; tw.st = 'out'; p.act = null; st.stunned++; st.bus.emit('st:out', { id: tw.id }); if (tw.type === 'boss') win(st); }
     return;
   }
+  if (p.climb) { stepClimb(st, p); return; }
   var mx = s.mx, mz = -s.my, m = Math.hypot(mx, mz);
   p.moving = m > 0.15;
   if (p.moving) {
@@ -108,23 +120,49 @@ function stepPlayer(st, inp) {
     p.face = Math.atan2(mx, mz);
     move(st, p, nx, nz);
   }
-  /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof only by the stairs */
-  if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.up = p.y > M.STAIRS.top - 0.35; }
-  else if (p.up) p.y = M.OFFICE.h; else p.y = 0;
-  p.light = p.up ? 0.7 : lightAt(p.x, p.z);
+  /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof by the stairs or the ladder */
+  if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.plat = p.y > M.STAIRS.top - 0.35 ? 'office' : null; }
+  else if (p.plat) p.y = PLAT[p.plat].h; else p.y = 0;
+  p.up = !!p.plat;
+  p.light = p.plat ? 0.7 : lightAt(p.x, p.z);
   /* the checkpoints he passes */
   for (var c = st.checkpoint + 1; c < M.CHECKPOINTS.length; c++) { var K = M.CHECKPOINTS[c]; if (Math.hypot(p.x - K.x, p.z - K.z) < 3.2) { st.checkpoint = c; st.bus.emit('st:checkpoint', { n: c }); } }
   /* a takedown: a man within reach who isn't facing him and isn't locked on him */
+  /* Attack: a takedown if a man is in reach from behind, otherwise a ladder if he's at its foot or its top */
   if (s.pressed.attack) {
     var t = takedownTarget(st);
-    if (t) { p.act = { t: 0, w: t }; t.st = 'stunned'; t.outT = 0; t.moving = false; p.face = Math.atan2(t.x - p.x, t.z - p.z); st.bus.emit('st:takedown', { id: t.id, boss: t.type === 'boss' }); }
+    if (t) {
+      var d = Math.hypot(t.x - p.x, t.z - p.z), ex = t.x - Math.sin(t.face) * STRIKE, ez = t.z - Math.cos(t.face) * STRIKE;
+      p.act = { t: 0, w: t, sx: p.x, sz: p.z, ex: ex, ez: ez, lt: 0, lunge: d > STRIKE + 0.25 ? Math.min(0.42, d / 7.5) : 0 };
+      t.st = 'stunned'; t.outT = 0; t.moving = false; p.face = Math.atan2(t.x - p.x, t.z - p.z); st.bus.emit('st:takedown', { id: t.id, boss: t.type === 'boss', lunge: p.act.lunge });
+    } else {
+      var L = ladderHere(st);
+      if (L) { p.climb = { L: L, dir: p.plat ? -1 : 1 }; p.x = L.x; p.z = L.z; p.face = L.face; p.crouch = false; if (p.plat) p.y = L.h; p.plat = null; p.up = false; st.bus.emit('st:climb', { id: L.id, dir: p.climb.dir }); }
+    }
   }
+}
+/* the ladder he could climb from where he stands: at its foot on the ground, or at its top on its roof or deck */
+function ladderHere(st) {
+  var p = st.player, i; if (p.climb || p.act) return null;
+  for (i = 0; i < M.LADDERS.length; i++) {
+    var L = M.LADDERS[i];
+    if (!p.plat && p.y < 0.5 && Math.hypot(p.x - L.fx, p.z - L.fz) < LADDER_R) return L;
+    if (p.plat === L.plat && Math.hypot(p.x - L.tx, p.z - L.tz) < LADDER_R) return L;
+  }
+  return null;
+}
+/* on the ladder: up or down at a steady pace, facing it; at the top he steps onto the deck, at the bottom onto the ground */
+function stepClimb(st, p) {
+  var C = p.climb, L = C.L; p.moving = true; p.px = p.x; p.pz = p.z;
+  p.y += C.dir * CLIMB * DT; p.light = lightAt(p.x, p.z);
+  if (C.dir > 0 && p.y >= L.h) { p.y = L.h; p.plat = L.plat; p.up = true; p.x = p.px = L.tx; p.z = p.pz = L.tz; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: true }); }
+  else if (C.dir < 0 && p.y <= 0) { p.y = 0; p.plat = null; p.up = false; p.x = p.px = L.fx; p.z = p.pz = L.fz; p.face = L.face + Math.PI; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: false }); }
 }
 function takedownTarget(st) {
   var p = st.player, best = null, bd = REACH, i;
   for (i = 0; i < st.watchers.length; i++) {
-    var w = st.watchers[i]; if (w.type === 'sniper' || w.st === 'out' || w.st === 'stunned' || w.st === 'lock') continue;
-    if ((w.type === 'boss') !== p.up) continue;
+    var w = st.watchers[i]; if (w.st === 'out' || w.st === 'stunned' || w.st === 'lock') continue;
+    if ((w.plat || null) !== (p.plat || null) || p.climb) continue;         /* on the same level: the ground, or his roof or deck */
     var d = Math.hypot(p.x - w.x, p.z - w.z); if (d > bd) continue;
     var a = Math.abs(angDiff(Math.atan2(p.x - w.x, p.z - w.z), w.face));
     if (a < 1.75) continue;                                              /* he has to be behind him */
@@ -135,10 +173,13 @@ function takedownTarget(st) {
 /* walking: boxes and the yard's edge push him back; on the roof only the roof and the stairs are under his feet */
 function move(st, p, nx, nz) {
   var B = M.BOUNDS, O = M.OFFICE, S = M.STAIRS;
-  if (p.up) {
+  if (p.plat && p.plat !== 'office') {                                 /* a tower deck: stay on its planks */
+    var q = PLAT[p.plat]; p.x = clamp(nx, q.x0 + 0.25, q.x1 - 0.25); p.z = clamp(nz, q.z0 + 0.25, q.z1 - 0.25); return;
+  }
+  if (p.plat) {
     var inRoof = onRoof(nx, nz), inSt = onStairs(nx, nz);
     if (!inRoof && !inSt) { nx = clamp(nx, O.x0 + 0.25, O.x1 + (Math.abs(nz - (S.z0 + S.z1) / 2) < 0.6 ? 0.5 : -0.25)); nz = clamp(nz, O.z0 + 0.25, O.z1 - 0.25); if (!onRoof(nx, nz) && !onStairs(nx, nz)) { nx = p.x; nz = p.z; } }
-    if (onStairs(nx, nz) && stairY(nx) < M.STAIRS.top - 0.35) p.up = false;
+    if (onStairs(nx, nz) && stairY(nx) < M.STAIRS.top - 0.35) { p.plat = null; p.up = false; }
     p.x = nx; p.z = nz; return;
   }
   p.x = clamp(nx, B.x0, B.x1); p.z = clamp(nz, B.z0, B.z1);
@@ -212,8 +253,8 @@ function patrol(st, w) {
 function sweepLook(st, w) {
   w.phase += DT;
   var a = w.base + w.sweep[0] * Math.sin(w.phase * Math.PI * 2 / w.sweep[1]);
-  if (w.type === 'boss') {                          /* the head sniper glances back over his shoulder every so often */
-    var was = w.glance; w.glance -= DT; if (w.glance <= -1.4) w.glance = M.BOSS.glance;
+  if (w.every) {                                     /* the snipers glance back over the shoulder every so often */
+    var was = w.glance; w.glance -= DT; if (w.glance <= -1.4) w.glance = w.every;
     if (was >= 0 && w.glance < 0) st.bus.emit('st:glance', { id: w.id });
     if (w.glance < 0) a = w.base + Math.PI - 0.4;
   }
@@ -229,11 +270,11 @@ function win(st) { st.state = 'won'; st.bus.emit('st:won', { stunned: st.stunned
 /* back to the last checkpoint: his health back, every man still standing back on his round and calm, the knocked-out stay out */
 function restart(st) {
   var K = M.CHECKPOINTS[st.checkpoint], p = st.player;
-  p.x = p.px = K.x; p.z = p.pz = K.z; p.face = K.face; p.y = 0; p.up = false; p.crouch = false; p.hits = 0; p.act = null; p.flash = 0;
+  p.x = p.px = K.x; p.z = p.pz = K.z; p.face = K.face; p.y = 0; p.up = false; p.plat = null; p.climb = null; p.crouch = false; p.hits = 0; p.act = null; p.flash = 0;
   st.watchers.forEach(function (w) {
     if (w.st === 'out') return;
     w.st = 'watch'; w.sus = 0; w.lockT = 0; w.loseT = 0; w.aim = null; w.last = null; w.x = w.px = w.home.x; w.z = w.pz = w.home.z; w.face = w.home.face; w.phase = 0; w.pause = 0;
-    if (w.path) w.wp = w.home.wp; if (w.type === 'boss') w.glance = M.BOSS.glance;
+    if (w.path) w.wp = w.home.wp; if (w.every) w.glance = w.every;
   });
   st.state = 'play'; st.bus.emit('st:restart', { checkpoint: st.checkpoint });
 }
@@ -248,7 +289,11 @@ function step(st, inp) {
 }
 
 /* who could he take down right now (for the button prompt) */
-function prompt(st) { return st.state === 'play' && !st.player.act ? takedownTarget(st) : null; }
+function prompt(st) {
+  if (st.state !== 'play' || st.player.act || st.player.climb) return null;
+  var t = takedownTarget(st); if (t) return { kind: 'stun', w: t };
+  var L = ladderHere(st); return L ? { kind: st.player.plat ? 'down' : 'up', L: L } : null;
+}
 
 /* a short fingerprint of the stage's state, for replays in the tests */
 function hash(st) {

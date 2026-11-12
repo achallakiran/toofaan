@@ -1,8 +1,8 @@
 /* modes: the stealth stage demo (from the title menu, or #stealth). Antu's container yard at night: get to the head sniper on the site
-   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with a high
-   camera from the south so the men's view fans and the snipers' lasers can be read, and keeps the screen talk short:
-     top        HIDDEN / SUSPICIOUS / SPOTTED, with how close they are to seeing him; his two hits
-     bottom     STUN when a man is within reach from behind (the Attack button), CROUCH on the Block button
+   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with the game's own
+   follow camera, and keeps the screen talk short:
+     top right  the fights' panel: his life (two hits), how close they are to seeing him (HIDDEN / SUSPICIOUS / SPOTTED), KO count
+     bottom     STUN when a man is within reach from behind, CLIMB at a ladder (both on Attack), CROUCH on the Block button
      middle     the brief at the start, CHECKPOINT, the shot, back to the checkpoint, and STAGE CLEAR with play-again / title */
 'use strict';
 
@@ -41,8 +41,14 @@ function createStealth() {
       /* the screen */
       var ui = S.ui = el('position:fixed;inset:0;z-index:30;pointer-events:none;font-family:' + FONT + ';color:#fff;letter-spacing:.08em');
       scope.add(function () { ui.remove(); clearTimeout(S.msgT); });
-      S.state = el('position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);padding:7px 12px 9px;background:rgba(0,0,0,.6);border:2px solid #222;font-size:13px;text-align:center;min-width:150px', '', ui);
-      S.hits = el('position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));padding:7px 10px;background:rgba(0,0,0,.6);font-size:13px', '', ui);
+      /* the panel in the fights' own layout (view/fightui): name and who's left, his life bar, then how seen he is in place of rage */
+      var pan = el('position:absolute;top:max(56px,calc(env(safe-area-inset-top) + 48px));right:max(14px,env(safe-area-inset-right));width:min(260px,44vw);font:700 11px system-ui,sans-serif;letter-spacing:.1em;color:#fff;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.6)',
+        '<div style="display:flex;justify-content:space-between"><span>Toofan</span><span id="sLeft" style="color:#ffc21a"></span></div>' +
+        '<div style="height:12px;margin:4px 0;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:3px;overflow:hidden"><div id="sHp" style="height:100%;width:100%;background:linear-gradient(90deg,#d63a2f,#ff7a3d);transition:width .25s"></div></div>' +
+        '<div style="height:7px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);border-radius:3px;overflow:hidden"><div id="sSeen" style="height:100%;width:0"></div></div>' +
+        '<div style="display:flex;justify-content:space-between;margin-top:4px;opacity:.9"><span id="sState">Hidden</span><span id="sKo">KO 0</span></div>' +
+        '<div id="sWhere" style="margin-top:3px;opacity:.6;font-size:10px"></div>', ui);
+      S.pan = { left: pan.querySelector('#sLeft'), hp: pan.querySelector('#sHp'), seen: pan.querySelector('#sSeen'), state: pan.querySelector('#sState'), ko: pan.querySelector('#sKo'), where: pan.querySelector('#sWhere') };
       S.prompt = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 150px);right:max(22px,env(safe-area-inset-right));padding:6px 10px;background:#ffd21f;color:#000;font-size:14px;border:2px solid #000;box-shadow:3px 3px 0 #000;display:none', 'STUN ▼', ui);
       S.crouchTag = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 92px);right:calc(max(22px,env(safe-area-inset-right)) + 100px);padding:4px 8px;background:rgba(0,0,0,.6);font-size:11px', 'CROUCH', ui);
       S.msg = el('position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);font-size:clamp(18px,5vw,30px);text-align:center;text-shadow:3px 3px 0 #000,-1px -1px 0 #000;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap', '', ui);
@@ -53,7 +59,7 @@ function createStealth() {
         '<div style="font-size:18px;color:#ffd21f;margin-bottom:8px">ANTU KA GODAM · NIGHT</div>' +
         'GET TO THE HEAD SNIPER ON THE SITE OFFICE ROOF AND TAKE HIM DOWN.<br><br>' +
         '· STAY IN THE DARK. LIGHT GIVES YOU AWAY.<br>· <b style="color:#ffd21f">BLOCK</b> = CROUCH. CRATES HIDE YOU FROM MEN ON FOOT, NOT FROM SNIPERS.<br>' +
-        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· THE STAIRS ARE ON THE OFFICE\'S EAST SIDE.' +
+        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· LADDERS: <b style="color:#ffd21f">ATTACK</b> AT THE FOOT OR THE TOP. THE TOWERS AND THE OFFICE HAVE ONE AT THE BACK; THE OFFICE ALSO HAS STAIRS ON ITS EAST SIDE.' +
         '<div style="margin-top:14px;text-align:center;color:#ffd21f">[ TAP TO START ]</div></div>');
       S.paused = true;
       brief.addEventListener('pointerdown', function () { S.sfx.wake(); brief.remove(); S.paused = false; });
@@ -86,19 +92,20 @@ function createStealth() {
       S.sv.sync(alpha, dt);
       /* the screen talk */
       var seen = p.seen, lab = lk > 0 ? 'SPOTTED' : seen > 0.05 ? 'SUSPICIOUS' : 'HIDDEN', col = lk > 0 ? '#ff3a2a' : seen > 0.05 ? '#ffd21f' : (p.light > 0.6 ? '#ffe9b0' : '#8fb0c8');
-      var bar = Math.round((lk > 0 ? 1 : seen) * 10), shade = p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW';
-      var html = '<div style="color:' + col + '">' + lab + '</div><div style="font-size:9px;color:#9aa;margin-top:3px">' + shade + (p.crouch ? ' · CROUCHED' : '') + '</div>' +
-        '<div style="margin-top:5px;height:5px;background:#222"><div style="height:5px;width:' + bar * 10 + '%;background:' + col + '"></div></div>';
-      if (html !== S.lastHtml) { S.state.innerHTML = html; S.lastHtml = html; }
-      var hh = 'LIFE ' + (p.hits >= 1 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>') + (p.hits >= 2 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>');
-      if (hh !== S.lastHits) { S.hits.innerHTML = hh; S.lastHits = hh; }
-      var narrow = window.innerWidth < 560; if (narrow !== S.narrow) { S.narrow = narrow; S.state.style.top = narrow ? 'calc(max(14px,env(safe-area-inset-top)) + 42px)' : 'max(14px,env(safe-area-inset-top))'; }
-      S.prompt.style.display = ST.prompt(st) ? 'block' : 'none';
+      var P = S.pan, sv = lk > 0 ? 1 : seen, key = lab + '|' + Math.round(sv * 20) + '|' + p.hits + '|' + st.stunned + '|' + (p.light > 0.6) + p.crouch + !!p.climb + p.plat;
+      if (key !== S.lastKey) {
+        S.lastKey = key; P.state.textContent = lab; P.state.style.color = col;
+        P.seen.style.width = sv * 100 + '%'; P.seen.style.background = lk > 0 ? '#ff3a2a' : 'linear-gradient(90deg,#ffc21a,#ff7a3d)';
+        P.hp.style.width = (2 - p.hits) * 50 + '%'; P.ko.textContent = 'KO ' + st.stunned;
+        var left = st.watchers.filter(function (w) { return w.st !== 'out'; }).length; P.left.textContent = 'GOONS ' + left;
+        P.where.textContent = (p.climb ? 'ON THE LADDER' : p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW') + (p.crouch ? ' · CROUCHED' : '');
+      }
+      var pr = ST.prompt(st), pt = pr ? (pr.kind === 'stun' ? 'STUN ▼' : pr.kind === 'up' ? 'CLIMB ▲' : 'CLIMB ▼') : '';
+      if (pt !== S.lastPrompt) { S.lastPrompt = pt; S.prompt.textContent = pt; S.prompt.style.display = pt ? 'block' : 'none'; S.prompt.style.background = pr && pr.kind !== 'stun' ? '#8fe3ff' : '#ffd21f'; }
       S.crouchTag.textContent = p.crouch ? 'CROUCHING' : 'CROUCH'; S.crouchTag.style.color = p.crouch ? '#ffd21f' : '#fff';
-      /* the camera: high and from the south, a little ahead of where he's going; higher on a tall phone screen */
-      var tall = window.innerHeight > window.innerWidth, H = tall ? 17 : 14.5, B = tall ? 9.5 : 10;
-      var want = { x: p.x, y: p.y + H, z: p.z + B, lx: p.x, ly: p.y + 0.4, lz: p.z - (tall ? 2.2 : 1.6), fov: tall ? 56 : 52 };
-      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-5 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
+      /* the camera: the game's own follow view (as in the fights and the ride), lifted with him when he's up a ladder or on a roof */
+      var want = { x: p.x, y: p.y + 6.4, z: p.z + 6.6, lx: p.x, ly: p.y + 1.0, lz: p.z - 2.2, fov: 46 };
+      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-8 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
       var shot = { x: S.cam.x, y: S.cam.y, z: S.cam.z, lx: S.cam.lx, ly: S.cam.ly, lz: S.cam.lz, fov: S.cam.fov };
       if (S.shake > 0) { S.shake -= dt; var a = S.shake * 0.6; shot.x += Math.sin(S.t * 90) * a; shot.y += Math.sin(S.t * 77) * a; }
       view.followCamera(p.x, p.z, shot);
