@@ -2,7 +2,8 @@
    cover, knocks men out from behind, and climbs to the head sniper to take him down. Plain data, seeded and fixed-step; no graphics.
 
    THE RULES
-     Moving     the stick walks him at the fights' pace; Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
+     Moving     the stick walks him at the fights' pace, relative to the camera, which swings round behind him as he heads away from
+                it (up-left / up-right turn the view; straight left / right sidestep); Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
      Light      in a floodlight pool he is seen from much further; in the dark, far less. Crouching shrinks it again.
      Sight      every watcher has a view cone and a range. Sight lines are 2.5D: a box blocks it if the line passes below its top, so a
                 crouched man behind a crate is hidden from a man on the ground but not from a sniper up on a tower; a container hides
@@ -23,7 +24,7 @@ var CONFIG = require('../data/config');
 var TPS = 60, DT = 1 / TPS;
 var WALK = CONFIG.PLAYER.walkSpeed, SNEAK = 2.0, R = 0.34, CLIMB = 2.4;          /* walking at the fights' own pace */
 var LOCK = 1.0, REFIRE = 0.85, LOSE = 0.3, SEARCH = 2.6;
-var REACH = 3.0, STRIKE = 0.85, TAKEDOWN = 1.1, FAIL_WAIT = 2.2, LADDER_R = 1.0;   /* takedown: from up to 3 m he lunges in, then the chop */
+var VIEW_TURN = 1.7, REACH = 3.0, STRIKE = 0.85, TAKEDOWN = 1.1, FAIL_WAIT = 2.2, LADDER_R = 1.0;   /* takedown: from up to 3 m he lunges in, then the chop */
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
@@ -40,7 +41,8 @@ function create(opts) {
   var st = {
     tick: 0, t: 0, bus: opts.bus || { emit: function () {} }, solids: M.solids(),
     player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, plat: null, climb: null, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
-    watchers: [], checkpoint: 0, state: 'play', failT: 0, stunned: 0, alarms: 0
+    watchers: [], checkpoint: 0, state: 'play', failT: 0, stunned: 0, alarms: 0,
+    view: M.START.face                 /* the way the camera looks (it swings round behind him as he goes; the stick is relative to it) */
   };
   M.TOWERS.forEach(function (T) { var w = watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range); w.plat = T.id; w.every = T.glance; w.glance = T.glance; st.watchers.push(w); });
   var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.plat = 'office'; b.every = B.glance; b.glance = B.glance; st.watchers.push(b);
@@ -113,12 +115,18 @@ function stepPlayer(st, inp) {
     return;
   }
   if (p.climb) { stepClimb(st, p); return; }
-  var mx = s.mx, mz = -s.my, m = Math.hypot(mx, mz);
+  /* the stick is relative to the camera: up = the way it looks, right = to its right */
+  var v = st.view, fx = Math.sin(v), fz = Math.cos(v), rx = -Math.cos(v), rz = Math.sin(v);
+  var mx = s.mx * rx + s.my * fx, mz = s.mx * rz + s.my * fz, m = Math.hypot(mx, mz);
   p.moving = m > 0.15;
   if (p.moving) {
     var sp = (p.crouch ? SNEAK : WALK) * Math.min(1, m), nx = p.x + mx / m * sp * DT, nz = p.z + mz / m * sp * DT;
     p.face = Math.atan2(mx, mz);
     move(st, p, nx, nz);
+    /* the camera swings round behind him - only while he heads mostly away from it (straight sideways he just sidesteps, so holding
+       left or right never walks him in circles; up-left or up-right turns the view that way) */
+    var off = Math.abs(Math.atan2(s.mx, s.my));
+    if (s.my > 0 && off < 1.05) st.view += angDiff(p.face, st.view) * Math.min(1, VIEW_TURN * DT * Math.min(1, m));
   }
   /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof by the stairs or the ladder */
   if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.plat = p.y > M.STAIRS.top - 0.35 ? 'office' : null; }
@@ -154,6 +162,7 @@ function ladderHere(st) {
 /* on the ladder: up or down at a steady pace, facing it; at the top he steps onto the deck, at the bottom onto the ground */
 function stepClimb(st, p) {
   var C = p.climb, L = C.L; p.moving = true; p.px = p.x; p.pz = p.z;
+  st.view += angDiff(L.face, st.view) * Math.min(1, 2.5 * DT);            /* on a ladder the camera comes round behind him */
   p.y += C.dir * CLIMB * DT; p.light = lightAt(p.x, p.z);
   if (C.dir > 0 && p.y >= L.h) { p.y = L.h; p.plat = L.plat; p.up = true; p.x = p.px = L.tx; p.z = p.pz = L.tz; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: true }); }
   else if (C.dir < 0 && p.y <= 0) { p.y = 0; p.plat = null; p.up = false; p.x = p.px = L.fx; p.z = p.pz = L.fz; p.face = L.face + Math.PI; p.climb = null; p.moving = false; st.bus.emit('st:climbed', { id: L.id, top: false }); }
@@ -276,7 +285,7 @@ function restart(st) {
     w.st = 'watch'; w.sus = 0; w.lockT = 0; w.loseT = 0; w.aim = null; w.last = null; w.x = w.px = w.home.x; w.z = w.pz = w.home.z; w.face = w.home.face; w.phase = 0; w.pause = 0;
     if (w.path) w.wp = w.home.wp; if (w.every) w.glance = w.every;
   });
-  st.state = 'play'; st.bus.emit('st:restart', { checkpoint: st.checkpoint });
+  st.view = K.face; st.state = 'play'; st.bus.emit('st:restart', { checkpoint: st.checkpoint });
 }
 
 function step(st, inp) {
@@ -299,7 +308,7 @@ function prompt(st) {
 function hash(st) {
   var h = 2166136261, p = st.player;
   function add(v) { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) >>> 0; }
-  add(p.x); add(p.z); add(p.hits); add(st.checkpoint); st.watchers.forEach(function (w) { add(w.x); add(w.z); add(w.face); add(w.sus); add(w.lockT); });
+  add(p.x); add(p.z); add(p.hits); add(st.view); add(st.checkpoint); st.watchers.forEach(function (w) { add(w.x); add(w.z); add(w.face); add(w.sus); add(w.lockT); });
   return h >>> 0;
 }
 

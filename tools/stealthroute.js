@@ -10,7 +10,7 @@ var I=()=>__game.ctx.input;
 await p.evaluate(()=>__game.ctx.input.setAxis(-1,0));await p.waitForTimeout(1600);await p.screenshot({path:out+'/'+tag+'-r1-stairs.png'});
 await p.waitForTimeout(1900);await p.evaluate(()=>__game.ctx.input.setAxis(0,0));
 var r=await p.evaluate(()=>{var pl=__game.ctx.debug.stealth.st.player;return [pl.x.toFixed(2),pl.z.toFixed(2),pl.y.toFixed(2),pl.up]});console.log('after stairs',r);
-for(let k=0;k<80;k++){var d=await p.evaluate(()=>{var s=__game.ctx.debug.stealth.st,pl=s.player,B=s.watchers.find(w=>w.type==='boss');var dx=B.x-pl.x,dz=(B.z-1.1)-pl.z,d=Math.hypot(dx,dz);if(d<0.25){__game.ctx.input.setAxis(0,0);return d}__game.ctx.input.setAxis(dx/d,-dz/d);return d});if(d<0.25)break;await p.waitForTimeout(60);}
+for(let k=0;k<80;k++){var d=await p.evaluate(()=>{var s=__game.ctx.debug.stealth.st,pl=s.player,B=s.watchers.find(w=>w.type==='boss');var dx=B.x-pl.x,dz=(B.z-1.1)-pl.z,d=Math.hypot(dx,dz);if(d<0.25){__game.ctx.input.setAxis(0,0);return d}var v=s.view,wx=dx/d,wz=dz/d;__game.ctx.input.setAxis(wx*-Math.cos(v)+wz*Math.sin(v),wx*Math.sin(v)+wz*Math.cos(v));return d});if(d<0.25)break;await p.waitForTimeout(60);}
 await p.waitForTimeout(300);await p.screenshot({path:out+'/'+tag+'-r2-behind.png'});
 await p.evaluate(()=>__game.ctx.input.setButton('attack',true));await p.waitForTimeout(80);await p.evaluate(()=>__game.ctx.input.setButton('attack',false));
 await p.waitForTimeout(450);await p.screenshot({path:out+'/'+tag+'-r3-chop.png'});await p.waitForTimeout(2600);await p.screenshot({path:out+'/'+tag+'-r4-clear.png'});

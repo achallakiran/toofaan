@@ -103,8 +103,10 @@ function createStealth() {
       var pr = ST.prompt(st), pt = pr ? (pr.kind === 'stun' ? 'STUN ▼' : pr.kind === 'up' ? 'CLIMB ▲' : 'CLIMB ▼') : '';
       if (pt !== S.lastPrompt) { S.lastPrompt = pt; S.prompt.textContent = pt; S.prompt.style.display = pt ? 'block' : 'none'; S.prompt.style.background = pr && pr.kind !== 'stun' ? '#8fe3ff' : '#ffd21f'; }
       S.crouchTag.textContent = p.crouch ? 'CROUCHING' : 'CROUCH'; S.crouchTag.style.color = p.crouch ? '#ffd21f' : '#fff';
-      /* the camera: the game's own follow view (as in the fights and the ride), lifted with him when he's up a ladder or on a roof */
-      var want = { x: p.x, y: p.y + 6.4, z: p.z + 6.6, lx: p.x, ly: p.y + 1.0, lz: p.z - 2.2, fov: 46 };
+      /* the camera: the game's own follow view (height, distance, lens as in the fights), turning round behind him as he heads away from
+         it, and lifted with him when he's up a ladder or on a roof */
+      var fx = Math.sin(st.view), fz = Math.cos(st.view);                   /* the way it looks: swung round behind him as he goes (sim/stealth) */
+      var want = { x: p.x - fx * 6.6, y: p.y + 6.4, z: p.z - fz * 6.6, lx: p.x + fx * 2.2, ly: p.y + 1.0, lz: p.z + fz * 2.2, fov: 46 };
       if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-8 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
       var shot = { x: S.cam.x, y: S.cam.y, z: S.cam.z, lx: S.cam.lx, ly: S.cam.ly, lz: S.cam.lz, fov: S.cam.fov };
       if (S.shake > 0) { S.shake -= dt; var a = S.shake * 0.6; shot.x += Math.sin(S.t * 90) * a; shot.y += Math.sin(S.t * 77) * a; }

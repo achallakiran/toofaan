@@ -683,6 +683,7 @@ test('map: picking an open place on the full map makes it the signal; a cleared 
   var SM = req('sim/stealthmap'), ST = req('sim/stealth');
   function inp(o) { o = o || {}; return { state: { mx: o.mx || 0, my: o.my || 0, pressed: { attack: !!o.attack, block: !!o.block }, held: {} } }; }
   function run(st, n, o) { for (var i = 0; i < n; i++) ST.step(st, inp(i === 0 ? o : { mx: o && o.mx, my: o && o.my })); }
+  function stick(st, wx, wz) { var v = st.view; return { mx: wx * -Math.cos(v) + wz * Math.sin(v), my: wx * Math.sin(v) + wz * Math.cos(v) }; }   /* a world direction, as the stick for the camera's view */
   function only(st, ids) { st.watchers.forEach(function (w) { if (ids.indexOf(w.id) < 0) w.st = 'out'; }); }
   function segHits(a, b, q, pad) {
     for (var k = 0; k <= 40; k++) { var x = a[0] + (b[0] - a[0]) * k / 40, z = a[1] + (b[1] - a[1]) * k / 40; if (x > q.x0 - pad && x < q.x1 + pad && z > q.z0 - pad && z < q.z1 + pad) return true; }
@@ -745,7 +746,7 @@ test('map: picking an open place on the full map makes it the signal; a cleared 
     p.x = SM.STAIRS.x1 + 0.6; p.z = (SM.STAIRS.z0 + SM.STAIRS.z1) / 2; p.crouch = true;
     run(st, 6 * ST.TPS, { mx: -1, my: 0 });
     assert(p.up, 'should be up on the roof: x ' + p.x.toFixed(2) + ' y ' + p.y.toFixed(2));
-    for (var i = 0; i < 6 * ST.TPS && Math.hypot(p.x - B.x, p.z - (B.z - 1.0)) > 0.3; i++) { var dx = B.x - p.x, dz = (B.z - 1.0) - p.z, d = Math.hypot(dx, dz); ST.step(st, inp({ mx: dx / d, my: -dz / d })); }
+    for (var i = 0; i < 6 * ST.TPS && Math.hypot(p.x - B.x, p.z - (B.z - 1.0)) > 0.3; i++) { var dx = B.x - p.x, dz = (B.z - 1.0) - p.z, d = Math.hypot(dx, dz); ST.step(st, inp(stick(st, dx / d, dz / d))); }
     ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.3);
     assert.strictEqual(B.st, 'out'); assert.strictEqual(st.state, 'won'); assert.strictEqual(won, 1);
   });
@@ -771,6 +772,13 @@ test('map: picking an open place on the full map makes it the signal; a cleared 
     assert(ST.prompt(st) && ST.prompt(st).kind === 'stun', 'offered at 2.8 m');
     ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.8);
     assert.strictEqual(G.st, 'out'); assert(Math.hypot(p.x - G.x, p.z - G.z) < 1.0, 'he ended up right behind him');
+  });
+  test('stealth: the camera swings round behind him when he heads up-right; straight sideways it holds still', function () {
+    var st = ST.create({}); only(st, []); var v0 = st.view;
+    run(st, 2 * ST.TPS, { mx: 1, my: 0 }); assert(Math.abs(st.view - v0) < 1e-9, 'sidestepping should not turn the view');
+    run(st, 2 * ST.TPS, { mx: 0.7, my: 0.7 }); assert(st.view < v0 - 0.4, 'up-right should turn the view to the right: ' + (st.view - v0).toFixed(2));
+    var p = st.player; p.x = p.px = -1; p.z = p.pz = 8; var x0 = p.x, z0 = p.z, f = st.view; run(st, ST.TPS / 2, { mx: 0, my: 1 });   /* (in the open) */
+    var dx = p.x - x0, dz = p.z - z0, d = Math.hypot(dx, dz); assert(d > 1 && (dx * Math.sin(f) + dz * Math.cos(f)) / d > 0.95, 'stick up walks him the way the camera looks');
   });
   test('stealth: the same inputs give the same stage, tick for tick', function () {
     function go() { var st = ST.create({}), i; for (i = 0; i < 1200; i++) ST.step(st, inp({ mx: Math.sin(i * 0.01), my: 0.6, block: i === 100, attack: i % 97 === 0 })); return ST.hash(st); }
