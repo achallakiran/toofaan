@@ -10,7 +10,8 @@
      jam     - the hideout's music corner: the full band WITH Ravi's vocal (the only track that sings)
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
-     dance   - Toofan's own b-boy breakbeat in his earbuds in a brawl (no guitar, sub bass, lead)
+     dance:<gang> - Toofan's own beat in his earbuds in a brawl, one per gang's stages, each at its own faster tempo: b-boy break
+               (Raju, 138), electro (Antu, 134), headbang rock (Kalia, 146), bhangra dhol with tumbi (Bhairav, 140), rolling break (Teja, 160)
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
@@ -18,7 +19,7 @@
 
 var VOCAL = require('../data/vocal');
 
-var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;
+var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;     /* (SPB, STEP, BAR follow the playing track's tempo) */
 var CHANT = ['K', '', 'S', '', 'T', '', 'T', 't', 'K', '', 'K', 't', 't', '', 'S', ''];
 var DOUBLE = ['K', '', 'K', '', 'S', '', 'K', 'K', 'K', '', 'K', '', 'S', '', 'K', 'K'];
 var HALF = ['K', '', '', '', '', '', 'K', '', 'S', '', '', '', '', '', 'K', ''];
@@ -31,6 +32,12 @@ var BREAK = ['K', '', '', 'K', 'S', '', 'K', '', '', 'K', 'K', '', 'S', '', '', 
 var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't', ''];             /* the ride's second groove */
 /* Toofan's own dance beat, in his earbuds once a brawl starts: a b-boy breakbeat, no guitar, a funky sub bass and a bright lead */
 var BBOY = ['K', '', '', 'K', 'S', '', '', 'K', '', 'K', 'K', '', 'S', '', 't', 'K'];
+/* his dance beats for each gang's stage, each at its own tempo, each matched to the moves he does to it */
+var ELECTRO = ['K', '', 't', '', 'S', '', 't', 'K', 'K', '', 't', '', 'S', 't', 't', ''];       /* Antu's stages: electro for the robot */
+var BANG = ['K', '', 'K', '', 'S', '', 'K', 'K', '', 'K', 'K', '', 'S', '', 'K', ''];          /* Kalia's: a heavy headbang groove */
+var BHANGRA = ['T', '', 't', 'T', 'S', 't', 'T', '', 'T', 't', 'T', '', 'S', 't', 'T', 'K'];   /* Bhairav's: the dhol's bhangra chaal */
+var RUN = ['K', '', 'S', '', 't', 'K', 'S', '', 'K', 't', 'S', 'K', 't', '', 'S', 't'];        /* Teja's: a fast rolling break for the running man */
+var TEMPO = { 'dance:antu': 134, 'dance:kalia': 146, 'dance:bhairav': 140, 'dance:teja': 160, 'dance:raju': 138, dance: 138 };
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -61,6 +68,11 @@ var TRACKS = {
   'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
   'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
   dance: function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, fill: m === 7, crash: m === 0, vol: 1.0 }; },
+  'dance:raju': function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, stab: m % 2 === 0, fill: m === 7, crash: m === 0 }; },
+  'dance:antu': function (n) { var m = n % 8; return { drums: ELECTRO, hats: 16, bass: 'saw', arp: true, stab: m >= 4, fill: m === 7, crash: m === 0 }; },
+  'dance:kalia': function (n) { var m = n % 8; return { drums: m < 6 ? BANG : DOUBLE, hats: 8, gtr: m % 2 ? 'chug' : 'riff', bass: 'dist', lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m % 2 === 0, vol: 1.05 }; },
+  'dance:bhairav': function (n) { var m = n % 8; return { drums: BHANGRA, hats: 8, bass: 'sub', tumbi: true, lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m === 0 }; },
+  'dance:teja': function (n) { var m = n % 8; return { drums: RUN, hats: 16, bass: 'saw', arp: m >= 2, stab: m % 2 === 1, fill: m === 7, crash: m % 4 === 0 }; },
   'arena:raju': function (n) { var m = n % 8; return { drums: BREAK, hats: 16, gtr: m % 2 ? 'chug' : 'riff', bass: 'saw', lead: m >= 4, fill: m === 7, crash: m === 0 || m === 4 }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },
@@ -151,6 +163,7 @@ function createMusic(sfx) {
     g.connect(bus); s.start(t, k * VOCAL.SLOT, d + 0.02);
   }
   function scheduleBar(t, n) {
+    SPB = 60 / (TEMPO[track] || BPM); STEP = SPB / 4; BAR = SPB * 4; marks.push({ t: t, n: n, spb: SPB }); if (marks.length > 12) marks.shift();   /* (each track its own tempo, from its bar line) */
     var name = track, P = TRACKS[name](n - (startBar[name] || 0)), root = ROOTS[n % 4], i;
     if (P.sting !== undefined) {
       if (P.sting === 0) { kick(t, true); crash(t); chord(t, 40, BAR * 0.9, true); lead(t, 76, BAR * 1.6, 0.09); }
@@ -171,6 +184,9 @@ function createMusic(sfx) {
       if (P.bass && i % 2 === 0) bass(s, root + (i === 14 ? 7 : 0), STEP * 1.6, P.bass);
       if (P.lead && LEAD[i]) lead(s, LEAD[i] + 12, STEP * 0.85, 0.07);
       if (P.bell && i % 4 === 0) bell(s, ARP[(i / 4 + n) % 8] + 12);
+      if (P.arp) lead(s, ARP[(i + n * 3) % 8] + 12, STEP * 0.7, 0.035);                                   /* a running synth arpeggio */
+      if (P.stab && (i === 3 || i === 6 || i === 11)) chord(s, root, STEP * 0.6, true, true);             /* bright off-beat stabs */
+      if (P.tumbi && (i % 4 === 2 || i === 7 || i === 15)) tone(s, 'square', hz(ARP[(i + n) % 8] + 24), hz(ARP[(i + n) % 8] + 24), STEP * 0.5, 0.05, null, true);   /* a plucked tumbi */
     }
     if (P.lead) lead(t + STEP * 8, LEAD_HOLD[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
@@ -180,7 +196,7 @@ function createMusic(sfx) {
     if (sing && P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
   }
-  var startBar = {};
+  var startBar = {}, marks = [];
   function switchTo(name, now) { if (!TRACKS[name]) return; track = name; startBar[name] = barNo + (now ? 1 : 0); }
   function pump() {
     if (!playing || !A) return;
@@ -190,7 +206,7 @@ function createMusic(sfx) {
   var pending = null;
   function start(name, fromBeat) {
     if (!enabled || !graph()) return false;
-    track = name; playing = true; startBar = {}; pending = null;
+    track = name; playing = true; startBar = {}; pending = null; marks = []; SPB = 60 / (TEMPO[name] || BPM); STEP = SPB / 4; BAR = SPB * 4;
     if (fromBeat > 0) { t0 = A.ac.currentTime + 0.05 - fromBeat * SPB; barNo = Math.ceil(fromBeat / 4 + 0.01); nextBar = t0 + barNo * BAR; startBar[name] = 0; }
     else { barNo = 0; t0 = nextBar = A.ac.currentTime + 0.08; startBar[name] = 0; }
     bus.gain.cancelScheduledValues(A.ac.currentTime); bus.gain.setValueAtTime(0.6, A.ac.currentTime);
@@ -215,7 +231,14 @@ function createMusic(sfx) {
       var t = A.ac.currentTime; bus.gain.cancelScheduledValues(t); bus.gain.setValueAtTime(bus.gain.value, t); bus.gain.linearRampToValueAtTime(0.0001, t + (fade || 0.4));
       var old = bus, oldRoom = room; setTimeout(function () { try { old.disconnect(); oldRoom.disconnect(); } catch (e) { } }, ((fade || 0.4) + 0.3) * 1000); A = null;
     },
-    beat: function () { return playing && A ? (A.ac.currentTime - t0) / SPB : -1; },
+    /* beats played so far, counted bar by bar (tempo may change at a bar line) */
+    beat: function () {
+      if (!playing || !A) return -1; var now = A.ac.currentTime, k;
+      for (k = marks.length - 1; k >= 0; k--) if (marks[k].t <= now) return marks[k].n * 4 + (now - marks[k].t) / marks[k].spb;
+      return (now - t0) / SPB;
+    },
+    /* seconds until the track asked for comes in (the next bar line not yet scheduled), or -1 if silent */
+    switchIn: function () { return playing && A ? Math.max(0, nextBar - A.ac.currentTime) : -1; },
     playing: function () { return playing; },
     /* the Music switch (the speaker switches everything) */
     get enabled() { return enabled; },

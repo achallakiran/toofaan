@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 85',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 86',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1158,6 +1158,7 @@ var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
 var arenaview = require('../view/arenaview');
 var cinecard = require('../view/cinecard');
+var dancemoves = require('../view/dancemoves');
 var thappadMod = require('./thappad');
 var rockstand = require('../view/rockstand');
 var skybolt = require('../view/skybolt');
@@ -1178,50 +1179,82 @@ function createFight() {
   var S = {};
   /* the beat he dances to: the music's own clock when it plays, else 128 BPM on the scene clock */
   function beatNow() { var b = S.music ? S.music.beat() : -1; return b >= 0 ? b : S.t * 128 / 60; }
-  /* toprock: stepping across on the beat, a bounce, the hips and shoulders swinging, arms loose, the head nodding (layered on stand, so
-     every fighting move still plays over it exactly as before) */
-  function groovePose(b) {
-    var ph = b * Math.PI, sw = Math.sin(ph), bo = Math.abs(Math.cos(ph)), nod = Math.abs(Math.sin(ph * 2));
-    return posemath.layer(posemath.named('stand'), {
-      'hip.y': -0.04 - 0.07 * bo, 'hip.x': 0.07 * sw, 'hip.ry': 16 * sw, 'spine.ry': -12 * sw, 'spine.rz': 5 * sw, 'spine.rx': 6, 'head.rx': 4 + 10 * nod, 'head.rz': -4 * sw,
-      'legA.hx': 22 * Math.max(0, sw), 'legA.k': 34 * Math.max(0, sw), 'legB.hx': 22 * Math.max(0, -sw), 'legB.k': 34 * Math.max(0, -sw),
-      'armA.sx': 35 + 35 * sw, 'armA.sz': 18, 'armA.e': 85, 'armB.sx': 35 - 35 * sw, 'armB.sz': 18, 'armB.e': 85
-    }, 1, 1, 1, 1);
-  }
-  /* the entrance, step by step: the line (0.4 s), the goon's answer, earbuds in (3.0 s), the drop and a power spin (4.3 s), the freeze,
-     then the fight (6.1 s) */
-  var INTRO = { SAY: 0.4, REPLY: 1.7, BUDS: 3.1, DROP: 4.4, FREEZE: 5.6, GO: 6.2 };
+  /* his dance: the moves that go with this gang's beat (view/dancemoves), changing every two bars */
+  function groovePose(b) { return S.only ? dancemoves.single(S.only, b) : dancemoves.pose(S.gk, b); }   /* (S.only: one move, for tools) */
+  /* THE ENTRANCE, at a pace that lets it land:
+       0.0  he walks in toward the men, the cinema bars slide in
+       1.5  stops, sizes them up (a look across)
+       2.1  the camera on his face: the punch line, slammed in a big bubble, held for about four seconds
+       4.6  a goon's answer (some lines), over his shoulder
+       6.6  hands up to his ears: the earbuds in, his own beat asked for
+       ...  the drop lands on the music's next bar line: his gang-stage signature move, rings and sparkles
+       +1.6 the freeze; +2.3 the fight */
+  var INTRO = { WALK: 1.5, SAY: 2.1, HOLD: 4.2, REPLY: 4.6, BUDS: 6.6, IN: 7.1, MOVE: 1.6, GO: 2.3 };
   function introStep(ctx, dt, x, z) {
-    var I = S.intro, fw = S.fw, p = fw.player, t = (I.t += dt), stand = posemath.named('stand'), pose, yaw = 0, shot = null;
-    function heroHead() { return { x: p.x, y: 2.15, z: p.z }; }
-    if (t >= INTRO.SAY && !I.said) { I.said = true; S.speech.say(I.line, heroHead, I.reply ? 2.2 : 2.6); S.sfx.hit && S.sfx.hit('jab', 0.15); }
+    var I = S.intro, fw = S.fw, p = fw.player, t = (I.t += dt), stand = posemath.named('stand'), pose, yaw = 0, shot = null, off = 0;
+    var tall = window.innerHeight > window.innerWidth;
+    function heroHead() { return { x: p.x, y: 2.2, z: p.z }; }
+    if (t >= 0.05 && !I.barsOn) { I.barsOn = true; S.bars.set(true); }
+    if (t >= INTRO.SAY && !I.said) {
+      I.said = true; S.speech.say(I.line, heroHead, INTRO.HOLD + (I.reply ? 0.6 : 0.9), { big: true });
+      S.cine.shake(0.05, 0.25); S.sfx.hit && S.sfx.hit('heavy', 0.22);
+    }
     if (I.reply && t >= INTRO.REPLY && !I.replied) {
       I.replied = true; var best = null, bd = 99; fw.combat.enemies.forEach(function (e) { var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } });
-      if (best) S.speech.say(I.reply, function () { return { x: best.x, y: 2.1, z: best.z }; }, 1.3, { small: true });
+      I.goon = best; if (best) S.speech.say(I.reply, function () { return { x: best.x, y: 2.1, z: best.z }; }, 1.9, { small: true });
     }
-    if (t >= INTRO.BUDS + 0.5 && !I.buds) { I.buds = true; S.buds.show(true); S.sfx.hit && S.sfx.hit('jab', 0.08); S.music.setTrack('dance'); S.arenaTrack = 'dance'; }
-    if (t >= INTRO.DROP && !I.drop) { I.drop = true; S.dfx.drop(p.x, p.z); S.cine.shake(0.12, 0.5); S.txt.say('boom', { x: p.x, y: 2.4, z: p.z }, ctx.view.camera, true); }
+    if (t >= INTRO.IN && !I.buds) {
+      I.buds = true; S.buds.show(true); S.sfx.hit && S.sfx.hit('jab', 0.08); S.music.setTrack(S.danceTrack); S.arenaTrack = S.danceTrack;
+      var eta = S.music.switchIn ? S.music.switchIn() : -1;               /* the drop lands with the first bar of his beat */
+      I.dropAt = t + (eta >= 0 ? Math.max(0.35, eta) : 0.9);
+    }
+    var D = I.dropAt || 1e9;
+    if (t >= D && !I.drop) { I.drop = true; S.dfx.drop(p.x, p.z); S.cine.shake(0.12, 0.5); S.txt.say('boom', { x: p.x, y: 2.4, z: p.z }, ctx.view.camera, true); I.b0 = beatNow(); }
     var talk = Math.sin(t * 9) * 6;
-    if (t < INTRO.SAY) pose = posemath.idlePose(S.t);
-    else if (t < INTRO.BUDS) pose = posemath.layer(stand, { 'armA.sx': 82 + talk, 'armA.sz': 12, 'armA.e': 12, 'armB.sx': -12, 'armB.sz': 42, 'armB.e': 105, 'head.rx': -6, 'head.rz': 6, 'hip.ry': -10, 'spine.ry': 8 }, 1, 1, 1, 1);
-    else if (t < INTRO.DROP) {                                    /* both hands up to his ears, then a nod as the beat comes in */
-      var u = Math.min(1, (t - INTRO.BUDS) / 0.4), nod = t > INTRO.BUDS + 0.6 ? Math.abs(Math.sin((t - INTRO.BUDS) * 7)) * 12 : 0;
-      pose = posemath.layer(stand, { 'armA.sx': 150 * u, 'armA.sz': 32 * u, 'armA.e': 135 * u, 'armB.sx': 150 * u, 'armB.sz': 32 * u, 'armB.e': 135 * u, 'head.rx': nod, 'hip.y': -0.05 * u }, 1, 1, 1, 1);
-    } else if (t < INTRO.FREEZE) {                                /* the power move: drop low, arms out, two full spins */
-      var v = (t - INTRO.DROP) / (INTRO.FREEZE - INTRO.DROP), e2 = v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2;
-      yaw = e2 * Math.PI * 4;
-      pose = posemath.layer(stand, { 'hip.y': -0.42, 'spine.rx': 20, 'legA.hx': 70, 'legA.k': 110, 'legB.hx': 20, 'legB.hz': 30, 'legB.k': 20,
-        'armA.sx': 70, 'armA.sz': 85, 'armA.e': 0, 'armB.sx': 70, 'armB.sz': 85, 'armB.e': 0, 'head.rx': 10 }, 1, 1, 1, 1);
+    if (t < INTRO.WALK) {                                          /* walking in: drawn from behind his mark, slowing to a stop */
+      var wu = t / INTRO.WALK; off = -3.2 * (1 - wu) * (1 - wu);
+      pose = posemath.walkPose(t * 3.4, 1 - 0.6 * wu);
+    } else if (t < INTRO.SAY) {                                    /* the look: head across the men, a roll of the shoulders */
+      var lu = (t - INTRO.WALK) / (INTRO.SAY - INTRO.WALK);
+      pose = posemath.layer(stand, { 'head.ry': 35 * Math.sin(lu * Math.PI * 2), 'spine.ry': 8 * Math.sin(lu * Math.PI * 2), 'armA.sz': 16, 'armB.sz': 16, 'head.rx': -4 }, 1, 1, 1, 1);
+    } else if (t < INTRO.BUDS) {                                   /* the line: pointing at them, chin up, then a shrug while they answer */
+      var shr = t > INTRO.REPLY ? Math.min(1, (t - INTRO.REPLY) / 0.4) : 0;
+      pose = posemath.layer(stand, { 'armA.sx': 82 + talk * (1 - shr) - 50 * shr, 'armA.sz': 12 + 30 * shr, 'armA.e': 12 + 80 * shr, 'armB.sx': -12 + 10 * shr, 'armB.sz': 42 - 6 * shr, 'armB.e': 105 - 15 * shr,
+        'head.rx': -8, 'head.rz': 6 - 12 * shr, 'hip.ry': -10, 'spine.ry': 8, 'spine.rz': 4 * shr }, 1, 1, 1, 1);
+    } else if (t < D) {                                            /* both hands up to his ears, then a nod, waiting for the beat */
+      var u = Math.min(1, (t - INTRO.BUDS) / 0.45), nod = t > INTRO.IN ? Math.abs(Math.sin((t - INTRO.IN) * 7)) * 12 : 0;
+      pose = posemath.layer(stand, { 'armA.sx': 150 * u, 'armA.sz': 32 * u, 'armA.e': 135 * u, 'armB.sx': 150 * u, 'armB.sz': 32 * u, 'armB.e': 135 * u, 'head.rx': nod - 6 * u, 'hip.y': -0.05 * u }, 1, 1, 1, 1);
+    } else if (t < D + INTRO.MOVE) {                               /* the drop: his stage's signature move, big */
+      var v = (t - D) / INTRO.MOVE, sig = dancemoves.setOf(S.gk)[0];
+      if (sig === 'toprock') {
+        var e2 = v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2; yaw = e2 * Math.PI * 4;      /* the b-boy power spin */
+        pose = posemath.layer(stand, { 'hip.y': -0.42, 'spine.rx': 20, 'legA.hx': 70, 'legA.k': 110, 'legB.hx': 20, 'legB.hz': 30, 'legB.k': 20,
+          'armA.sx': 70, 'armA.sz': 85, 'armA.e': 0, 'armB.sx': 70, 'armB.sz': 85, 'armB.e': 0, 'head.rx': 10 }, 1, 1, 1, 1);
+      } else pose = dancemoves.single(sig, beatNow() - I.b0, 1.45);
     } else {                                                      /* the freeze: up, one arm to the sky, chin up */
       pose = posemath.layer(stand, { 'armA.sx': 172, 'armA.sz': 10, 'armA.e': 0, 'armB.sx': -14, 'armB.sz': 40, 'armB.e': 100, 'head.rx': -16, 'hip.rz': 6, 'spine.rz': -6, 'legB.hz': 18 }, 1, 1, 1, 1);
     }
-    /* the camera: the usual view while he talks; close in front of him for the earbuds, the drop and the freeze */
-    if (t >= INTRO.BUDS) {
-      var cw = Math.min(1, (t - INTRO.BUDS) / 0.5), f = S.face + 0.5, d = (4.2 - 0.8 * cw) * (window.innerHeight > window.innerWidth ? 1.9 : 1);   /* (further back on a tall phone screen) */
-      shot = { x: x + Math.sin(f) * d, y: 1.5 + 0.3 * (1 - cw), z: z + Math.cos(f) * d, lx: x, ly: 1.2, lz: z, fov: 44 };
+    /* the camera: low in front as he walks in; then round to his face, pushing in slowly for the line; back a little for
+       the earbuds, the drop and the freeze (further back on a tall phone screen) */
+    if (t < INTRO.WALK) {                                          /* walking in: low in front, a step ahead of him, looking back at him */
+      var fw0 = S.face + 0.5, dd = 5.2 * (tall ? 1.5 : 1), rx0 = x + Math.sin(S.face) * off;
+      var rz0 = z + Math.cos(S.face) * off;
+      shot = { x: x + Math.sin(fw0) * dd, y: 1.3, z: z + Math.cos(fw0) * dd, lx: rx0, ly: 1.35, lz: rz0, fov: 46 };
+    } else {
+      var f = S.face + 0.35, cw = posemath.smooth((t - INTRO.WALK) / 0.6), tk = tall ? 1.55 : 1, d, cy, ly, fov;
+      if (t < INTRO.BUDS) { var push = posemath.smooth((t - INTRO.SAY) / (INTRO.BUDS - INTRO.SAY)); d = (3.3 - 0.5 * push) * tk; cy = 1.55; ly = 1.65; fov = 40; }
+      else { var bw = posemath.smooth((t - INTRO.BUDS) / 0.6); d = (2.8 + 1.0 * bw) * tk; cy = 1.55; ly = 1.65 - 0.4 * bw; fov = 40 + 4 * bw; }
+      var fw1 = S.face + 0.5, d1 = 5.2 * tk, base = { x: x + Math.sin(fw1) * d1, y: 1.3, z: z + Math.cos(fw1) * d1, lx: x, ly: 1.35, lz: z, fov: 46 }, want = { x: x + Math.sin(f) * d, y: cy, z: z + Math.cos(f) * d, lx: x, ly: ly, lz: z, fov: fov };
+      shot = {}; for (var kk in want) shot[kk] = base[kk] + (want[kk] - base[kk]) * cw;
+      if (I.goon && t >= INTRO.REPLY - 0.05 && t < INTRO.BUDS) {            /* the answer: a cut over his shoulder onto the goon who says it */
+        var g = I.goon, gx = g.x - x, gz = g.z - z, gl = Math.hypot(gx, gz) || 1; gx /= gl; gz /= gl;
+        var bd2 = 2.4 * (tall ? 1.35 : 1);
+        shot = { x: x - gx * bd2 + gz * 0.9, y: 2.0, z: z - gz * bd2 - gx * 0.9, lx: g.x, ly: 1.5, lz: g.z, fov: 42 };
+      }
+      if (S.cine.shakeT > 0) { var sk = S.cine.shakeT / (S.cine.dur || 1), amp = S.cine.shakeA * sk * sk * 0.6; shot.x += Math.sin(S.t * 83) * amp; shot.y += Math.sin(S.t * 97 + 1) * amp; }
     }
-    if (t >= INTRO.GO) S.finishIntro();
-    return { pose: pose, shot: shot, yaw: yaw };
+    if (t >= D + INTRO.GO) S.finishIntro();
+    return { pose: pose, shot: shot, yaw: yaw, off: off };
   }
   return {
     name: 'fight',
@@ -1251,19 +1284,22 @@ function createFight() {
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
       scope.add(function () { S.txt.dispose(); });
-      S.music = musicMod.createMusic(S.sfx); S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove, until his earbuds go in */
-      /* HIS ENTRANCE: a punch line at the men (a goon may answer), earbuds in, his own beat drops, a power move, and the fight is on.
+      S.music = musicMod.createMusic(S.sfx); S.gk = GANGS.gangOf(type) || 'raju'; S.danceTrack = 'dance:' + S.gk; S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove, until his earbuds go in */
+      /* HIS ENTRANCE: he walks in, a punch line at the men held on his face (a goon may answer), earbuds in, his stage's own beat drops with
+         his signature move, and the fight is on.
          The men wait. Any tap or key skips it. In the fight, whenever he stands free he grooves to the beat. */
       S.speech = speechMod.createSpeech(); S.dfx = dancefx.createDanceFx(view.scene); S.buds = S.dfx.earbuds(S.rig);
-      scope.add(function () { S.speech.dispose(); S.dfx.dispose(); S.buds.dispose(); });
+      S.bars = cinecard.bars();
+      scope.add(function () { S.speech.dispose(); S.dfx.dispose(); S.buds.dispose(); S.bars.remove(); });
       var qi = (ctx.save.get('quipIdx', 0) || 0) % QUIPS.BRAWL.length; ctx.save.set('quipIdx', qi + 1);
       var nMen = fw.combat.enemies.length, Q = QUIPS.BRAWL[qi];
-      S.intro = { t: 0, line: Q.line.replace('{N}', nMen), reply: Q.reply ? Q.reply.replace('{N}', nMen) : null, said: false, replied: false, buds: false, drop: false, done: false };
+      S.intro = { t: 0, line: Q.line.replace('{N}', nMen), reply: Q.reply ? Q.reply.replace('{N}', nMen) : null, said: false, replied: false, buds: false, drop: false, done: false, barsOn: false, dropAt: 0, b0: 0 };
       S.grooving = false; S.lastBeat = -1;
       function finishIntro() {
-        var I = S.intro; if (!I || I.done) return; I.done = true; S.speech.clear(); S.buds.show(true);
-        if (!I.drop) { S.music.setTrack('dance'); S.dfx.drop(fw.player.x, fw.player.z); }
-        S.arenaTrack = 'dance'; S.grooving = true; fightworld.begin(fw);
+        var I = S.intro; if (!I || I.done) return; I.done = true; S.speech.clear(); S.buds.show(true); S.bars.set(false);
+        if (!I.buds) S.music.setTrack(S.danceTrack);
+        if (!I.drop) S.dfx.drop(fw.player.x, fw.player.z);
+        S.arenaTrack = S.danceTrack; S.grooving = true; fightworld.begin(fw);
       }
       S.finishIntro = finishIntro;
       function skipKey() { if (S.intro && !S.intro.done && S.intro.t > 0.3) finishIntro(); }
@@ -1377,11 +1413,11 @@ function createFight() {
       var p = fw.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha;
       var speed = Math.hypot(p.x - p.px, p.z - p.pz) * 60;
       var target;
-      var introShot = null, spinYaw = 0;
+      var introShot = null, spinYaw = 0, introOff = 0;
       if (p.moving) { S.phase += speed * dt / 1.9; target = posemath.walkPose(S.phase, 1 + Math.min(0.2, speed / 20)); }
       else if (S.grooving) target = groovePose(beatNow());
       else target = posemath.idlePose(S.t);
-      if (fw.state === 'intro' && S.intro && !S.intro.done) { var IR = introStep(ctx, real, x, z); target = IR.pose; introShot = IR.shot; spinYaw = IR.yaw; }
+      if (fw.state === 'intro' && S.intro && !S.intro.done) { var IR = introStep(ctx, real, x, z); target = IR.pose; introShot = IR.shot; spinYaw = IR.yaw; introOff = IR.off; }
       posemath.approach(S.cur, target, 16, dt);
       var pose = S.cur;
       var mo = S.mp.update(dt);
@@ -1402,7 +1438,7 @@ function createFight() {
       S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(fw.state === 'fight' || fw.state === 'cleared');
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, riseLift, z); S.rig.root.rotation.y = S.face + spinYaw;
+      S.rig.root.position.set(x + Math.sin(S.face) * introOff, riseLift, z + Math.cos(S.face) * introOff); S.rig.root.rotation.y = S.face + spinYaw;
       /* the groove's beat: a soft ring under his feet on each beat while he dances free */
       if (S.grooving && fw.state === 'fight' && !p.moving && !S.mp.active() && !p.guard) { var bk = Math.floor(beatNow()); if (bk !== S.lastBeat) { S.lastBeat = bk; S.dfx.beat(x, z, bk); } }
       S.dfx.update(real, ctx.view.camera); S.speech.update(ctx.view.camera, real);
@@ -5474,6 +5510,96 @@ function createDanceFx(scene) {
 module.exports = { createDanceFx: createDanceFx };
 
 };
+defs["view/dancemoves"]=function(module,exports,require){
+/* view: Toofan's dance moves for a brawl, each a pose drawn from the music's beat count `b` and layered on stand (so every fighting move
+   still plays over it exactly as before). Each gang's stage has its own beat and its own set of moves to match; he changes move every
+   two bars, easing from one into the next over a beat.
+     toprock     stepping across on the beat, hips and shoulders swinging, arms loose (the b-boy break)
+     egypt       side-on, one hand flat up in front of the face and the other flat at the waist, swapping every two beats, the head
+                 sliding side to side (the "walk like an Egyptian" arms)
+     headbang    knees bent, the whole top half and the head driving down on every beat, one hand on an air guitar
+     bhangra     both arms up high, the shoulders bouncing, a knee kicked up on alternate beats (to the dhol)
+     robot       stiff, snapping from one pose to the next exactly on the beat: arms at right angles, the head and chest ticking round
+     runningman  one knee up while the other foot slides back, swapping on each beat, the arms pumping */
+'use strict';
+var posemath = require('./posemath');
+
+var PI = Math.PI;
+function pos(v) { return v > 0 ? v : 0; }
+
+var MOVES = {
+  toprock: function (b, k) {
+    var ph = b * PI, sw = Math.sin(ph), bo = Math.abs(Math.cos(ph)), nod = Math.abs(Math.sin(ph * 2));
+    return { 'hip.y': -0.04 - 0.07 * bo * k, 'hip.x': 0.07 * sw * k, 'hip.ry': 16 * sw * k, 'spine.ry': -12 * sw * k, 'spine.rz': 5 * sw, 'spine.rx': 6,
+      'head.rx': 4 + 10 * nod * k, 'head.rz': -4 * sw, 'legA.hx': 22 * pos(sw) * k, 'legA.k': 34 * pos(sw) * k, 'legB.hx': 22 * pos(-sw) * k, 'legB.k': 34 * pos(-sw) * k,
+      'armA.sx': 35 + 35 * sw * k, 'armA.sz': 18, 'armA.e': 85, 'armB.sx': 35 - 35 * sw * k, 'armB.sz': 18, 'armB.e': 85 };
+  },
+  egypt: function (b, k) {
+    var side = Math.floor(b / 2) % 2 ? 1 : -1, u = posemath.smooth((b % 2) * 3), sw = side * (2 * u - 1) * -1;   /* swaps on every second beat */
+    var slide = Math.sin(b * PI), bo = Math.abs(Math.sin(b * PI));
+    var up = { sx: 92, sz: 6, e: 100, w: 0 }, low = { sx: 30, sz: 10, e: 88, w: 0 };
+    var A = sw > 0 ? up : low, B = sw > 0 ? low : up;
+    return { 'hip.ry': -38 * k, 'spine.ry': -20 * k, 'head.ry': 55 * k, 'neck.rz': 10 * slide * k, 'head.rz': 8 * slide * k, 'hip.x': 0.06 * slide * k, 'hip.y': -0.04 - 0.05 * bo,
+      'legA.hx': 18 * pos(slide), 'legA.k': 26 * pos(slide), 'legB.hx': 18 * pos(-slide), 'legB.k': 26 * pos(-slide),
+      'armA.sx': A.sx, 'armA.sz': A.sz, 'armA.e': A.e, 'armB.sx': B.sx, 'armB.sz': B.sz, 'armB.e': B.e };
+  },
+  headbang: function (b, k) {
+    var d = Math.pow(Math.abs(Math.cos(b * PI)), 3), strum = Math.sin(b * PI * 2);   /* d = 1 on the beat: head down */
+    return { 'hip.y': -0.12 - 0.08 * d * k, 'spine.rx': 8 + 26 * d * k, 'neck.rx': 6 + 14 * d * k, 'head.rx': -18 + 48 * d * k, 'hip.ry': -14, 'spine.ry': -6,
+      'legA.hx': 26, 'legA.k': 40, 'legA.hz': 14, 'legB.hx': 10, 'legB.k': 34, 'legB.hz': 16,
+      'armA.sx': 55, 'armA.sz': 24, 'armA.e': 60, 'armB.sx': 30 + 18 * strum * k, 'armB.sz': 30, 'armB.e': 95 };
+  },
+  bhangra: function (b, k) {
+    var bo = Math.abs(Math.sin(b * PI)), alt = Math.floor(b) % 2, kick = Math.sin((b % 1) * PI), sh = Math.sin(b * PI * 2);
+    return { 'hip.y': -0.03 - 0.1 * bo * k, 'spine.rx': -4, 'spine.rz': 5 * sh * k, 'head.rx': -10, 'head.rz': -6 * sh,
+      'legA.hx': alt ? 62 * kick * k : 0, 'legA.k': alt ? 80 * kick * k : 10, 'legB.hx': alt ? 0 : 62 * kick * k, 'legB.k': alt ? 10 : 80 * kick * k,
+      'armA.sx': 25, 'armA.sz': 145 + 8 * sh, 'armA.e': 15, 'armA.w': 40 * sh, 'armB.sx': 25, 'armB.sz': 145 - 8 * sh, 'armB.e': 15, 'armB.w': -40 * sh };
+  },
+  robot: function (b, k) {
+    var n = Math.floor(b) % 8, f = b % 1, snap = f < 0.15 ? f / 0.15 : 1;       /* snaps into the new pose just after the beat */
+    var K = [[0, 90, 0, 0], [35, 90, 0, 0], [35, 0, 90, -20], [0, 0, 90, 0], [-35, 90, 90, 0], [-35, 90, 0, 20], [0, 0, 0, 0], [0, 90, 90, 0]];
+    var c = K[n], p = K[(n + 7) % 8], m = function (i) { return p[i] + (c[i] - p[i]) * snap; };
+    return { 'head.ry': m(0) * k, 'spine.ry': m(3) * k, 'hip.y': -0.06,
+      'armA.sx': m(1), 'armA.sz': 12, 'armA.e': 90, 'armB.sx': m(2), 'armB.sz': 12, 'armB.e': 90,
+      'legA.hx': 6, 'legA.k': 12, 'legB.hx': 6, 'legB.k': 12 };
+  },
+  runningman: function (b, k) {
+    var ph = b * PI, s = Math.sin(ph), bo = Math.abs(Math.cos(ph));
+    return { 'hip.y': -0.08 - 0.06 * bo * k, 'spine.rx': 10,
+      'legA.hx': (s > 0 ? 70 * s : -24 * -s) * k, 'legA.k': (s > 0 ? 85 * s : 12) * k, 'legB.hx': (s < 0 ? 70 * -s : -24 * s) * k, 'legB.k': (s < 0 ? 85 * -s : 12) * k,
+      'armA.sx': 20 - 45 * s * k, 'armA.sz': 14, 'armA.e': 95, 'armB.sx': 20 + 45 * s * k, 'armB.sz': 14, 'armB.e': 95, 'head.rx': 6 * bo };
+  }
+};
+
+/* which moves go with each gang's stage beat (the first is the one he drops with) */
+var SETS = {
+  antu: ['robot', 'egypt', 'toprock'],                     /* electro */
+  kalia: ['headbang', 'toprock', 'runningman'],            /* headbang rock */
+  bhairav: ['bhangra', 'toprock', 'egypt'],                /* bhangra dhol */
+  teja: ['runningman', 'headbang', 'robot'],               /* fast rolling break */
+  raju: ['toprock', 'egypt', 'runningman', 'robot']        /* b-boy break */
+};
+var PER = 8;   /* beats per move: two bars */
+
+function setOf(gang) { return SETS[gang] || SETS.raju; }
+function moveAt(gang, b) { var s = setOf(gang); return s[Math.floor(Math.max(0, b) / PER) % s.length]; }
+
+/* his dance pose at beat b: the move for this pair of bars, eased in from the last over the first beat */
+function pose(gang, b, k) {
+  k = k === undefined ? 1 : k; b = Math.max(0, b);
+  var s = setOf(gang), i = Math.floor(b / PER), cur = MOVES[s[i % s.length]](b, k), stand = posemath.named('stand'), out = posemath.layer(stand, cur, 1, 1, 1, 1);
+  var into = b - i * PER;
+  if (i > 0 && into < 1) {
+    var prev = posemath.layer(stand, MOVES[s[(i - 1) % s.length]](b, k), 1, 1, 1, 1), w = posemath.smooth(into);
+    out = posemath.layer(prev, cur, w, w, w, w);
+  }
+  return out;
+}
+function single(name, b, k) { return posemath.layer(posemath.named('stand'), MOVES[name](Math.max(0, b), k === undefined ? 1 : k), 1, 1, 1, 1); }
+
+module.exports = { MOVES: MOVES, SETS: SETS, PER: PER, pose: pose, single: single, moveAt: moveAt, setOf: setOf };
+
+};
 defs["view/dogvox"]=function(module,exports,require){
 /* view: Raka, Toofan's dog. A desi street dog in fine voxels (4 cm): tan coat with a pale belly and muzzle, pointed ears, a tail curled
    over the back. Separate parts (body, head, tail, four legs) so he can trot, sit, wag, bark and lick. Forward is local +z; the root sits
@@ -8200,7 +8326,8 @@ defs["view/music"]=function(module,exports,require){
      jam     - the hideout's music corner: the full band WITH Ravi's vocal (the only track that sings)
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
-     dance   - Toofan's own b-boy breakbeat in his earbuds in a brawl (no guitar, sub bass, lead)
+     dance:<gang> - Toofan's own beat in his earbuds in a brawl, one per gang's stages, each at its own faster tempo: b-boy break
+               (Raju, 138), electro (Antu, 134), headbang rock (Kalia, 146), bhangra dhol with tumbi (Bhairav, 140), rolling break (Teja, 160)
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
@@ -8208,7 +8335,7 @@ defs["view/music"]=function(module,exports,require){
 
 var VOCAL = require('../data/vocal');
 
-var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;
+var BPM = 128, SPB = 60 / BPM, STEP = SPB / 4, BAR = SPB * 4;     /* (SPB, STEP, BAR follow the playing track's tempo) */
 var CHANT = ['K', '', 'S', '', 'T', '', 'T', 't', 'K', '', 'K', 't', 't', '', 'S', ''];
 var DOUBLE = ['K', '', 'K', '', 'S', '', 'K', 'K', 'K', '', 'K', '', 'S', '', 'K', 'K'];
 var HALF = ['K', '', '', '', '', '', 'K', '', 'S', '', '', '', '', '', 'K', ''];
@@ -8221,6 +8348,12 @@ var BREAK = ['K', '', '', 'K', 'S', '', 'K', '', '', 'K', 'K', '', 'S', '', '', 
 var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't', ''];             /* the ride's second groove */
 /* Toofan's own dance beat, in his earbuds once a brawl starts: a b-boy breakbeat, no guitar, a funky sub bass and a bright lead */
 var BBOY = ['K', '', '', 'K', 'S', '', '', 'K', '', 'K', 'K', '', 'S', '', 't', 'K'];
+/* his dance beats for each gang's stage, each at its own tempo, each matched to the moves he does to it */
+var ELECTRO = ['K', '', 't', '', 'S', '', 't', 'K', 'K', '', 't', '', 'S', 't', 't', ''];       /* Antu's stages: electro for the robot */
+var BANG = ['K', '', 'K', '', 'S', '', 'K', 'K', '', 'K', 'K', '', 'S', '', 'K', ''];          /* Kalia's: a heavy headbang groove */
+var BHANGRA = ['T', '', 't', 'T', 'S', 't', 'T', '', 'T', 't', 'T', '', 'S', 't', 'T', 'K'];   /* Bhairav's: the dhol's bhangra chaal */
+var RUN = ['K', '', 'S', '', 't', 'K', 'S', '', 'K', 't', 'S', 'K', 't', '', 'S', 't'];        /* Teja's: a fast rolling break for the running man */
+var TEMPO = { 'dance:antu': 134, 'dance:kalia': 146, 'dance:bhairav': 140, 'dance:teja': 160, 'dance:raju': 138, dance: 138 };
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -8251,6 +8384,11 @@ var TRACKS = {
   'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
   'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
   dance: function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, fill: m === 7, crash: m === 0, vol: 1.0 }; },
+  'dance:raju': function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, stab: m % 2 === 0, fill: m === 7, crash: m === 0 }; },
+  'dance:antu': function (n) { var m = n % 8; return { drums: ELECTRO, hats: 16, bass: 'saw', arp: true, stab: m >= 4, fill: m === 7, crash: m === 0 }; },
+  'dance:kalia': function (n) { var m = n % 8; return { drums: m < 6 ? BANG : DOUBLE, hats: 8, gtr: m % 2 ? 'chug' : 'riff', bass: 'dist', lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m % 2 === 0, vol: 1.05 }; },
+  'dance:bhairav': function (n) { var m = n % 8; return { drums: BHANGRA, hats: 8, bass: 'sub', tumbi: true, lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m === 0 }; },
+  'dance:teja': function (n) { var m = n % 8; return { drums: RUN, hats: 16, bass: 'saw', arp: m >= 2, stab: m % 2 === 1, fill: m === 7, crash: m % 4 === 0 }; },
   'arena:raju': function (n) { var m = n % 8; return { drums: BREAK, hats: 16, gtr: m % 2 ? 'chug' : 'riff', bass: 'saw', lead: m >= 4, fill: m === 7, crash: m === 0 || m === 4 }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },
@@ -8341,6 +8479,7 @@ function createMusic(sfx) {
     g.connect(bus); s.start(t, k * VOCAL.SLOT, d + 0.02);
   }
   function scheduleBar(t, n) {
+    SPB = 60 / (TEMPO[track] || BPM); STEP = SPB / 4; BAR = SPB * 4; marks.push({ t: t, n: n, spb: SPB }); if (marks.length > 12) marks.shift();   /* (each track its own tempo, from its bar line) */
     var name = track, P = TRACKS[name](n - (startBar[name] || 0)), root = ROOTS[n % 4], i;
     if (P.sting !== undefined) {
       if (P.sting === 0) { kick(t, true); crash(t); chord(t, 40, BAR * 0.9, true); lead(t, 76, BAR * 1.6, 0.09); }
@@ -8361,6 +8500,9 @@ function createMusic(sfx) {
       if (P.bass && i % 2 === 0) bass(s, root + (i === 14 ? 7 : 0), STEP * 1.6, P.bass);
       if (P.lead && LEAD[i]) lead(s, LEAD[i] + 12, STEP * 0.85, 0.07);
       if (P.bell && i % 4 === 0) bell(s, ARP[(i / 4 + n) % 8] + 12);
+      if (P.arp) lead(s, ARP[(i + n * 3) % 8] + 12, STEP * 0.7, 0.035);                                   /* a running synth arpeggio */
+      if (P.stab && (i === 3 || i === 6 || i === 11)) chord(s, root, STEP * 0.6, true, true);             /* bright off-beat stabs */
+      if (P.tumbi && (i % 4 === 2 || i === 7 || i === 15)) tone(s, 'square', hz(ARP[(i + n) % 8] + 24), hz(ARP[(i + n) % 8] + 24), STEP * 0.5, 0.05, null, true);   /* a plucked tumbi */
     }
     if (P.lead) lead(t + STEP * 8, LEAD_HOLD[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
@@ -8370,7 +8512,7 @@ function createMusic(sfx) {
     if (sing && P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
   }
-  var startBar = {};
+  var startBar = {}, marks = [];
   function switchTo(name, now) { if (!TRACKS[name]) return; track = name; startBar[name] = barNo + (now ? 1 : 0); }
   function pump() {
     if (!playing || !A) return;
@@ -8380,7 +8522,7 @@ function createMusic(sfx) {
   var pending = null;
   function start(name, fromBeat) {
     if (!enabled || !graph()) return false;
-    track = name; playing = true; startBar = {}; pending = null;
+    track = name; playing = true; startBar = {}; pending = null; marks = []; SPB = 60 / (TEMPO[name] || BPM); STEP = SPB / 4; BAR = SPB * 4;
     if (fromBeat > 0) { t0 = A.ac.currentTime + 0.05 - fromBeat * SPB; barNo = Math.ceil(fromBeat / 4 + 0.01); nextBar = t0 + barNo * BAR; startBar[name] = 0; }
     else { barNo = 0; t0 = nextBar = A.ac.currentTime + 0.08; startBar[name] = 0; }
     bus.gain.cancelScheduledValues(A.ac.currentTime); bus.gain.setValueAtTime(0.6, A.ac.currentTime);
@@ -8405,7 +8547,14 @@ function createMusic(sfx) {
       var t = A.ac.currentTime; bus.gain.cancelScheduledValues(t); bus.gain.setValueAtTime(bus.gain.value, t); bus.gain.linearRampToValueAtTime(0.0001, t + (fade || 0.4));
       var old = bus, oldRoom = room; setTimeout(function () { try { old.disconnect(); oldRoom.disconnect(); } catch (e) { } }, ((fade || 0.4) + 0.3) * 1000); A = null;
     },
-    beat: function () { return playing && A ? (A.ac.currentTime - t0) / SPB : -1; },
+    /* beats played so far, counted bar by bar (tempo may change at a bar line) */
+    beat: function () {
+      if (!playing || !A) return -1; var now = A.ac.currentTime, k;
+      for (k = marks.length - 1; k >= 0; k--) if (marks[k].t <= now) return marks[k].n * 4 + (now - marks[k].t) / marks[k].spb;
+      return (now - t0) / SPB;
+    },
+    /* seconds until the track asked for comes in (the next bar line not yet scheduled), or -1 if silent */
+    switchIn: function () { return playing && A ? Math.max(0, nextBar - A.ac.currentTime) : -1; },
     playing: function () { return playing; },
     /* the Music switch (the speaker switches everything) */
     get enabled() { return enabled; },
@@ -9567,7 +9716,7 @@ module.exports = { create: create };
 };
 defs["view/speech"]=function(module,exports,require){
 /* view: comic speech bubbles over people in the world (Toofan's punch lines, a goon's answer). A white bubble with a black edge and a tail,
-   the pixel font, popping in and out; it follows the point it belongs to on screen. say() returns the bubble; each lasts `dur` seconds. */
+   the pixel font, popping in and out (a big one slams in with a bounce, for his punch line); it follows the point it belongs to on screen. say() returns the bubble; each lasts `dur` seconds. */
 'use strict';
 
 function createSpeech() {
@@ -9579,15 +9728,16 @@ function createSpeech() {
     opts = opts || {};
     var el = document.createElement('div');
     el.style.cssText = 'position:absolute;left:0;top:0;max-width:min(62vw,340px);padding:8px 12px;background:#fff;color:#111;border:3px solid #111;border-radius:14px;' +
-      "font:" + (opts.small ? '12px' : '14px') + " 'ToofanPx',monospace;letter-spacing:.06em;line-height:1.35;text-align:center;box-shadow:3px 3px 0 #111;" +
-      'transform-origin:50% 100%;transform:translate(-50%,-100%) scale(.2);opacity:0;transition:transform .16s ease-out,opacity .12s';
+      "font:" + (opts.big ? 'clamp(16px,4.6vw,22px)' : opts.small ? '12px' : '14px') + " 'ToofanPx',monospace;letter-spacing:.06em;line-height:1.35;text-align:center;" +
+      (opts.big ? 'padding:12px 18px;border-width:4px;box-shadow:5px 5px 0 #111;max-width:min(80vw,460px);' : 'box-shadow:3px 3px 0 #111;') +
+      'transform-origin:50% 100%;transform:translate(-50%,-100%) scale(.2);opacity:0;transition:transform ' + (opts.big ? '.28s cubic-bezier(.2,1.9,.4,1)' : '.16s ease-out') + ',opacity .12s';
     el.textContent = text;
     var tail = document.createElement('div');
     tail.style.cssText = 'position:absolute;left:50%;bottom:-13px;width:0;height:0;margin-left:-8px;border-left:9px solid transparent;border-right:9px solid transparent;border-top:13px solid #111';
     var tail2 = document.createElement('div');
     tail2.style.cssText = 'position:absolute;left:50%;bottom:-8px;width:0;height:0;margin-left:-5px;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #fff';
     el.appendChild(tail); el.appendChild(tail2); layer.appendChild(el);
-    var b = { el: el, pt: pt, t: 0, dur: dur || 2.4, shown: false };
+    var b = { el: el, pt: pt, t: 0, dur: dur || 2.4, shown: false, big: !!opts.big };
     list.push(b); return b;
   }
   function update(camera, dt) {
@@ -9595,7 +9745,7 @@ function createSpeech() {
     for (var i = list.length - 1; i >= 0; i--) {
       var b = list[i], p = typeof b.pt === 'function' ? b.pt() : b.pt; b.t += dt;
       V.set(p.x, p.y, p.z).project(camera);
-      var x = Math.max(90, Math.min(w - 90, (V.x * 0.5 + 0.5) * w)), y = Math.max(70, (-V.y * 0.5 + 0.5) * h - 14), behind = V.z > 1;
+      var mx = b.big ? Math.min(w / 2, 150) : 90, x = Math.max(mx, Math.min(w - mx, (V.x * 0.5 + 0.5) * w)), y = Math.max(b.big ? 110 : 70, (-V.y * 0.5 + 0.5) * h - 14), behind = V.z > 1;
       var gone = b.t > b.dur, s = gone ? 0.2 : 1;
       b.el.style.left = x + 'px'; b.el.style.top = y + 'px';
       b.el.style.transform = 'translate(-50%,-100%) scale(' + s + ')'; b.el.style.opacity = gone || behind ? 0 : 1;
