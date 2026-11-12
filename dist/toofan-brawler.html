@@ -328,7 +328,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 87',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 88',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -8334,7 +8334,7 @@ defs["view/music"]=function(module,exports,require){
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
      dance:<gang> - the brawl songs in Toofan's earbuds, tech-rock grunge, one per gang's pair of stages (SONGS below): Lootera (Kalia,
-               sludge, sung), Nitro (Raju, tech-rock gallop, sung), Automatic (Antu, industrial, 134), Kalari (Bhairav, dhol grunge, 140),
+               sludge), Nitro (Raju, tech-rock gallop), Automatic (Antu, industrial, 134), Kalari (Bhairav, dhol grunge, 140),
                Talwar (Teja, grunge-punk, 160)
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
@@ -8357,8 +8357,7 @@ var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't
 /* Toofan's own dance beat, in his earbuds once a brawl starts: a b-boy breakbeat, no guitar, a funky sub bass and a bright lead */
 var BBOY = ['K', '', '', 'K', 'S', '', '', 'K', '', 'K', 'K', '', 'S', '', 't', 'K'];
 /* THE BRAWL SONGS: Toofan's own tech-rock grunge in his earbuds once a brawl starts, one song for each gang's pair of stages. Each has
-   its own key, chord loop, riff, lead line and tempo, so no two stages sound alike. The two at 128 BPM in E minor (Kalia's, Raju's) carry
-   Ravi's sung hook, which was recorded at that tempo in that key; the other three are instrumental until he records for them.
+   its own key, chord loop, riff, lead line and tempo, so no two stages sound alike. All instrumental: Ravi's vocal stays in the music corner.
    A riff is 16 steps: '.' rest, a number = a palm-muted power chord that many semitones above the bar's root, 'N~' = an open chord ringing
    to the next hit, 'Nx' = a short open stab. */
 var GRIND = ['K', '', 'K', '', 'S', '', 'K', 't', 'K', 'K', '', 't', 'S', '', 'K', 't'];     /* industrial grind */
@@ -8367,20 +8366,20 @@ var PUNK = ['K', '', 'S', '', 'K', '', 'S', '', 'K', '', 'S', '', 'K', 'K', 'S',
 var BHANGRA = ['T', '', 't', 'T', 'S', 't', 'T', '', 'T', 't', 'T', '', 'S', 't', 'T', 'K']; /* the dhol's bhangra chaal */
 var STOMPG = ['K', '', '', 'K', 'S', '', '', '', 'K', '', 'K', '', 'S', '', '', 't'];        /* a slow sludge stomp */
 var SONGS = {
-  /* Kalia's market and slum: "LOOTERA" - sludgy grunge, quiet verse under the vocal, then the fuzz wall; for the headbang */
+  /* Kalia's market and slum: "LOOTERA" - sludgy grunge, a quiet verse, then the fuzz wall; for the headbang */
   kalia: { bpm: 128, roots: [40, 43, 45, 38], riff: '0~ . . . . . 3~ . . . 5x . 3x . 0~ .', verse: '0~ . . . . . . . 0~ . . . . . . .',
-    lead: [64, 0, 67, 0, 69, 0, 67, 64], hold: [74, 71, 76, 71], arp: [64, 67, 71, 74, 71, 67, 64, 59], vox: true,
+    lead: [64, 0, 67, 0, 69, 0, 67, 64], hold: [74, 71, 76, 71], arp: [64, 67, 71, 74, 71, 67, 64, 59],
     bar: function (m) {
       if (m < 2) return { drums: m ? STOMPG : null, gtr: 'riff', bass: 'dist', crash: m === 0, hats: 8 };
-      if (m < 10) return { drums: STOMPG, gtr: 'verse', bass: 'dist', hats: 8, vox: m % 2 === 0 ? (m - 2) / 2 : null, vol: 0.95 };   /* the quiet verse: the vocal */
+      if (m < 10) return { drums: STOMPG, gtr: 'verse', bass: 'dist', hats: 8, lead: m >= 6 && m % 2 === 1, vol: 0.95 };   /* the quiet verse, the lead line coming in */
       return { drums: m < 14 ? DOUBLE : DRIVE, gtr: 'riff', bass: 'dist', hats: 16, lead: m % 2 === 1, fill: m === 15, crash: m % 2 === 0, vol: 1.08 }; } },
-  /* Rocket Raju's flyover and bus stand: "NITRO" - tech-rock, a palm-muted gallop, a synth arpeggio, vocal chops then the full hook */
+  /* Rocket Raju's flyover and bus stand: "NITRO" - tech-rock, a palm-muted gallop, a synth arpeggio, then the lead */
   raju: { bpm: 128, roots: [40, 43, 45, 38], riff: '0 . 0 0 . 0 0 . 0 . 0 0 5~ . 3~ .', lead: [71, 69, 67, 69, 71, 74, 71, 69], hold: [76, 79, 78, 74],
-    arp: [64, 67, 71, 76, 71, 67, 64, 71], vox: true,
+    arp: [64, 67, 71, 76, 71, 67, 64, 71],
     bar: function (m) {
       if (m < 2) return { drums: m ? DRIVE : null, arp: true, bass: 'saw', crash: m === 0, hats: 16 };
-      if (m < 8) return { drums: DRIVE, gtr: 'riff', bass: 'saw', hats: 16, arp: m >= 4, chop: m % 2 === 0 ? (m >> 1) % 4 : null, crash: m === 2 };
-      return { drums: DRIVE, gtr: 'riff', bass: 'dist', hats: 16, arp: true, lead: m >= 12 && m % 2 === 1, vox: m < 12 && m % 2 === 0 ? (m - 8) / 2 : null, fill: m === 15, crash: m % 4 === 0 }; } },
+      if (m < 8) return { drums: DRIVE, gtr: 'riff', bass: 'saw', hats: 16, arp: m >= 4, stab: m % 2 === 1, crash: m === 2 };
+      return { drums: DRIVE, gtr: 'riff', bass: 'dist', hats: 16, arp: true, lead: m % 2 === 1, fill: m === 15, crash: m % 4 === 0 }; } },
   /* Antu's construction site and warehouse: "AUTOMATIC" - industrial tech-metal in D, a machine-gun chug with a tritone, gated synth stabs */
   antu: { bpm: 134, roots: [38, 38, 41, 36], riff: '0 0 0 . 0 0 0 . 0 0 1 . 0 . 6~ .', lead: [62, 65, 69, 65, 62, 65, 67, 65], hold: [74, 72, 77, 72],
     arp: [62, 65, 69, 72, 69, 65, 62, 57],
@@ -8564,7 +8563,7 @@ function createMusic(sfx) {
     if (P.lead) lead(t + STEP * 8, (SG ? SG.hold : LEAD_HOLD)[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
     if (P.pad) pad(t, root, BAR);
-    var sing = name === 'jam' || !!(SG && SG.vox);                      /* Ravi's vocal: the music corner, and the brawl songs in its key and tempo */
+    var sing = name === 'jam';                                          /* Ravi's vocal: only in the hideout's music corner */
     if (sing && P.vox !== null && P.vox !== undefined) vox(t, P.vox, VOCAL.SLOT, P.voxSoft);
     if (sing && P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
