@@ -9,7 +9,9 @@ function check(name, ok, detail) { results.push(ok); console.log((ok ? 'PASS  ' 
 async function boot(browser, url) {
   var page = await (await browser.newContext({ viewport: { width: 900, height: 540 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); }); page.on('console', function (m) { if (m.type() === 'error') errs.push(m.text()); });
-  await page.goto(url); await page.waitForSelector('html[data-ready="1"]', { timeout: 20000 }); await page.waitForTimeout(700);
+  await page.goto(url); await page.waitForSelector('html[data-ready="1"]', { timeout: 20000 });
+  await page.evaluate(function () { var F = __game.ctx.debug.fight; if (F && F.finishIntro) F.finishIntro(); });   /* (skip Toofan's entrance: these checks are about the fighting) */
+  await page.waitForTimeout(700);
   page.errs = errs; return page;
 }
 async function tap(page, code, hold) { await page.keyboard.down(code); await page.waitForTimeout(hold || 80); await page.keyboard.up(code); }

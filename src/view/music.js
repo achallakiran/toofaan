@@ -10,6 +10,7 @@
      jam     - the hideout's music corner: the full band WITH Ravi's vocal (the only track that sings)
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
+     dance   - Toofan's own b-boy breakbeat in his earbuds in a brawl (no guitar, sub bass, lead)
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
@@ -28,6 +29,8 @@ var DHOL = ['T', '', 't', 'T', 'K', '', 'T', 't', 'T', '', 't', 'T', 'S', 'T', '
 var BLAST = ['K', 'K', 'S', 'K', 'K', 'K', 'S', 'K', 'K', 'K', 'S', 'K', 'K', 'S', 'S', 'K'];       /* Teja Talwar: blades, double kick */
 var BREAK = ['K', '', '', 'K', 'S', '', 'K', '', '', 'K', 'K', '', 'S', '', '', 'K'];               /* Rocket Raju: a racing breakbeat */
 var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't', ''];             /* the ride's second groove */
+/* Toofan's own dance beat, in his earbuds once a brawl starts: a b-boy breakbeat, no guitar, a funky sub bass and a bright lead */
+var BBOY = ['K', '', '', 'K', 'S', '', '', 'K', '', 'K', 'K', '', 'S', '', 't', 'K'];
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -57,6 +60,7 @@ var TRACKS = {
   'arena:kalia': function (n) { var m = n % 8; return { drums: STOMP, hats: 8, gtr: 'open', bass: 'dist', fill: m === 7, crash: m % 4 === 0, vol: 1.05 }; },
   'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
   'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
+  dance: function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, fill: m === 7, crash: m === 0, vol: 1.0 }; },
   'arena:raju': function (n) { var m = n % 8; return { drums: BREAK, hats: 16, gtr: m % 2 ? 'chug' : 'riff', bass: 'saw', lead: m >= 4, fill: m === 7, crash: m === 0 || m === 4 }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },

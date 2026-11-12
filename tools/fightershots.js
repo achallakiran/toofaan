@@ -8,7 +8,7 @@ var out = path.resolve(__dirname, '..', 'dist');
   var p = await b.newPage({ viewport: { width: 1000, height: 600 } }), errs = [];
   p.on('pageerror', function (e) { errs.push(e.message); });
   await p.goto('file://' + path.join(out, 'toofan-brawler.html') + '#ride'); await p.waitForSelector('html[data-ready="1"]');
-  await p.evaluate(function () { __game.ctx.go('fight', { type: 'market', level: 5 }); });
+  await p.evaluate(function () { __game.ctx.go('fight', { type: 'market', level: 5 }); var F = __game.ctx.debug.fight; if (F && F.finishIntro) F.finishIntro(); });
   await p.waitForTimeout(3500);
   var kinds = await p.evaluate(function () { return __game.ctx.fight.combat.enemies.map(function (e) { return e.kind; }); });
   await p.screenshot({ path: path.join(out, 'fighters-game.png') });

@@ -19,6 +19,8 @@ var skybolt = require('../view/skybolt');
 var shopvox = require('../view/shopvox');
 var landmarks = require('../view/landmarks');
 var mansionvox = require('../view/mansionvox');
+var QUIPS = require('../data/quips');
+var speechMod = require('../view/speech');
 
 var WORD = { bkJabL: 'DISHUM!', bkCrossL: 'DISHUM!', bkHookL: 'TADAAK!', bkElbowL: 'KHAT!', bkKickL: 'DHADAAK!', jab: 'DISHUM!', cross: 'DISHUM!', hook: 'TADAAK!', kick: 'DHADAAK!', bkCElbowL: 'PATAAK!', counterCross: 'PATAAK!' };
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -134,6 +136,17 @@ function createRide() {
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
       S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
+      /* Toofan's punch lines on the road, in speech bubbles over him: a chase starting, a goon knocked off, the chase won */
+      S.speech = speechMod.createSpeech(); scope.add(function () { S.speech.dispose(); });
+      var quipN = { start: 0, ko: 0, won: 0 }, lastQuip = -9;
+      function quip(kind, delay) {
+        var L = QUIPS.RIDE[kind]; if (!L || S.t - lastQuip < 2.5) return; lastQuip = S.t;
+        var text = L[(quipN[kind]++ + (S.r.seed % L.length)) % L.length];
+        setTimeout(function () { if (S.speech) S.speech.say(text, function () { var B = S.r.bike; return { x: B.x, y: 2.5, z: B.z }; }, 2.2); }, (delay || 0) * 1000);
+      }
+      scope.add(ctx.bus.on('enc:start', function (e) { if (e.kind !== 'arrest') quip('start', 2.0); }));     /* (after the gang's name has cleared) */
+      scope.add(ctx.bus.on('enc:ko', function () { quip('ko', 0.5); }));
+      scope.add(ctx.bus.on('enc:clear', function () { quip('won', 1.2); }));
       scope.add(ctx.bus.on('enc:start', function (e) { S.music.setTrack(e.kind === 'car' ? 'boss' : e.kind === 'bikes' ? 'road' : 'ride'); if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
       scope.add(ctx.bus.on('enc:swing', function () { S.sfx.whoosh(0.5); }));
       scope.add(ctx.bus.on('enc:hit', function (e) { S.sfx.hit(/kick|Kick/.test(e.move) ? 'kick' : 'jab', 0.8); word(WORD[e.move.replace(/R$/, 'L')] || 'DISHUM!'); S.shake = 0.15; boom(e.id, 0xffffff, 0.8); }));
@@ -196,7 +209,7 @@ function createRide() {
       var now = ctx.now(), dt = S.last ? Math.min(0.05, (now - S.last) / 1000) : 1 / 60; S.last = now; S.t += dt;
       if (S.thp) { S.thp.render(dt); return; }                                  /* Maa's world has the screen */
       var r = S.r, b = r.bike, x = b.px + (b.x - b.px) * alpha, z = b.pz + (b.z - b.pz) * alpha;
-      S.v.sync(r, alpha, dt, S.t);
+      S.v.sync(r, alpha, dt, S.t); if (S.speech) S.speech.update(ctx.view.camera, dt);
       var near = (ctx.view.canvas.clientHeight || 700) < 520 ? 0.82 : 1;
       /* ---- the chase camera: high behind Bijli, turning with her ---- */
       var CAM = R.CAM, cx = x, cz = z, yaw = b.h;

@@ -18,13 +18,18 @@ function create(opts) {
     type: type, name: LOC.LOCATIONS[type].name, arena: spec, bounds: spec.bounds,
     player: { x: spec.start.x, z: spec.start.z, px: spec.start.x, pz: spec.start.z, face: Math.PI, moving: false, rage: 0, hp: 100, maxHp: 100, stun: 0, guard: false, down: false, invuln: false },
     combat: combatMod.createCombat(), pendingStrikes: [], counters: { attacks: 0, blocks: 0, finishers: 0 },
-    attackLock: false, invuln: false, graceT: 0, state: 'fight'                   /* fight | thappad | rise | cleared */
+    attackLock: false, invuln: false, graceT: 0, state: 'fight'                   /* intro | fight | thappad | rise | cleared */
   };
   /* the fight as the brawler always started it at a place: the combat is switched on, then this place's men walk in (one fight, so the
      engagement rules see it as the second wave, as they did when a fight followed the street's opening wave) */
   var c = fw.combat; c.enabled = true; c.wave = 1; c.auto = false; c.lineup = opts.lineup && opts.lineup.length ? opts.lineup.slice() : null;
   var D = LOC.LOCATIONS[type];
   combatMod.startLocation(fw, spec.loc.name, spec.loc.spawns, D.n, D.stick); fw.hadMen = c.enemies.length > 0;
+  /* with opts.intro the men wait, facing him, while he has his say and puts his music on; begin() starts the fight */
+  if (opts.intro) {
+    fw.state = 'intro';
+    c.enemies.forEach(function (e) { e.moving = false; e.face = Math.atan2(fw.player.x - e.x, fw.player.z - e.z); });
+  }
   return fw;
 }
 
@@ -79,7 +84,10 @@ function riseStep(fw) {
   }
 }
 
+function begin(fw) { if (fw.state !== 'intro') return false; fw.state = 'fight'; fw.bus.emit('fight:go', {}); return true; }
+
 function step(fw, input) {
+  if (fw.state === 'intro') { fw.tick++; return; }
   if (fw.state === 'rise') { riseStep(fw); fw.tick++; return; }
   if (fw.state !== 'fight') { fw.tick++; return; }
   var p = fw.player, s = input.state, v = CONFIG.PLAYER.walkSpeed / CONFIG.TICK_HZ, c = fw.combat;
@@ -115,4 +123,4 @@ function hash(fw) {
   return h >>> 0;
 }
 
-module.exports = { create: create, step: step, hash: hash, revive: revive, RISE: RISE, SPARK: SPARK, DOWN_BEAT: DOWN_BEAT };
+module.exports = { create: create, begin: begin, step: step, hash: hash, revive: revive, RISE: RISE, SPARK: SPARK, DOWN_BEAT: DOWN_BEAT };

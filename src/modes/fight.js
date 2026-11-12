@@ -5,6 +5,10 @@
    still open (Maa ka Thappad comes here later). With ?dev=1, #fight opens a practice fight (`type` / `level` in the hash args). */
 'use strict';
 
+var QUIPS = require('../data/quips');
+var speechMod = require('../view/speech');
+var dancefx = require('../view/dancefx');
+
 var fightworld = require('../sim/fightworld');
 var lineupMod = require('../sim/lineup');
 var GANGS = require('../data/gangs');
@@ -40,6 +44,53 @@ function level(ctx) {
 
 function createFight() {
   var S = {};
+  /* the beat he dances to: the music's own clock when it plays, else 128 BPM on the scene clock */
+  function beatNow() { var b = S.music ? S.music.beat() : -1; return b >= 0 ? b : S.t * 128 / 60; }
+  /* toprock: stepping across on the beat, a bounce, the hips and shoulders swinging, arms loose, the head nodding (layered on stand, so
+     every fighting move still plays over it exactly as before) */
+  function groovePose(b) {
+    var ph = b * Math.PI, sw = Math.sin(ph), bo = Math.abs(Math.cos(ph)), nod = Math.abs(Math.sin(ph * 2));
+    return posemath.layer(posemath.named('stand'), {
+      'hip.y': -0.04 - 0.07 * bo, 'hip.x': 0.07 * sw, 'hip.ry': 16 * sw, 'spine.ry': -12 * sw, 'spine.rz': 5 * sw, 'spine.rx': 6, 'head.rx': 4 + 10 * nod, 'head.rz': -4 * sw,
+      'legA.hx': 22 * Math.max(0, sw), 'legA.k': 34 * Math.max(0, sw), 'legB.hx': 22 * Math.max(0, -sw), 'legB.k': 34 * Math.max(0, -sw),
+      'armA.sx': 35 + 35 * sw, 'armA.sz': 18, 'armA.e': 85, 'armB.sx': 35 - 35 * sw, 'armB.sz': 18, 'armB.e': 85
+    }, 1, 1, 1, 1);
+  }
+  /* the entrance, step by step: the line (0.4 s), the goon's answer, earbuds in (3.0 s), the drop and a power spin (4.3 s), the freeze,
+     then the fight (6.1 s) */
+  var INTRO = { SAY: 0.4, REPLY: 1.7, BUDS: 3.1, DROP: 4.4, FREEZE: 5.6, GO: 6.2 };
+  function introStep(ctx, dt, x, z) {
+    var I = S.intro, fw = S.fw, p = fw.player, t = (I.t += dt), stand = posemath.named('stand'), pose, yaw = 0, shot = null;
+    function heroHead() { return { x: p.x, y: 2.15, z: p.z }; }
+    if (t >= INTRO.SAY && !I.said) { I.said = true; S.speech.say(I.line, heroHead, I.reply ? 2.2 : 2.6); S.sfx.hit && S.sfx.hit('jab', 0.15); }
+    if (I.reply && t >= INTRO.REPLY && !I.replied) {
+      I.replied = true; var best = null, bd = 99; fw.combat.enemies.forEach(function (e) { var d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } });
+      if (best) S.speech.say(I.reply, function () { return { x: best.x, y: 2.1, z: best.z }; }, 1.3, { small: true });
+    }
+    if (t >= INTRO.BUDS + 0.5 && !I.buds) { I.buds = true; S.buds.show(true); S.sfx.hit && S.sfx.hit('jab', 0.08); S.music.setTrack('dance'); S.arenaTrack = 'dance'; }
+    if (t >= INTRO.DROP && !I.drop) { I.drop = true; S.dfx.drop(p.x, p.z); S.cine.shake(0.12, 0.5); S.txt.say('boom', { x: p.x, y: 2.4, z: p.z }, ctx.view.camera, true); }
+    var talk = Math.sin(t * 9) * 6;
+    if (t < INTRO.SAY) pose = posemath.idlePose(S.t);
+    else if (t < INTRO.BUDS) pose = posemath.layer(stand, { 'armA.sx': 82 + talk, 'armA.sz': 12, 'armA.e': 12, 'armB.sx': -12, 'armB.sz': 42, 'armB.e': 105, 'head.rx': -6, 'head.rz': 6, 'hip.ry': -10, 'spine.ry': 8 }, 1, 1, 1, 1);
+    else if (t < INTRO.DROP) {                                    /* both hands up to his ears, then a nod as the beat comes in */
+      var u = Math.min(1, (t - INTRO.BUDS) / 0.4), nod = t > INTRO.BUDS + 0.6 ? Math.abs(Math.sin((t - INTRO.BUDS) * 7)) * 12 : 0;
+      pose = posemath.layer(stand, { 'armA.sx': 150 * u, 'armA.sz': 32 * u, 'armA.e': 135 * u, 'armB.sx': 150 * u, 'armB.sz': 32 * u, 'armB.e': 135 * u, 'head.rx': nod, 'hip.y': -0.05 * u }, 1, 1, 1, 1);
+    } else if (t < INTRO.FREEZE) {                                /* the power move: drop low, arms out, two full spins */
+      var v = (t - INTRO.DROP) / (INTRO.FREEZE - INTRO.DROP), e2 = v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2;
+      yaw = e2 * Math.PI * 4;
+      pose = posemath.layer(stand, { 'hip.y': -0.42, 'spine.rx': 20, 'legA.hx': 70, 'legA.k': 110, 'legB.hx': 20, 'legB.hz': 30, 'legB.k': 20,
+        'armA.sx': 70, 'armA.sz': 85, 'armA.e': 0, 'armB.sx': 70, 'armB.sz': 85, 'armB.e': 0, 'head.rx': 10 }, 1, 1, 1, 1);
+    } else {                                                      /* the freeze: up, one arm to the sky, chin up */
+      pose = posemath.layer(stand, { 'armA.sx': 172, 'armA.sz': 10, 'armA.e': 0, 'armB.sx': -14, 'armB.sz': 40, 'armB.e': 100, 'head.rx': -16, 'hip.rz': 6, 'spine.rz': -6, 'legB.hz': 18 }, 1, 1, 1, 1);
+    }
+    /* the camera: the usual view while he talks; close in front of him for the earbuds, the drop and the freeze */
+    if (t >= INTRO.BUDS) {
+      var cw = Math.min(1, (t - INTRO.BUDS) / 0.5), f = S.face + 0.5, d = (4.2 - 0.8 * cw) * (window.innerHeight > window.innerWidth ? 1.9 : 1);   /* (further back on a tall phone screen) */
+      shot = { x: x + Math.sin(f) * d, y: 1.5 + 0.3 * (1 - cw), z: z + Math.cos(f) * d, lx: x, ly: 1.2, lz: z, fov: 44 };
+    }
+    if (t >= INTRO.GO) S.finishIntro();
+    return { pose: pose, shot: shot, yaw: yaw };
+  }
   return {
     name: 'fight',
     enter: function (ctx, scope, args) {
@@ -47,7 +98,7 @@ function createFight() {
       var type = args.type || 'market', lv = args.level !== undefined ? args.level : level(ctx), gang = GANGS.GANGS[GANGS.gangOf(type)];
       var seed = (ctx.world.seed ^ 0x51f1) >>> 0;
       var lineup = lineupMod.lineup(lv, rngMod.createRng(rngMod.hash32(seed, lv, type.length * 131 + type.charCodeAt(0))), gang && gang.mix);
-      var fw = S.fw = fightworld.create({ seed: ctx.world.seed, bus: ctx.bus, type: type, lineup: lineup });
+      var fw = S.fw = fightworld.create({ seed: ctx.world.seed, bus: ctx.bus, type: type, lineup: lineup, intro: true });      /* the men wait while he makes his entrance */
       ctx.fight = fw; ctx.debug.fight = S; S.done = false; S.type = type;
       view.setSky('#9fb6c9', true);
       ctx.hudRoot.hidden = false; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
@@ -68,7 +119,24 @@ function createFight() {
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
       scope.add(function () { S.txt.dispose(); });
-      S.music = musicMod.createMusic(S.sfx); S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove */
+      S.music = musicMod.createMusic(S.sfx); S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove, until his earbuds go in */
+      /* HIS ENTRANCE: a punch line at the men (a goon may answer), earbuds in, his own beat drops, a power move, and the fight is on.
+         The men wait. Any tap or key skips it. In the fight, whenever he stands free he grooves to the beat. */
+      S.speech = speechMod.createSpeech(); S.dfx = dancefx.createDanceFx(view.scene); S.buds = S.dfx.earbuds(S.rig);
+      scope.add(function () { S.speech.dispose(); S.dfx.dispose(); S.buds.dispose(); });
+      var qi = (ctx.save.get('quipIdx', 0) || 0) % QUIPS.BRAWL.length; ctx.save.set('quipIdx', qi + 1);
+      var nMen = fw.combat.enemies.length, Q = QUIPS.BRAWL[qi];
+      S.intro = { t: 0, line: Q.line.replace('{N}', nMen), reply: Q.reply ? Q.reply.replace('{N}', nMen) : null, said: false, replied: false, buds: false, drop: false, done: false };
+      S.grooving = false; S.lastBeat = -1;
+      function finishIntro() {
+        var I = S.intro; if (!I || I.done) return; I.done = true; S.speech.clear(); S.buds.show(true);
+        if (!I.drop) { S.music.setTrack('dance'); S.dfx.drop(fw.player.x, fw.player.z); }
+        S.arenaTrack = 'dance'; S.grooving = true; fightworld.begin(fw);
+      }
+      S.finishIntro = finishIntro;
+      function skipKey() { if (S.intro && !S.intro.done && S.intro.t > 0.3) finishIntro(); }
+      window.addEventListener('pointerdown', skipKey); window.addEventListener('keydown', skipKey);
+      scope.add(function () { window.removeEventListener('pointerdown', skipKey); window.removeEventListener('keydown', skipKey); });
       S.mp.onFx(function (kind) {
         var pt = kind === 'boom' ? S.rig.guitarPoint(30, 0, 0) : S.rig.root.position;
         S.fx.spawn(kind, pt, S.rig.root.rotation.y);
@@ -177,8 +245,11 @@ function createFight() {
       var p = fw.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha;
       var speed = Math.hypot(p.x - p.px, p.z - p.pz) * 60;
       var target;
+      var introShot = null, spinYaw = 0;
       if (p.moving) { S.phase += speed * dt / 1.9; target = posemath.walkPose(S.phase, 1 + Math.min(0.2, speed / 20)); }
+      else if (S.grooving) target = groovePose(beatNow());
       else target = posemath.idlePose(S.t);
+      if (fw.state === 'intro' && S.intro && !S.intro.done) { var IR = introStep(ctx, real, x, z); target = IR.pose; introShot = IR.shot; spinYaw = IR.yaw; }
       posemath.approach(S.cur, target, 16, dt);
       var pose = S.cur;
       var mo = S.mp.update(dt);
@@ -199,7 +270,10 @@ function createFight() {
       S.ev.sync(fw.combat.enemies, alpha, dt, fw.combat.target, fw.combat.seqId); S.ui.update(p, fw.combat); S.ui.show(fw.state === 'fight' || fw.state === 'cleared');
       S.fx.update(dt);
       var dyaw = Math.atan2(Math.sin(p.face - S.face), Math.cos(p.face - S.face)); S.face += dyaw * (1 - Math.exp(-14 * dt));
-      S.rig.root.position.set(x, riseLift, z); S.rig.root.rotation.y = S.face;
+      S.rig.root.position.set(x, riseLift, z); S.rig.root.rotation.y = S.face + spinYaw;
+      /* the groove's beat: a soft ring under his feet on each beat while he dances free */
+      if (S.grooving && fw.state === 'fight' && !p.moving && !S.mp.active() && !p.guard) { var bk = Math.floor(beatNow()); if (bk !== S.lastBeat) { S.lastBeat = bk; S.dfx.beat(x, z, bk); } }
+      S.dfx.update(real, ctx.view.camera); S.speech.update(ctx.view.camera, real);
       S.rig.applyPose(pose, { plant: true }); S.rig.flutter(S.t, p.moving ? 0.5 : 0.12);
       var cmw = S.mp.current(); if (cmw !== S.lastMv) { S.lastMv = cmw; if (cmw && !moveData.MOVES[cmw].counter) S.sfx.whoosh(0.5); }
       var cm = S.mp.current(), cl = cm ? moveData.MOVES[cm].len : 0, ct = S.mp.time();
@@ -230,6 +304,7 @@ function createFight() {
         shot = { x: x + Math.sin(ra) * rr, y: 1.6 + 0.8 * Math.sin(Math.PI * fw.riseT / RZ), z: z + Math.cos(ra) * rr, lx: x, ly: 1.25, lz: z, fov: 50 };
         if (S.cine.shakeT > 0) { var sk3 = S.cine.shakeT / (S.cine.dur || 1), amp3 = S.cine.shakeA * sk3 * sk3 * 0.6; shot.x += Math.sin(S.t * 83) * amp3; shot.y += Math.sin(S.t * 97 + 1) * amp3; }
       }
+      if (introShot) shot = introShot;
       ctx.view.followCamera(x, z, shot);
       ctx.view.render();
       S.hudT -= dt;

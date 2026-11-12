@@ -7,7 +7,7 @@ var counts = (process.argv[2] || '5,7').split(',').map(Number), file = process.a
   var b = await pw.chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   var page = await (await b.newContext({ viewport: { width: 900, height: 600 } })).newPage(), errs = [];
   page.on('pageerror', function (e) { errs.push(e.message); });
-  await page.goto('file://' + file + ('?skin=' + (process.env.SKIN || 1) + (process.env.TIER ? '&tier=' + process.env.TIER : '')) + '#fight=market,2').replace('?skin=', '?dev=1&skin='); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(1500);
+  await page.goto('file://' + file + ('?skin=' + (process.env.SKIN || 1) + (process.env.TIER ? '&tier=' + process.env.TIER : '')) + '#fight=market,2').replace('?skin=', '?dev=1&skin='); await page.waitForSelector('html[data-ready="1"]'); await page.evaluate(function () { var F = __game.ctx.debug.fight; if (F && F.finishIntro) F.finishIntro(); }); await page.waitForTimeout(1500);
   for (var i = 0; i < counts.length; i++) {
     var n = counts[i];
     var r = await page.evaluate(function (n) {

@@ -121,6 +121,18 @@ test('fight: identical inputs from the same seed give identical hashes; differen
   }
   assert.strictEqual(run(11, 1), run(11, 1)); assert.notStrictEqual(run(11, 1), run(12, 1)); assert.notStrictEqual(run(11, 1), run(11, 0.5));
 });
+test('brawl entrance: with intro the men wait (no one moves, nothing lands) until begin(); then the fight runs as ever', function () {
+  var fwm = req('sim/fightworld'), inputMod3 = req('core/input'), ev = [];
+  var fw = fwm.create({ seed: 11, type: 'market', intro: true, bus: { emit: function (n) { ev.push(n); } } }), inp = inputMod3.createInput(), t;
+  assert.strictEqual(fw.state, 'intro');
+  var before = JSON.stringify(fw.combat.enemies.map(function (e) { return [e.x, e.z, e.st]; }));
+  for (t = 0; t < 600; t++) { inp.tick(fw.tick); fwm.step(fw, inp); }
+  assert.strictEqual(JSON.stringify(fw.combat.enemies.map(function (e) { return [e.x, e.z, e.st]; })), before, 'a man moved during the entrance');
+  assert.strictEqual(fw.player.hp, fw.player.maxHp); assert(ev.indexOf('playerHurt') < 0);
+  assert(fwm.begin(fw)); assert.strictEqual(fw.state, 'fight'); assert(ev.indexOf('fight:go') >= 0); assert(!fwm.begin(fw), 'begin twice');
+  for (t = 0; t < 600; t++) { inp.tick(fw.tick); fwm.step(fw, inp); }
+  assert.notStrictEqual(JSON.stringify(fw.combat.enemies.map(function (e) { return [e.x, e.z, e.st]; })), before, 'the fight never started');
+});
 test('rage: the guitar counter costs nothing; only the finisher spends the bar', function () {
   var f = fightWorld(), p = f.w.player; p.rage = 80; req('sim/combat').spawn(f.w, 'thug', 0, 1.2); var e = f.w.combat.enemies[0];
   e.st = 'windup'; e.t = Math.ceil(req('data/enemies').KINDS.thug.windup * 60 * 0.6); e.cd = 9999;

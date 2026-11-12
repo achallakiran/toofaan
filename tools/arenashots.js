@@ -16,7 +16,7 @@ var TYPES = process.argv.slice(2).length ? process.argv.slice(2) : ['temple', 'm
     await page.goto('file://' + path.join(out, 'toofan-brawler.html') + '#ride'); await page.waitForSelector('html[data-ready="1"]'); await page.waitForTimeout(800);
     for (var ti = 0; ti < TYPES.length; ti++) {
       var type = TYPES[ti];
-      await page.evaluate(function (t) { __game.ctx.go('fight', { type: t }); }, type);
+      await page.evaluate(function (t) { __game.ctx.go('fight', { type: t }); var F = __game.ctx.debug.fight; if (F && F.finishIntro) F.finishIntro(); }, type);
       await page.waitForTimeout(2600);
       var info = await page.evaluate(function () {
         var w = __game.ctx.fight, p = w.player, B = w.bounds, en = w.combat.enemies.filter(function (e) { return !e.dead; });
