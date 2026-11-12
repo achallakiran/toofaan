@@ -677,5 +677,82 @@ test('map: picking an open place on the full map makes it the signal; a cleared 
   assert(rideMod2.chooseTarget(r, other.key)); assert.strictEqual(r.target, other);
   r.missions[r.map.targets[0].key] = 'cleared'; assert(!rideMod2.chooseTarget(r, r.map.targets[0].key) || r.map.targets[0] === other);
 });
+
+/* ---------------- the stealth stage ---------------- */
+(function () {
+  var SM = req('sim/stealthmap'), ST = req('sim/stealth');
+  function inp(o) { o = o || {}; return { state: { mx: o.mx || 0, my: o.my || 0, pressed: { attack: !!o.attack, block: !!o.block }, held: {} } }; }
+  function run(st, n, o) { for (var i = 0; i < n; i++) ST.step(st, inp(i === 0 ? o : { mx: o && o.mx, my: o && o.my })); }
+  function only(st, ids) { st.watchers.forEach(function (w) { if (ids.indexOf(w.id) < 0) w.st = 'out'; }); }
+  function segHits(a, b, q, pad) {
+    for (var k = 0; k <= 40; k++) { var x = a[0] + (b[0] - a[0]) * k / 40, z = a[1] + (b[1] - a[1]) * k / 40; if (x > q.x0 - pad && x < q.x1 + pad && z > q.z0 - pad && z < q.z1 + pad) return true; }
+    return false;
+  }
+  test('stealth: no patrol route walks through a box, and the start and checkpoints stand clear', function () {
+    var sol = SM.solids();
+    SM.PATROLS.forEach(function (P, i) { P.path.forEach(function (a, k) { var b = P.path[(k + 1) % P.path.length]; sol.forEach(function (q) { assert(!segHits(a, b, q, 0.3), 'patrol ' + i + ' leg ' + k + ' hits a ' + q.kind); }); }); });
+    SM.CHECKPOINTS.forEach(function (c, i) { sol.forEach(function (q) { assert(!segHits([c.x, c.z], [c.x, c.z], q, 0.4), 'checkpoint ' + i + ' inside a ' + q.kind); }); });
+  });
+  test('stealth: a crate hides a crouched man from the ground but not from a tower; a container hides him from both', function () {
+    var st = ST.create({}), cr = SM.CRATES[2], ct = SM.CONTAINERS[1];                            /* a crate, a stacked container */
+    /* the crate (-12.6, 8.2): a man on the ground 6 m east, Toofan crouched just west of it */
+    assert(ST.blocked(st, -6.6, 8.2, 1.6, cr[0] - 1.3, cr[1], 1.0), 'crate should hide a crouched man from the ground');
+    assert(!ST.blocked(st, -6.6, 8.2, 1.6, cr[0] - 1.3, cr[1], 1.6), 'standing, his head shows over the crate');
+    assert(!ST.blocked(st, -6.6, 8.2, 6.5, cr[0] - 1.3, cr[1], 1.0), 'from up high he is seen over the crate');
+    assert(ST.blocked(st, ct[0], ct[1] + 6, 6.5, ct[0], ct[1] - 2.2, 1.0), 'a stacked container hides him even from a tower');
+  });
+  test('stealth: spotted means a laser lock, and holding the sight line gets him shot after the lock time', function () {
+    var st = ST.create({}), T = st.watchers[0], shots = [];
+    st.bus = { emit: function (n, d) { if (n === 'st:shot') shots.push(d); } };
+    only(st, ['T1']); T.sweep = [0, 8]; T.face = T.base = Math.PI / 2; var p = st.player;
+    p.x = T.x + 8; p.z = T.z; run(st, 20);
+    assert.strictEqual(T.st, 'lock', 'tower should lock on him in the open: ' + T.st);
+    run(st, Math.round(ST.TPS * ST.LOCK) + 5);
+    assert.strictEqual(shots.length, 1, 'one shot after the lock time'); assert.strictEqual(p.hits, 1);
+  });
+  test('stealth: breaking the sight line in time means no shot, and the sniper goes back to his sweep', function () {
+    var st = ST.create({}), T = st.watchers[0], shots = 0;
+    st.bus = { emit: function (n) { if (n === 'st:shot') shots++; } };
+    only(st, ['T1']); T.sweep = [0, 8]; T.face = T.base = Math.PI / 2; var p = st.player;
+    p.x = T.x + 8; p.z = T.z; run(st, 20); assert.strictEqual(T.st, 'lock');
+    p.x = 6.2; p.z = 2.2; p.crouch = true;                                                     /* behind the container at (4.4, 2.2), on its far side */
+    assert(ST.blocked(st, T.x, T.z, T.eye, p.x, p.z, 1.0, 'T1'), 'test spot should be hidden');
+    run(st, 3 * ST.TPS); assert.strictEqual(shots, 0, 'no shot once out of sight'); assert.notStrictEqual(T.st, 'lock');
+    run(st, 5 * ST.TPS); assert.strictEqual(T.st, 'watch');
+  });
+  test('stealth: two hits and he is back at the last checkpoint, the knocked-out still out', function () {
+    var st = ST.create({}), T = st.watchers[0]; only(st, ['T1']); T.sweep = [0, 8]; T.face = T.base = Math.PI / 2;
+    st.checkpoint = 1; var p = st.player; p.x = T.x + 8; p.z = T.z;
+    run(st, 20 + Math.round(ST.TPS * (ST.LOCK + 0.85)) + 10);
+    assert.strictEqual(st.state, 'fail', 'should be down after two hits: hits ' + p.hits);
+    run(st, 3 * ST.TPS);
+    assert.strictEqual(st.state, 'play'); assert.strictEqual(p.hits, 0);
+    assert.strictEqual(p.x, SM.CHECKPOINTS[1].x); assert.strictEqual(st.watchers[1].st, 'out');
+  });
+  test('stealth: a man taken from behind goes out; from the front the button does nothing', function () {
+    var st = ST.create({}), G = st.watchers.filter(function (w) { return w.type === 'guard'; })[0]; only(st, [G.id]);
+    G.path = [[G.x, G.z], [G.x, G.z]]; G.face = 0; G.pause = 999; G.look = 0; var p = st.player;           /* he stands looking south */
+    p.x = G.x; p.z = G.z + 1.2; p.crouch = true; ST.step(st, inp({ attack: true }));
+    assert.strictEqual(p.act, null, 'no takedown from the front'); 
+    st = ST.create({}); G = st.watchers.filter(function (w) { return w.type === 'guard'; })[0]; only(st, [G.id]); G.path = [[G.x, G.z], [G.x, G.z]]; G.face = 0; G.pause = 999; G.look = 0; p = st.player;
+    p.x = G.x; p.z = G.z - 1.2; p.crouch = true; ST.step(st, inp({ attack: true }));
+    assert(p.act, 'takedown from behind'); run(st, ST.TPS * 1.3);
+    assert.strictEqual(G.st, 'out'); assert.strictEqual(st.stunned, 1);
+  });
+  test('stealth: the stairs take him onto the roof behind the head sniper, and taking him down wins', function () {
+    var st = ST.create({}), won = 0; st.bus = { emit: function (n) { if (n === 'st:won') won++; } };
+    only(st, ['BOSS']); var p = st.player, B = st.watchers.filter(function (w) { return w.type === 'boss'; })[0]; B.glance = 999;
+    p.x = SM.STAIRS.x1 + 0.6; p.z = (SM.STAIRS.z0 + SM.STAIRS.z1) / 2; p.crouch = true;
+    run(st, 6 * ST.TPS, { mx: -1, my: 0 });
+    assert(p.up, 'should be up on the roof: x ' + p.x.toFixed(2) + ' y ' + p.y.toFixed(2));
+    for (var i = 0; i < 6 * ST.TPS && Math.hypot(p.x - B.x, p.z - (B.z - 1.0)) > 0.3; i++) { var dx = B.x - p.x, dz = (B.z - 1.0) - p.z, d = Math.hypot(dx, dz); ST.step(st, inp({ mx: dx / d, my: -dz / d })); }
+    ST.step(st, inp({ attack: true })); run(st, ST.TPS * 1.3);
+    assert.strictEqual(B.st, 'out'); assert.strictEqual(st.state, 'won'); assert.strictEqual(won, 1);
+  });
+  test('stealth: the same inputs give the same stage, tick for tick', function () {
+    function go() { var st = ST.create({}), i; for (i = 0; i < 1200; i++) ST.step(st, inp({ mx: Math.sin(i * 0.01), my: 0.6, block: i === 100, attack: i % 97 === 0 })); return ST.hash(st); }
+    assert.strictEqual(go(), go());
+  });
+})();
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -18,6 +18,7 @@ var ride = require('./modes/ride');
 var title = require('./modes/title');
 var wake = require('./modes/wake');
 var hideoutMode = require('./modes/hideout');
+var stealthMode = require('./modes/stealth');
 var musicMod = require('./view/music');
 var pixelfont = require('./view/pixelfont');
 
@@ -74,11 +75,12 @@ function boot() {
   modes.register(title.createTitle());
   modes.register(wake.createWake());
   modes.register(hideoutMode.createHideout());
+  modes.register(stealthMode.createStealth());
   /* the page address names only what a player can come back to: the ride (also during a fight: a reload goes back to the ride, the place
      still open), the hideout, the nightmare. The developer views (#studio, #fight) open only with ?dev=1. */
   var DEV = !!params.get('dev');
   var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
-  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio' };
+  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio', stealth: '#stealth' };
   function go(name, args) {
     if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
@@ -94,6 +96,7 @@ function boot() {
   var H = window.location.hash, HM = /^#fight(?:=(\w+)(?:,(\d+))?)?$/.exec(H);
   if (HM && DEV) go('fight', { type: HM[1] || 'market', level: HM[2] !== undefined ? +HM[2] : 2 });
   else if (H === '#studio' && DEV) go('studio');
+  else if (H === '#stealth') go('stealth');
   else go(H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({

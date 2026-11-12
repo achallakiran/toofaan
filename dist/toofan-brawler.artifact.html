@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 88',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 89',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1033,6 +1033,7 @@ var ride = require('./modes/ride');
 var title = require('./modes/title');
 var wake = require('./modes/wake');
 var hideoutMode = require('./modes/hideout');
+var stealthMode = require('./modes/stealth');
 var musicMod = require('./view/music');
 var pixelfont = require('./view/pixelfont');
 
@@ -1089,11 +1090,12 @@ function boot() {
   modes.register(title.createTitle());
   modes.register(wake.createWake());
   modes.register(hideoutMode.createHideout());
+  modes.register(stealthMode.createStealth());
   /* the page address names only what a player can come back to: the ride (also during a fight: a reload goes back to the ride, the place
      still open), the hideout, the nightmare. The developer views (#studio, #fight) open only with ?dev=1. */
   var DEV = !!params.get('dev');
   var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
-  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio' };
+  var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio', stealth: '#stealth' };
   function go(name, args) {
     if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
@@ -1109,6 +1111,7 @@ function boot() {
   var H = window.location.hash, HM = /^#fight(?:=(\w+)(?:,(\d+))?)?$/.exec(H);
   if (HM && DEV) go('fight', { type: HM[1] || 'market', level: HM[2] !== undefined ? +HM[2] : 2 });
   else if (H === '#studio' && DEV) go('studio');
+  else if (H === '#stealth') go('stealth');
   else go(H === '#ride' ? 'ride' : H === '#wake' ? 'wake' : H === '#hideout' ? 'hideout' : 'title', H === '#menu' ? { menu: true } : undefined);
 
   var loop = loopMod.createLoop({
@@ -2016,6 +2019,129 @@ function drawMap(cv, r, t, yaw) {
 module.exports = { createRide: createRide, ensureRide: ensureRide };
 
 };
+defs["modes/stealth"]=function(module,exports,require){
+/* modes: the stealth stage demo (from the title menu, or #stealth). Antu's container yard at night: get to the head sniper on the site
+   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with a high
+   camera from the south so the men's view fans and the snipers' lasers can be read, and keeps the screen talk short:
+     top        HIDDEN / SUSPICIOUS / SPOTTED, with how close they are to seeing him; his two hits
+     bottom     STUN when a man is within reach from behind (the Attack button), CROUCH on the Block button
+     middle     the brief at the start, CHECKPOINT, the shot, back to the checkpoint, and STAGE CLEAR with play-again / title */
+'use strict';
+
+var ST = require('../sim/stealth');
+var M = require('../sim/stealthmap');
+var svMod = require('../view/stealthview');
+var sfxmod = require('../view/sfx');
+var musicMod = require('../view/music');
+
+var FONT = "'ToofanPx',monospace";
+
+function createStealth() {
+  var S = {};
+  function el(css, html, parent) { var d = document.createElement('div'); d.setAttribute('data-ok', '1'); d.style.cssText = css; d.innerHTML = html || ''; (parent || document.body).appendChild(d); return d; }
+  function say(text, col, secs) {
+    var m = S.msg; m.textContent = text; m.style.color = col || '#fff'; m.style.opacity = '1'; m.style.transform = 'translate(-50%,-50%) scale(1)';
+    clearTimeout(S.msgT); S.msgT = setTimeout(function () { m.style.opacity = '0'; m.style.transform = 'translate(-50%,-50%) scale(.9)'; }, (secs || 1.6) * 1000);
+  }
+  /* small sounds made here: the lock-on beep and the rifle crack */
+  function beep(f, d, v) { var A = S.sfx.audio(); if (!A) return; var t = A.ac.currentTime, o = A.ac.createOscillator(), g = A.ac.createGain(); o.type = 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v || 0.06, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(g); g.connect(A.out); o.start(t); o.stop(t + d + 0.02); }
+  function crack(far) {
+    var A = S.sfx.audio(); if (!A) return; var ac = A.ac, t = ac.currentTime, n = Math.floor(ac.sampleRate * 0.5), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0), i;
+    for (i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * (0.012 + 0.06 * (i > ac.sampleRate * 0.03 ? 1 : 0))));
+    var src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); src.buffer = b; f.type = 'lowpass'; f.frequency.value = far ? 2400 : 5200; g.gain.value = far ? 0.5 : 0.8;
+    src.connect(f); f.connect(g); g.connect(A.out); src.start(t);
+  }
+  return {
+    name: 'stealth',
+    enter: function (ctx, scope) {
+      var view = ctx.view, st = S.st = ST.create({ bus: { emit: function (n, d) { S.ev.push([n, d]); } } });
+      S.ev = []; S.t = 0; S.last = ctx.now(); S.cam = null; S.shake = 0; S.lockBeep = 0; ctx.debug.stealth = S;
+      ctx.hudRoot.hidden = true; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
+      S.sv = svMod.createStealthView(view, st); scope.add(function () { S.sv.dispose(); ctx.debug.stealth = null; });
+      var off = view.onFrame(function (camera, dt) { S.sv.fade(camera, dt); }); scope.add(off);
+      S.sfx = sfxmod.createSfx(); S.music = musicMod.createMusic(S.sfx); S.music.setTrack('night');
+      /* the screen */
+      var ui = S.ui = el('position:fixed;inset:0;z-index:30;pointer-events:none;font-family:' + FONT + ';color:#fff;letter-spacing:.08em');
+      scope.add(function () { ui.remove(); clearTimeout(S.msgT); });
+      S.state = el('position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);padding:7px 12px 9px;background:rgba(0,0,0,.6);border:2px solid #222;font-size:13px;text-align:center;min-width:150px', '', ui);
+      S.hits = el('position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));padding:7px 10px;background:rgba(0,0,0,.6);font-size:13px', '', ui);
+      S.prompt = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 150px);right:max(22px,env(safe-area-inset-right));padding:6px 10px;background:#ffd21f;color:#000;font-size:14px;border:2px solid #000;box-shadow:3px 3px 0 #000;display:none', 'STUN ▼', ui);
+      S.crouchTag = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 92px);right:calc(max(22px,env(safe-area-inset-right)) + 100px);padding:4px 8px;background:rgba(0,0,0,.6);font-size:11px', 'CROUCH', ui);
+      S.msg = el('position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);font-size:clamp(18px,5vw,30px);text-align:center;text-shadow:3px 3px 0 #000,-1px -1px 0 #000;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap', '', ui);
+      S.red = el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(255,0,0,0) 40%,rgba(255,0,0,.55) 100%);opacity:0', '', ui);
+      /* the brief: tap to start */
+      var brief = S.brief = el('position:fixed;inset:0;z-index:46;display:flex;align-items:center;justify-content:center;background:rgba(3,5,10,.72);font-family:' + FONT + ';color:#fff;padding:16px;cursor:pointer;touch-action:manipulation',
+        '<div style="max-width:420px;background:#0d1018;border:3px solid #ffd21f;box-shadow:6px 6px 0 #000;padding:18px 18px 16px;font-size:12px;line-height:1.75;letter-spacing:.06em">' +
+        '<div style="font-size:18px;color:#ffd21f;margin-bottom:8px">ANTU KA GODAM · NIGHT</div>' +
+        'GET TO THE HEAD SNIPER ON THE SITE OFFICE ROOF AND TAKE HIM DOWN.<br><br>' +
+        '· STAY IN THE DARK. LIGHT GIVES YOU AWAY.<br>· <b style="color:#ffd21f">BLOCK</b> = CROUCH. CRATES HIDE YOU FROM MEN ON FOOT, NOT FROM SNIPERS.<br>' +
+        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· THE STAIRS ARE ON THE OFFICE\'S EAST SIDE.' +
+        '<div style="margin-top:14px;text-align:center;color:#ffd21f">[ TAP TO START ]</div></div>');
+      S.paused = true;
+      brief.addEventListener('pointerdown', function () { S.sfx.wake(); brief.remove(); S.paused = false; });
+      scope.add(function () { brief.remove(); if (S.endCard) S.endCard.remove(); });
+      ctx.input.reset();
+    },
+    step: function (ctx, tick) {
+      ctx.input.tick(tick);
+      if (S.paused) return;
+      ST.step(S.st, ctx.input);
+    },
+    render: function (ctx, alpha) {
+      var view = ctx.view, st = S.st, p = st.player, now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; S.t += dt;
+      /* what happened since the last frame */
+      S.ev.splice(0).forEach(function (e) {
+        var n = e[0], d = e[1];
+        if (n === 'st:spotted') { say(d.type === 'guard' ? 'SPOTTED!' : 'SNIPER!', '#ff3a2a', 1.0); beep(1400, 0.08, 0.08); }
+        else if (n === 'st:shot') { S.sv.shot(d.id, d.tx, d.ty, d.tz); crack(Math.hypot(d.x - d.tx, d.z - d.tz) > 12); S.shake = 0.35; S.red.style.transition = 'none'; S.red.style.opacity = '1'; setTimeout(function () { S.red.style.transition = 'opacity .6s'; S.red.style.opacity = '0'; }, 60); if (d.hits < 2) say('HIT!', '#ff3a2a', 0.9); }
+        else if (n === 'st:down') { say('SHOT DOWN · BACK TO CHECKPOINT', '#ff3a2a', 2.1); S.sfx.fall(); }
+        else if (n === 'st:checkpoint') { say('CHECKPOINT', '#6cf0a0', 1.4); beep(880, 0.1, 0.05); setTimeout(function () { beep(1320, 0.12, 0.05); }, 110); }
+        else if (n === 'st:takedown') { S.sfx.whoosh(0.4); setTimeout(function () { S.sfx.hit('elbow', 0.5); }, 330); setTimeout(function () { S.sfx.hit('jab', 0.4); }, 650); }
+        else if (n === 'st:out') { S.sfx.fall(); }
+        else if (n === 'st:heard') beep(520, 0.12, 0.04);
+        else if (n === 'st:lost') beep(300, 0.18, 0.04);
+        else if (n === 'st:won') { S.music.setTrack('menu'); setTimeout(function () { endCard(ctx, d); }, 1300); say('HEAD SNIPER DOWN', '#ffd21f', 2.5); }
+      });
+      /* the lock-on beeps quicken as the shot nears */
+      var lk = 0; st.watchers.forEach(function (w) { if (w.st === 'lock') lk = Math.max(lk, w.lockT / ST.LOCK); });
+      if (lk > 0 && st.state === 'play') { S.lockBeep -= dt; if (S.lockBeep <= 0) { beep(1900, 0.05, 0.05); S.lockBeep = 0.22 - 0.16 * lk; } } else S.lockBeep = 0;
+      S.sv.sync(alpha, dt);
+      /* the screen talk */
+      var seen = p.seen, lab = lk > 0 ? 'SPOTTED' : seen > 0.05 ? 'SUSPICIOUS' : 'HIDDEN', col = lk > 0 ? '#ff3a2a' : seen > 0.05 ? '#ffd21f' : (p.light > 0.6 ? '#ffe9b0' : '#8fb0c8');
+      var bar = Math.round((lk > 0 ? 1 : seen) * 10), shade = p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW';
+      var html = '<div style="color:' + col + '">' + lab + '</div><div style="font-size:9px;color:#9aa;margin-top:3px">' + shade + (p.crouch ? ' · CROUCHED' : '') + '</div>' +
+        '<div style="margin-top:5px;height:5px;background:#222"><div style="height:5px;width:' + bar * 10 + '%;background:' + col + '"></div></div>';
+      if (html !== S.lastHtml) { S.state.innerHTML = html; S.lastHtml = html; }
+      var hh = 'LIFE ' + (p.hits >= 1 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>') + (p.hits >= 2 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>');
+      if (hh !== S.lastHits) { S.hits.innerHTML = hh; S.lastHits = hh; }
+      var narrow = window.innerWidth < 560; if (narrow !== S.narrow) { S.narrow = narrow; S.state.style.top = narrow ? 'calc(max(14px,env(safe-area-inset-top)) + 42px)' : 'max(14px,env(safe-area-inset-top))'; }
+      S.prompt.style.display = ST.prompt(st) ? 'block' : 'none';
+      S.crouchTag.textContent = p.crouch ? 'CROUCHING' : 'CROUCH'; S.crouchTag.style.color = p.crouch ? '#ffd21f' : '#fff';
+      /* the camera: high and from the south, a little ahead of where he's going; higher on a tall phone screen */
+      var tall = window.innerHeight > window.innerWidth, H = tall ? 17 : 14.5, B = tall ? 9.5 : 10;
+      var want = { x: p.x, y: p.y + H, z: p.z + B, lx: p.x, ly: p.y + 0.4, lz: p.z - (tall ? 2.2 : 1.6), fov: tall ? 56 : 52 };
+      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-5 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
+      var shot = { x: S.cam.x, y: S.cam.y, z: S.cam.z, lx: S.cam.lx, ly: S.cam.ly, lz: S.cam.lz, fov: S.cam.fov };
+      if (S.shake > 0) { S.shake -= dt; var a = S.shake * 0.6; shot.x += Math.sin(S.t * 90) * a; shot.y += Math.sin(S.t * 77) * a; }
+      view.followCamera(p.x, p.z, shot);
+      view.render();
+    },
+    exit: function () {}
+  };
+  function endCard(ctx, d) {
+    var BTN = 'display:block;width:100%;margin:10px 0 0;padding:11px;border:2px solid #000;box-shadow:3px 3px 0 #000;font-family:' + FONT + ';font-size:13px;letter-spacing:.1em;cursor:pointer;touch-action:manipulation';
+    S.endCard = el('position:fixed;inset:0;z-index:46;display:flex;align-items:center;justify-content:center;background:rgba(3,5,10,.6);font-family:' + FONT + ';color:#fff;padding:16px',
+      '<div style="width:min(340px,100%);background:#0d1018;border:3px solid #ffd21f;box-shadow:6px 6px 0 #000;padding:18px;text-align:center;font-size:12px;line-height:1.8">' +
+      '<div style="font-size:20px;color:#ffd21f">STAGE CLEAR</div>MEN KNOCKED OUT: ' + d.stunned + '<br>TIMES SPOTTED: ' + d.alarms +
+      '<button id="stAgain" style="' + BTN + ';background:#ffd21f;color:#000">PLAY AGAIN</button><button id="stTitle" style="' + BTN + ';background:#fff;color:#000">TITLE</button></div>');
+    S.endCard.querySelector('#stAgain').addEventListener('click', function () { ctx.go('stealth'); });
+    S.endCard.querySelector('#stTitle').addEventListener('click', function () { ctx.go('title', { menu: true }); });
+  }
+}
+
+module.exports = { createStealth: createStealth };
+
+};
 defs["modes/studio"]=function(module,exports,require){
 /* modes: Hero studio. Inspect the rig: poses, motion previews, joint sliders, camera views, skeleton and ruler. */
 'use strict';
@@ -2403,11 +2529,13 @@ function createTitle() {
           (cont ? '<div style="margin-top:10px;font-size:12px;letter-spacing:.2em;color:#ffd21f;text-shadow:2px 2px 0 #000">CLEARED ' + cleared + ' / 10  \u00b7  TAKA: ?</div>' : '') + '</div>' +
           '<div style="pointer-events:auto">' +
           (cont ? '<button id="tCont" data-ok="1" style="' + BTN + ';background:#ffd21f;color:#000">CONTINUE</button>' : '') +
-          '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button></div>';
+          '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button>' +
+          '<button id="tStealth" data-ok="1" style="' + BTN + ';background:rgba(0,0,0,.55);color:#ffd21f;border-color:#ffd21f;font-size:.82em">DEMO: STEALTH</button></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
         setTimeout(function () { el.style.opacity = 1; }, 1600);
         var nb = el.querySelector('#tNew'), cb = el.querySelector('#tCont');
         nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'hideout' }); });
+        el.querySelector('#tStealth').addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('stealth'); });
         if (cb) cb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('ride'); });
       }
     },
@@ -4923,6 +5051,422 @@ function generate(seed) {
 }
 
 module.exports = { generate: generate, clearOfProps: clearOfProps, onRoad: onRoad, onCarriageway: onCarriageway, nearestLine: nearestLine, lineAt: lineAt, extent: extent };
+
+};
+defs["sim/stealth"]=function(module,exports,require){
+/* sim: the stealth stage (a manhunt in Antu's container yard at night). Toofan alone, no fighting: he keeps to the dark and behind
+   cover, knocks men out from behind, and climbs to the head sniper to take him down. Plain data, seeded and fixed-step; no graphics.
+
+   THE RULES
+     Moving     the stick walks him (4.4 m/s); Block toggles crouch (2.0 m/s, lower behind cover, quieter, harder to see).
+     Light      in a floodlight pool he is seen from much further; in the dark, far less. Crouching shrinks it again.
+     Sight      every watcher has a view cone and a range. Sight lines are 2.5D: a box blocks it if the line passes below its top, so a
+                crouched man behind a crate is hidden from a man on the ground but not from a sniper up on a tower; a container hides
+                him from everyone.
+     Spotting   a watcher who sees him fills his suspicion (a man on foot in about half a second, a sniper almost at once). Full: he
+                is SPOTTED - a red laser locks on. Break the sight line within LOCK seconds (behind a container, out of range) and the
+                shot never comes; he searches where he last saw him, then goes back to his round. Hold it and he fires.
+     Shots      two hits and Toofan is down: the stage restarts from the last checkpoint he passed (the men he knocked out stay out).
+     Noise      walking upright close to a man on foot makes him turn to look.
+     Takedown   Attack within reach of a man from behind (and not locked on him): a chop to the neck, he is out for good.
+     Goal       up the stairs onto the site office roof, behind the head sniper (who glances back now and then), and take him down. */
+'use strict';
+
+var M = require('./stealthmap');
+
+var TPS = 60, DT = 1 / TPS;
+var WALK = 4.4, SNEAK = 2.0, R = 0.34;
+var LOCK = 1.0, REFIRE = 0.85, LOSE = 0.3, SEARCH = 2.6;
+var REACH = 1.7, TAKEDOWN = 1.1, FAIL_WAIT = 2.2;
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+
+/* the head height of the target a watcher looks for, and whether a point is on the roof or the stairs */
+function onRoof(x, z) { var O = M.OFFICE; return x >= O.x0 && x <= O.x1 && z >= O.z0 && z <= O.z1; }
+function onStairs(x, z) { var S = M.STAIRS; return x >= S.x0 && x <= S.x1 && z >= S.z0 && z <= S.z1; }
+function stairY(x) { var S = M.STAIRS; return clamp((S.x1 - x) / (S.x1 - S.x0), 0, 1) * S.top; }
+
+function create(opts) {
+  opts = opts || {};
+  var st = {
+    tick: 0, t: 0, bus: opts.bus || { emit: function () {} }, solids: M.solids(),
+    player: { x: M.START.x, z: M.START.z, px: M.START.x, pz: M.START.z, face: M.START.face, y: 0, up: false, crouch: false, moving: false, hits: 0, act: null, light: 0, seen: 0, flash: 0 },
+    watchers: [], checkpoint: 0, state: 'play', failT: 0, stunned: 0, alarms: 0
+  };
+  M.TOWERS.forEach(function (T) { st.watchers.push(watcher('sniper', T.id, T.x, T.z, T.h + 1.5, T.face, T.sweep, T.range)); });
+  var B = M.BOSS, b = watcher('boss', B.id, B.x, B.z, M.OFFICE.h + 1.5, B.face, B.sweep, B.range); b.glanceT = B.glance; st.watchers.push(b);
+  M.PATROLS.forEach(function (Pt, i) {
+    var w = watcher('guard', 'G' + i, Pt.path[0][0], Pt.path[0][1], 1.6, 0, null, 10); w.kind = Pt.kind; w.path = Pt.path; w.wait = Pt.wait; w.wp = 1; w.pause = 0;
+    w.face = Math.atan2(Pt.path[1][0] - Pt.path[0][0], Pt.path[1][1] - Pt.path[0][1]); st.watchers.push(w);
+  });
+  st.watchers.forEach(function (w) { w.home = { x: w.x, z: w.z, face: w.face, wp: w.wp }; });
+  return st;
+}
+function watcher(type, id, x, z, eye, face, sweep, range) {
+  return { type: type, id: id, x: x, z: z, px: x, pz: z, eye: eye, base: face, face: face, sweep: sweep, range: range, phase: 0,
+    st: 'watch', sus: 0, lockT: 0, loseT: 0, searchT: 0, last: null, look: 0, aim: null, fired: 0, outT: 0, moving: false, glance: 0 };
+}
+
+/* the 2.5D sight line from (ax, az) at height ay to (bx, bz) at height by: blocked by any box it passes under the top of */
+function blocked(st, ax, az, ay, bx, bz, by, own) {
+  var S = st.solids, dx = bx - ax, dz = bz - az, i;
+  for (i = 0; i < S.length; i++) {
+    var q = S[i]; if (own && q.own === own) continue;
+    var t0 = 0, t1 = 1, u, v, w;
+    if (Math.abs(dx) < 1e-9) { if (ax < q.x0 || ax > q.x1) continue; } else { u = (q.x0 - ax) / dx; v = (q.x1 - ax) / dx; if (u > v) { w = u; u = v; v = w; } t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) continue; }
+    if (Math.abs(dz) < 1e-9) { if (az < q.z0 || az > q.z1) continue; } else { u = (q.z0 - az) / dz; v = (q.z1 - az) / dz; if (u > v) { w = u; u = v; v = w; } t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) continue; }
+    if (t1 >= 0.999 && t0 >= 0.999) continue;
+    var lo = Math.min(ay + (by - ay) * t0, ay + (by - ay) * Math.min(t1, 0.999));
+    if (q.y1 > lo) return true;
+  }
+  return false;
+}
+/* how much light he stands in: 1 in a floodlight pool (softened at the rim), 0.28 in the dark */
+function lightAt(x, z) {
+  var best = 0.28, i, L;
+  for (i = 0; i < M.LIGHTS.length; i++) { L = M.LIGHTS[i]; var d = Math.hypot(x - L[0], z - L[1]); if (d < L[2]) best = Math.max(best, d < L[2] - 1 ? 1 : 0.28 + 0.72 * (L[2] - d)); }
+  return best;
+}
+function headY(p) { return p.y + (p.crouch ? 1.0 : 1.6); }
+
+/* can this watcher see him right now, and how close is he to the edge of the view (0 at the edge .. 1 right in front)? */
+function sees(st, w, p, locked) {
+  if (w.st === 'out' || w.st === 'stunned') return 0;
+  var dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz);
+  var range = w.range * (0.35 + 0.65 * p.light) * (p.crouch ? (w.type === 'guard' ? 0.62 : 0.8) : 1);
+  if (w.type === 'boss' && p.up) range = 8;
+  if (locked) range = Math.max(range, w.range * 0.9);
+  if (d > range) return 0;
+  if (!locked) {
+    var half = w.type === 'guard' ? 0.8 : (w.type === 'boss' && p.up ? 0.9 : 0.24);
+    var a = Math.abs(angDiff(Math.atan2(dx, dz), w.face));
+    if (a > half && !(w.type === 'guard' && d < 1.1 && a < 1.7)) return 0;
+  }
+  if (w.type === 'boss' && !p.up && d < 4.5) return 0;       /* the head sniper can't see down past his own roof's edge */
+  if (w.type === 'guard' && p.up !== false) return 0;
+  if (blocked(st, w.x, w.z, w.eye, p.x, p.z, headY(p), w.id)) return 0;
+  return 1 - d / (range + 0.01) * 0.6;
+}
+
+function stepPlayer(st, inp) {
+  var p = st.player, s = inp.state; p.px = p.x; p.pz = p.z;
+  if (s.pressed.block) { p.crouch = !p.crouch; st.bus.emit('st:crouch', { on: p.crouch }); }
+  if (p.act) {
+    p.act.t += DT; p.moving = false;
+    if (p.act.t >= TAKEDOWN) { var tw = p.act.w; tw.st = 'out'; p.act = null; st.stunned++; st.bus.emit('st:out', { id: tw.id }); if (tw.type === 'boss') win(st); }
+    return;
+  }
+  var mx = s.mx, mz = -s.my, m = Math.hypot(mx, mz);
+  p.moving = m > 0.15;
+  if (p.moving) {
+    var sp = (p.crouch ? SNEAK : WALK) * Math.min(1, m), nx = p.x + mx / m * sp * DT, nz = p.z + mz / m * sp * DT;
+    p.face = Math.atan2(mx, mz);
+    move(st, p, nx, nz);
+  }
+  /* height: on the stairs he climbs; at the top he steps onto the roof; off the roof only by the stairs */
+  if (onStairs(p.x, p.z)) { p.y = stairY(p.x); p.up = p.y > M.STAIRS.top - 0.35; }
+  else if (p.up) p.y = M.OFFICE.h; else p.y = 0;
+  p.light = p.up ? 0.7 : lightAt(p.x, p.z);
+  /* the checkpoints he passes */
+  for (var c = st.checkpoint + 1; c < M.CHECKPOINTS.length; c++) { var K = M.CHECKPOINTS[c]; if (Math.hypot(p.x - K.x, p.z - K.z) < 3.2) { st.checkpoint = c; st.bus.emit('st:checkpoint', { n: c }); } }
+  /* a takedown: a man within reach who isn't facing him and isn't locked on him */
+  if (s.pressed.attack) {
+    var t = takedownTarget(st);
+    if (t) { p.act = { t: 0, w: t }; t.st = 'stunned'; t.outT = 0; t.moving = false; p.face = Math.atan2(t.x - p.x, t.z - p.z); st.bus.emit('st:takedown', { id: t.id, boss: t.type === 'boss' }); }
+  }
+}
+function takedownTarget(st) {
+  var p = st.player, best = null, bd = REACH, i;
+  for (i = 0; i < st.watchers.length; i++) {
+    var w = st.watchers[i]; if (w.type === 'sniper' || w.st === 'out' || w.st === 'stunned' || w.st === 'lock') continue;
+    if ((w.type === 'boss') !== p.up) continue;
+    var d = Math.hypot(p.x - w.x, p.z - w.z); if (d > bd) continue;
+    var a = Math.abs(angDiff(Math.atan2(p.x - w.x, p.z - w.z), w.face));
+    if (a < 1.75) continue;                                              /* he has to be behind him */
+    best = w; bd = d;
+  }
+  return best;
+}
+/* walking: boxes and the yard's edge push him back; on the roof only the roof and the stairs are under his feet */
+function move(st, p, nx, nz) {
+  var B = M.BOUNDS, O = M.OFFICE, S = M.STAIRS;
+  if (p.up) {
+    var inRoof = onRoof(nx, nz), inSt = onStairs(nx, nz);
+    if (!inRoof && !inSt) { nx = clamp(nx, O.x0 + 0.25, O.x1 + (Math.abs(nz - (S.z0 + S.z1) / 2) < 0.6 ? 0.5 : -0.25)); nz = clamp(nz, O.z0 + 0.25, O.z1 - 0.25); if (!onRoof(nx, nz) && !onStairs(nx, nz)) { nx = p.x; nz = p.z; } }
+    if (onStairs(nx, nz) && stairY(nx) < M.STAIRS.top - 0.35) p.up = false;
+    p.x = nx; p.z = nz; return;
+  }
+  p.x = clamp(nx, B.x0, B.x1); p.z = clamp(nz, B.z0, B.z1);
+  var sol = st.solids, i;
+  for (i = 0; i < sol.length; i++) {
+    var q = sol[i]; if (q.kind === 'office' && onStairs(p.x, p.z)) continue;
+    var cx = clamp(p.x, q.x0, q.x1), cz = clamp(p.z, q.z0, q.z1), dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
+    if (d >= R) continue;
+    if (d < 1e-6) { var l = p.x - q.x0, r = q.x1 - p.x, t = p.z - q.z0, b = q.z1 - p.z, mn = Math.min(l, r, t, b); if (mn === l) p.x = q.x0 - R; else if (mn === r) p.x = q.x1 + R; else if (mn === t) p.z = q.z0 - R; else p.z = q.z1 + R; }
+    else { p.x = cx + dx / d * R; p.z = cz + dz / d * R; }
+  }
+  /* the stairs' sides: on them, keep within their width */
+  if (onStairs(p.x, p.z)) p.z = clamp(p.z, S.z0 + 0.2, S.z1 - 0.2);
+}
+
+function stepWatchers(st) {
+  var p = st.player, i;
+  for (i = 0; i < st.watchers.length; i++) {
+    var w = st.watchers[i]; w.px = w.x; w.pz = w.z; w.moving = false;
+    if (w.st === 'out') continue;
+    if (w.st === 'stunned') { w.outT += DT; continue; }
+    var see = st.state === 'play' && !p.act ? sees(st, w, p, w.st === 'lock') : 0;
+    if (w.st === 'lock') {
+      w.aim = { x: p.x, z: p.z, y: headY(p) - 0.2 };
+      w.face = turnTo(w.face, Math.atan2(p.x - w.x, p.z - w.z), 8);
+      if (see) { w.loseT = 0; w.last = { x: p.x, z: p.z }; w.lockT += DT; if (w.lockT >= LOCK) fire(st, w); }
+      else { w.loseT += DT; if (w.loseT > LOSE) { w.st = 'search'; w.searchT = 0; w.lockT = 0; w.aim = null; st.bus.emit('st:lost', { id: w.id }); } }
+      continue;
+    }
+    if (see > 0) {
+      var rate = w.type === 'guard' ? 1.4 + 2.4 * see : 9;
+      w.sus = Math.min(1, w.sus + rate * DT); w.last = { x: p.x, z: p.z };
+      if (w.type === 'guard') w.face = turnTo(w.face, Math.atan2(p.x - w.x, p.z - w.z), 2.5 * w.sus);
+      if (w.sus >= 1) { w.st = 'lock'; w.lockT = 0; w.loseT = 0; st.alarms++; st.bus.emit('st:spotted', { id: w.id, type: w.type, x: w.x, z: w.z }); continue; }
+    } else w.sus = Math.max(0, w.sus - 0.45 * DT);
+    /* noise: walking upright within 5 m of a man on foot, outside his view */
+    if (w.type === 'guard' && w.st !== 'search' && p.moving && !p.crouch && !p.up && Math.hypot(p.x - w.x, p.z - w.z) < 5 && !p.act) {
+      w.st = 'search'; w.searchT = 0; w.last = { x: p.x, z: p.z }; st.bus.emit('st:heard', { id: w.id });
+    }
+    if (w.st === 'search') {
+      w.searchT += DT;
+      if (w.last) { var ta = Math.atan2(w.last.x - w.x, w.last.z - w.z); w.face = turnTo(w.face, ta + Math.sin(w.searchT * 2.2) * 0.6 * Math.min(1, w.searchT), 3); }
+      if (w.type === 'guard' && w.last && w.searchT < SEARCH * 0.6) walkToward(st, w, w.last.x, w.last.z, 1.4);
+      if (w.searchT > SEARCH + (w.type === 'guard' ? 1.2 : 0)) { w.st = w.type === 'guard' ? 'return' : 'watch'; w.last = null; }
+      continue;
+    }
+    if (w.type === 'guard') patrol(st, w); else sweepLook(st, w);
+  }
+}
+function turnTo(a, b, rate) { var d = angDiff(b, a), m = rate * DT; return a + clamp(d, -m, m); }
+function walkToward(st, w, x, z, sp) {
+  var dx = x - w.x, dz = z - w.z, d = Math.hypot(dx, dz); if (d < 0.2) return true;
+  var k = Math.min(d, sp * DT); w.x += dx / d * k; w.z += dz / d * k; w.moving = true; w.face = turnTo(w.face, Math.atan2(dx, dz), 6);
+  /* never through a box */
+  var sol = st.solids, i;
+  for (i = 0; i < sol.length; i++) { var q = sol[i], cx = clamp(w.x, q.x0, q.x1), cz = clamp(w.z, q.z0, q.z1), ex = w.x - cx, ez = w.z - cz, e = Math.hypot(ex, ez); if (e < R && e > 1e-6) { w.x = cx + ex / e * R; w.z = cz + ez / e * R; } }
+  return false;
+}
+function patrol(st, w) {
+  if (w.st === 'return') {
+    var tgt = w.path[w.wp]; if (walkToward(st, w, tgt[0], tgt[1], 1.5)) w.st = 'watch';
+    return;
+  }
+  if (w.pause > 0) { w.pause -= DT; w.face = turnTo(w.face, w.look, 2.2); return; }
+  var wp = w.path[w.wp];
+  if (walkToward(st, w, wp[0], wp[1], 1.5)) {
+    var nx = w.path[(w.wp + 1) % w.path.length]; w.wp = (w.wp + 1) % w.path.length; w.pause = w.wait;
+    w.look = Math.atan2(nx[0] - w.x, nx[1] - w.z) + (w.wp % 2 ? 1.4 : -1.4);        /* a look round before he walks on */
+  }
+}
+function sweepLook(st, w) {
+  w.phase += DT;
+  var a = w.base + w.sweep[0] * Math.sin(w.phase * Math.PI * 2 / w.sweep[1]);
+  if (w.type === 'boss') {                          /* the head sniper glances back over his shoulder every so often */
+    var was = w.glance; w.glance -= DT; if (w.glance <= -1.4) w.glance = M.BOSS.glance;
+    if (was >= 0 && w.glance < 0) st.bus.emit('st:glance', { id: w.id });
+    if (w.glance < 0) a = w.base + Math.PI - 0.4;
+  }
+  w.face = turnTo(w.face, a, w.glance < 0 ? 5 : 1.6);
+}
+function fire(st, w) {
+  var p = st.player; w.lockT = LOCK - REFIRE; w.fired++;
+  p.hits++; p.flash = 1; st.bus.emit('st:shot', { id: w.id, x: w.x, z: w.z, y: w.eye, tx: p.x, tz: p.z, ty: headY(p), hits: p.hits });
+  if (p.hits >= 2) { st.state = 'fail'; st.failT = 0; st.bus.emit('st:down', { checkpoint: st.checkpoint }); }
+}
+function win(st) { st.state = 'won'; st.bus.emit('st:won', { stunned: st.stunned, alarms: st.alarms }); }
+
+/* back to the last checkpoint: his health back, every man still standing back on his round and calm, the knocked-out stay out */
+function restart(st) {
+  var K = M.CHECKPOINTS[st.checkpoint], p = st.player;
+  p.x = p.px = K.x; p.z = p.pz = K.z; p.face = K.face; p.y = 0; p.up = false; p.crouch = false; p.hits = 0; p.act = null; p.flash = 0;
+  st.watchers.forEach(function (w) {
+    if (w.st === 'out') return;
+    w.st = 'watch'; w.sus = 0; w.lockT = 0; w.loseT = 0; w.aim = null; w.last = null; w.x = w.px = w.home.x; w.z = w.pz = w.home.z; w.face = w.home.face; w.phase = 0; w.pause = 0;
+    if (w.path) w.wp = w.home.wp; if (w.type === 'boss') w.glance = M.BOSS.glance;
+  });
+  st.state = 'play'; st.bus.emit('st:restart', { checkpoint: st.checkpoint });
+}
+
+function step(st, inp) {
+  st.tick++; st.t += DT;
+  var p = st.player; if (p.flash > 0) p.flash = Math.max(0, p.flash - DT * 2);
+  if (st.state === 'fail') { st.failT += DT; stepWatchers(st); if (st.failT >= FAIL_WAIT) restart(st); return; }
+  if (st.state === 'won') { if (p.act) stepPlayer(st, inp); stepWatchers(st); return; }
+  stepPlayer(st, inp); stepWatchers(st);
+  p.seen = 0; st.watchers.forEach(function (w) { if (w.st === 'lock') p.seen = Math.max(p.seen, 1); else p.seen = Math.max(p.seen, w.sus); });
+}
+
+/* who could he take down right now (for the button prompt) */
+function prompt(st) { return st.state === 'play' && !st.player.act ? takedownTarget(st) : null; }
+
+/* a short fingerprint of the stage's state, for replays in the tests */
+function hash(st) {
+  var h = 2166136261, p = st.player;
+  function add(v) { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) >>> 0; }
+  add(p.x); add(p.z); add(p.hits); add(st.checkpoint); st.watchers.forEach(function (w) { add(w.x); add(w.z); add(w.face); add(w.sus); add(w.lockT); });
+  return h >>> 0;
+}
+
+module.exports = { create: create, step: step, restart: restart, prompt: prompt, hash: hash, blocked: blocked, lightAt: lightAt, sees: sees, TPS: TPS, LOCK: LOCK };
+
+};
+defs["sim/stealthmap"]=function(module,exports,require){
+/* sim: the stealth stage's yard - Antu's container yard at night. Plain data shared by the rules (sim/stealth: cover, sight lines,
+   light) and the view (the voxel boxes, built here with the arena kit). Metres; x east, z south; Toofan starts at the south gate and
+   the head sniper stands on the site office roof at the north end, facing the yard. No randomness except the seeded rng for litter.
+
+   What is in the yard:
+     containers   tall cover (2.6 m, or 5.2 m stacked two high): hide from everyone behind them
+     crates       low cover (1.1 m): crouched behind them a man on the ground can't see him; a sniper up high still can
+     floodlights  pools of light: inside one he is seen from much further away; the rest of the yard is dark
+     towers       two scaffold sniper towers (5 m), and the site office whose flat roof the head sniper stands on, reached by
+                  the steel stairs on its east side - the only way up, and it comes out behind him */
+'use strict';
+
+var kit = require('./arenakit');
+var rngMod = require('../core/rng');
+var C = kit.C;
+
+var BOUNDS = { x0: -25.2, z0: -23.2, x1: 25.2, z1: 21.2 };
+var START = { x: 0, z: 19.4, face: Math.PI };
+
+/* [centre x, centre z, along ('x' long side east-west, 'z' north-south), height, colour] */
+var CONTAINERS = [
+  [-17, 13, 'x', 2.6, C.BLUE], [-6, 13.2, 'x', 5.2, C.RUST], [8.6, 12.4, 'x', 2.6, C.LEAF], [20.4, 14, 'z', 2.6, C.SAFFRON],
+  [-20.5, 2.5, 'z', 5.2, C.CRIMSON], [-8.6, 4.2, 'x', 2.6, C.TEAL], [4.4, 2.2, 'z', 2.6, C.MARIGOLD], [15.8, 4.6, 'x', 5.2, C.NAVY],
+  [-14.6, -7.2, 'x', 2.6, C.OLIVE], [0.2, -6.4, 'x', 2.6, C.BLUE], [13.6, -9.4, 'z', 2.6, C.RUST], [-21.6, -15.2, 'z', 2.6, C.LEAF],
+  [21.2, -18.6, 'x', 2.6, C.SAFFRON]
+];
+/* crate stacks: [x, z, w, d] (1.1 m high) */
+var CRATES = [
+  [-1.4, 15.6, 1.8, 1.2], [3.4, 8.6, 1.2, 1.8], [-12.6, 8.2, 1.8, 1.2], [12.4, 8.4, 1.2, 1.2], [-3.8, -0.2, 1.8, 1.2], [9.2, -2.2, 1.2, 1.8],
+  [-8.2, -12.2, 1.8, 1.2], [6.4, -13.2, 1.8, 1.2], [-16.6, -18.4, 1.2, 1.8], [15.6, -14.6, 1.2, 1.2], [22.6, -4.2, 1.2, 1.8], [-23.4, 9.6, 1.2, 1.2],
+  [-6.6, 18.6, 1.2, 1.2], [6.2, 18.4, 1.8, 1.2]
+];
+/* floodlight pools: [x, z, radius] */
+var LIGHTS = [[0, 8.4, 5.6], [-12.4, -1.4, 5.2], [11.2, -3.2, 5.2], [-1.2, -11.6, 6.4], [19.4, 19.0, 3.4], [-19.6, 17.4, 3.6], [21.6, -8.8, 3.4]];
+
+/* the watchers: snipers on the towers and the head sniper; men on foot patrolling with pistols. Face: radians, 0 = south (+z), pi/2 = east.
+   sweep: [half-angle, seconds for a full sweep]. Patrols: loops of waypoints, with a look-round wait (s) at each. */
+var TOWERS = [
+  { id: 'T1', x: -23.4, z: -3.4, h: 5.0, face: Math.PI / 2 + 0.15, sweep: [0.95, 8.0], range: 23 },
+  { id: 'T2', x: 23.2, z: 8.2, h: 5.0, face: -Math.PI / 2 - 0.25, sweep: [0.85, 10.0], range: 23 }
+];
+var OFFICE = { x0: -4.4, z0: -21.6, x1: 3.0, z1: -14.6, h: 3.2 };                 /* the head sniper's roof */
+var STAIRS = { x0: 3.0, z0: -21.2, x1: 9.4, z1: -19.6, top: 3.0 };                /* climbing west, from the ground at x 9.4 to the roof at x 3 */
+var BOSS = { id: 'BOSS', x: -0.6, z: -15.6, face: 0, sweep: [0.7, 11.0], range: 21, glance: 9.0 };
+var PATROLS = [
+  { kind: 'chain', path: [[-10.4, 9.8], [1.8, 9.8], [1.8, 6.8], [-10.4, 6.8]], wait: 1.4 },
+  { kind: 'blocker', path: [[-1.6, -3.8], [11.6, -3.8]], wait: 1.8 },
+  { kind: 'kicker', path: [[-18.4, -10.6], [-6.4, -10.6], [-6.4, -15.6], [-18.4, -15.6]], wait: 1.2 },
+  { kind: 'chain', path: [[17.6, -13.6], [17.6, -21.2], [11.4, -21.2], [11.4, -13.6]], wait: 1.5 },
+  { kind: 'kicker', path: [[14.6, 10.4], [23.0, 10.4], [23.0, 18.2], [14.6, 18.2]], wait: 1.3 }
+];
+var CHECKPOINTS = [{ x: START.x, z: START.z, face: START.face }, { x: -3.2, z: 4.4, face: Math.PI }, { x: 19.6, z: -11.6, face: Math.PI }];
+
+/* the footprints the rules use: cover, collision and the sight lines (y1 = height). `own` marks a watcher's own perch, which never blocks
+   his view. The office is solid on the ground; on its roof only the roof is walkable. */
+function solids() {
+  var out = [];
+  CONTAINERS.forEach(function (c) { var hx = c[2] === 'x' ? 3.05 : 1.22, hz = c[2] === 'x' ? 1.22 : 3.05; out.push({ x0: c[0] - hx, z0: c[1] - hz, x1: c[0] + hx, z1: c[1] + hz, y1: c[3], kind: 'container' }); });
+  CRATES.forEach(function (c) { out.push({ x0: c[0] - c[2] / 2, z0: c[1] - c[3] / 2, x1: c[0] + c[2] / 2, z1: c[1] + c[3] / 2, y1: 1.1, kind: 'crate' }); });
+  TOWERS.forEach(function (t) { out.push({ x0: t.x - 1.3, z0: t.z - 1.3, x1: t.x + 1.3, z1: t.z + 1.3, y1: t.h + 0.4, kind: 'tower', own: t.id }); });
+  out.push({ x0: OFFICE.x0, z0: OFFICE.z0, x1: OFFICE.x1, z1: OFFICE.z1, y1: OFFICE.h, kind: 'office', own: 'BOSS' });
+  return out;
+}
+
+/* the voxel yard for the view (arena kit boxes, tall fadeable groups, signs and lamps), in the same metres as the rules */
+function build(seed) {
+  var rng = rngMod.createRng(rngMod.hash32(seed ^ 0x57ea1, 7, 11)), K = kit.createBuilder(rng), P = kit.P, x, z, k, y;
+  function at(px, pz, r) { return K.at(px / kit.SX, pz < 0 ? pz / kit.SZ : pz, r); }
+  var o = K.out;
+  /* the ground: dark concrete slabs, oil stains, painted lane lines */
+  at(0, 0, 0);
+  K.b(-30, -0.3, -28, 30, 0, 26, C.CHAR);
+  for (x = -25; x < 25; x += 5) for (z = -23; z < 21; z += 5) K.b(x + 0.04, 0, z + 0.04, x + 4.96, 0.012, z + 4.96, (Math.abs(x * 7 + z * 3) % 3) ? C.DARK : C.GREYP);
+  for (k = 0; k < 40; k++) { var sx = rng.range(-24, 24), sz = rng.range(-22, 20); K.b(sx, 0.013, sz, sx + rng.range(0.5, 1.8), 0.016, sz + rng.range(0.4, 1.4), C.BLACK); }
+  for (z = -20; z < 20; z += 2.4) K.b(-0.1, 0.017, z, 0.1, 0.02, z + 1.2, C.YELLOW);
+  /* the perimeter wall: corrugated sheet on posts, a closed gate in the south */
+  K.tall('wallN'); at(0, -23.8, 0); K.b(-26, 0, -0.3, 26, 3.6, 0.3, C.STEEL); for (x = -26; x < 26; x += 0.6) K.b(x, 0, 0.3, x + 0.2, 3.5, 0.36, C.BLUEGREY); K.end();
+  K.tall('wallW'); at(-25.8, -1.2, 0); K.b(-0.3, 0, -22.8, 0.3, 3.6, 22.8, C.STEEL); for (z = -22.8; z < 22.8; z += 0.6) K.b(0.3, 0, z, 0.36, 3.5, z + 0.2, C.BLUEGREY); K.end();
+  K.tall('wallE'); at(25.8, -1.2, 0); K.b(-0.3, 0, -22.8, 0.3, 3.6, 22.8, C.STEEL); for (z = -22.8; z < 22.8; z += 0.6) K.b(-0.36, 0, z, -0.3, 3.5, z + 0.2, C.BLUEGREY); K.end();
+  K.tall('wallS'); at(0, 21.8, 0); K.b(-26, 0, -0.3, -3, 3.6, 0.3, C.STEEL); K.b(3, 0, -0.3, 26, 3.6, 0.3, C.STEEL);
+  for (x = -3; x < 3; x += 0.25) K.b(x, 0, -0.1, x + 0.08, 3.0, 0.1, C.GREYP); K.b(-3, 2.9, -0.15, 3, 3.1, 0.15, C.GREYP); K.b(-3, 1.4, -0.12, 3, 1.55, 0.12, C.GREYP);
+  K.b(-0.3, 1.1, 0.12, 0.3, 1.5, 0.22, C.BRASS); K.end();
+  /* the containers: ribbed steel boxes, doors at one end, a company name */
+  CONTAINERS.forEach(function (c, i) {
+    var r = c[2] === 'x' ? 0 : 1, H = c[3], col = c[4];
+    K.tall('box' + i); at(c[0], c[1], r);
+    var levels = H > 3 ? 2 : 1;
+    for (var L = 0; L < levels; L++) {
+      var y0 = L * 2.6, cc = L ? (col === C.RUST ? C.BLUE : C.RUST) : col;
+      K.b(-3, y0, -1.2, 3, y0 + 2.58, 1.2, cc);
+      for (x = -2.9; x < 3; x += 0.24) { K.b(x, y0 + 0.06, 1.2, x + 0.09, y0 + 2.5, 1.25, C.DARK); K.b(x, y0 + 0.06, -1.25, x + 0.09, y0 + 2.5, -1.2, C.DARK); }
+      K.b(2.98, y0 + 0.1, -1.1, 3.04, y0 + 2.48, -0.02, C.GREYP); K.b(2.98, y0 + 0.1, 0.02, 3.04, y0 + 2.48, 1.1, C.GREYP);
+      for (k = 0; k < 4; k++) K.b(3.04, y0 + 0.2, -0.95 + k * 0.6, 3.1, y0 + 2.4, -0.88 + k * 0.6, C.STEEL);
+    }
+    if (i % 3 === 0) K.sign(0, 1.7, 1.27, 2.8, 0.42, ['ANTU AUTOMATIC', 'SHAKTI CARGO', 'DESI LINES'][i % 9 / 3 | 0], '#17181b', '#ffb02e');
+    K.end();
+  });
+  /* crates: slatted wooden boxes in stacks */
+  CRATES.forEach(function (c) {
+    at(c[0], c[1], 0); var w = c[2], d = c[3];
+    for (var a = 0; a < Math.round(w / 0.6); a++) for (var b = 0; b < Math.round(d / 0.6); b++) {
+      var u0 = -w / 2 + a * 0.6, v0 = -d / 2 + b * 0.6, hh = (a + b) % 2 ? 1.1 : 0.55;
+      K.b(u0 + 0.02, 0, v0 + 0.02, u0 + 0.58, hh, v0 + 0.58, (a + b) % 3 ? C.WOOD : C.WOOD2);
+      K.b(u0, hh - 0.06, v0, u0 + 0.6, hh, v0 + 0.6, C.WOOD2);
+    }
+    K.b(-w / 2, 0.5, -d / 2 - 0.02, w / 2, 0.58, d / 2 + 0.02, C.WOOD2);
+  });
+  /* the sniper towers: four scaffold legs, braces, a plank deck with a rail and sandbags, a ladder */
+  TOWERS.forEach(function (t) {
+    K.tall(t.id); at(t.x, t.z, 0); var H = t.h;
+    [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]].forEach(function (q) { K.b(q[0] - 0.08, 0, q[1] - 0.08, q[0] + 0.08, H, q[1] + 0.08, C.STEEL); });
+    for (y = 0.8; y < H; y += 1.4) { K.b(-1.1, y, -1.12, 1.1, y + 0.07, -1.04, C.STEEL); K.b(-1.1, y, 1.04, 1.1, y + 0.07, 1.12, C.STEEL); K.b(-1.12, y, -1.1, -1.04, y + 0.07, 1.1, C.STEEL); K.b(1.04, y, -1.1, 1.12, y + 0.07, 1.1, C.STEEL); }
+    K.b(-1.3, H, -1.3, 1.3, H + 0.12, 1.3, C.WOOD);
+    K.b(-1.3, H + 0.12, -1.3, 1.3, H + 0.55, -1.15, C.KHAKI); K.b(-1.3, H + 0.12, 1.15, 1.3, H + 0.55, 1.3, C.KHAKI); K.b(-1.3, H + 0.12, -1.3, -1.15, H + 0.55, 1.3, C.KHAKI); K.b(1.15, H + 0.12, -1.3, 1.3, H + 0.55, 1.3, C.KHAKI);
+    for (y = 0.3; y < H; y += 0.35) K.b(-0.3, y, 1.12, 0.3, y + 0.05, 1.18, C.GREYP);
+    K.end();
+  });
+  /* the site office: a block cabin with a flat roof the head sniper stands on, rails round it, steel stairs up the east side */
+  K.tall('office'); at(0, 0, 0);
+  var O = OFFICE; K.b(O.x0, 0, O.z0, O.x1, O.h - 0.1, O.z1, C.CEMENT); K.b(O.x0 - 0.1, O.h - 0.12, O.z0 - 0.1, O.x1 + 0.1, O.h, O.z1 + 0.1, C.GREYP);
+  K.b(-2.6, 0.9, O.z1, -0.4, 2.0, O.z1 + 0.05, C.SLATE); K.b(0.6, 0, O.z1, 1.8, 2.2, O.z1 + 0.05, C.WOOD2);
+  for (x = O.x0; x <= O.x1 + 0.01; x += 1.0) K.b(x - 0.04, O.h, O.z1 + 0.02, x + 0.04, O.h + 0.95, O.z1 + 0.1, C.YELLOW);
+  K.b(O.x0, O.h + 0.9, O.z1 + 0.02, O.x1, O.h + 0.98, O.z1 + 0.1, C.YELLOW); K.b(O.x0, O.h + 0.9, O.z0 - 0.1, O.x1, O.h + 0.98, O.z0 - 0.02, C.YELLOW);
+  K.b(O.x0 - 0.1, O.h + 0.9, O.z0, O.x0 - 0.02, O.h + 0.98, O.z1, C.YELLOW);
+  K.b(-3.6, O.h, -15.4, -2.4, O.h + 0.5, -15.0, C.KHAKI);                       /* sandbags at the roof's front edge */
+  K.sign(-1.2, 2.5, O.z1 + 0.08, 3.4, 0.5, 'SITE OFFICE', '#ffb02e', '#17181b');
+  var S = STAIRS, n = 12;
+  for (k = 0; k < n; k++) { var u0 = S.x1 - (k + 1) * (S.x1 - S.x0) / n, u1 = S.x1 - k * (S.x1 - S.x0) / n, hy = (k + 1) * S.top / n; K.b(u0, hy - 0.08, S.z0, u1, hy, S.z1, C.STEEL); K.b(u0, 0, S.z1 - 0.06, u0 + 0.08, hy, S.z1, C.GREYP); }
+  K.b(S.x0, S.top + 0.9, S.z1, S.x1, S.top + 0.98, S.z1 + 0.06, C.YELLOW);
+  K.end();
+  /* floodlight masts with their lamps, and a few lit windows of stacked drums and tyres for clutter */
+  LIGHTS.forEach(function (L, i) {
+    var mx = L[0] + (i % 2 ? 1 : -1) * 0.4, mz = L[1] - 0.4; at(mx, mz, 0);
+    K.b(-0.07, 0, -0.07, 0.07, 6.2, 0.07, C.GREYP); K.b(-0.45, 6.2, -0.2, 0.45, 6.55, 0.2, C.DARK); K.g(-0.4, 6.18, -0.16, 0.4, 6.22, 0.16, '#fff3c4');
+    K.lamp(0, 5.8, 0, '#ffe7b0', 2.4, L[2] * 2.1);
+  });
+  at(-24.0, 19.6, 0); P.drum(K, C.CRIMSON); at(-23.2, 20.2, 0); P.drum(K, C.NAVY); at(24.0, -21.6, 0); P.tyres(K, 3); at(-10.2, -21.8, 0); P.drum(K, C.OLIVE);
+  return {
+    key: 'stealth', cx: 0, cz: 0, ox: 0, oz: 0, kind: 'arena', arena: 'stealth',
+    boxes: o.boxes, tall: o.tall.map(function (g) {
+      var b = { x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 };
+      g.boxes.forEach(function (q) { b.x0 = Math.min(b.x0, q.x0); b.y0 = Math.min(b.y0, q.y0); b.z0 = Math.min(b.z0, q.z0); b.x1 = Math.max(b.x1, q.x1); b.y1 = Math.max(b.y1, q.y1); b.z1 = Math.max(b.z1, q.z1); });
+      g.box = b; return g;
+    }), signs: o.signs, glows: o.glows, lamps: o.lamps, leds: o.leds
+  };
+}
+
+module.exports = { BOUNDS: BOUNDS, START: START, CONTAINERS: CONTAINERS, CRATES: CRATES, LIGHTS: LIGHTS, TOWERS: TOWERS, OFFICE: OFFICE, STAIRS: STAIRS,
+  BOSS: BOSS, PATROLS: PATROLS, CHECKPOINTS: CHECKPOINTS, solids: solids, build: build };
 
 };
 defs["view/app"]=function(module,exports,require){
@@ -9852,6 +10396,197 @@ function createStudioStage() {
 }
 
 module.exports = { createStudioStage: createStudioStage };
+
+};
+defs["view/stealthview"]=function(module,exports,require){
+/* view: the stealth stage drawn from sim/stealth's state. The yard (sim/stealthmap's boxes) at night - dark, lit only by its floodlight
+   pools - with the tall pieces fading when they come between the camera and Toofan. The men: Antu's goons on foot (rigs in their gear,
+   a pistol), the two tower snipers and the head sniper (rifles, red bandanas). What they can see is drawn on the ground so it can be
+   read at a glance: a pale fan for each man's view (yellow on foot, red for a sniper), brighter as he grows suspicious; a sniper's red
+   laser sweeps the yard and its dot crawls over the ground; once he is spotted every laser that has him snaps onto his chest. Over a
+   man's head a "?" fills as he grows suspicious and turns into a red "!" when he locks on. A shot is a muzzle flash and a tracer. */
+'use strict';
+
+var herorig = require('./herorig');
+var posemath = require('./posemath');
+var arenaview = require('./arenaview');
+var hideoutview = require('./hideoutview');
+var M = require('../sim/stealthmap');
+
+function fanGeo(half, segs) {
+  var pos = [0, 0, 0], idx = [], i;
+  for (i = 0; i <= segs; i++) { var a = -half + 2 * half * i / segs; pos.push(Math.sin(a), 0, Math.cos(a)); }
+  for (i = 1; i <= segs; i++) idx.push(0, i, i + 1);
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); return g;
+}
+function labelTex(ch, col) {
+  var cv = document.createElement('canvas'); cv.width = cv.height = 64; var g = cv.getContext('2d');
+  g.font = '900 54px "Arial Black",Impact,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 8; g.strokeStyle = '#000'; g.strokeText(ch, 32, 34); g.fillStyle = col; g.fillText(ch, 32, 34);
+  return new THREE.CanvasTexture(cv);
+}
+
+function createStealthView(view, st) {
+  var scene = view.scene, made = [], root = new THREE.Group(); scene.add(root);
+  function keep(x) { made.push(x); return x; }
+  /* the yard */
+  var data = M.build(7), hide = hideoutview.createHideout(view, { boxes: data.boxes, glows: data.glows, leds: data.leds, lamps: data.lamps }, { ambient: 0.42, maxLamps: view.tierId === 'phone' ? 3 : 7 });
+  var av = arenaview.createArenaView(scene, data);
+  var sky = { bg: scene.background.getHex(), fc: scene.fog.color.getHex(), fn: scene.fog.near, ff: scene.fog.far };
+  scene.background.set('#070a14'); scene.fog.color.set('#070a14'); scene.fog.near = 26; scene.fog.far = 70;
+  /* the floodlight pools: warm discs on the ground, so the light reads even where the few real lamps don't reach */
+  var poolMat = keep(new THREE.MeshBasicMaterial({ color: 0xffd68a, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending })), poolGeo = keep(new THREE.CircleGeometry(1, 40));
+  M.LIGHTS.forEach(function (L) {
+    var m = new THREE.Mesh(poolGeo, poolMat); m.rotation.x = -Math.PI / 2; m.position.set(L[0], 0.035, L[1]); m.scale.setScalar(L[2]); root.add(m);
+    var m2 = new THREE.Mesh(poolGeo, poolMat); m2.rotation.x = -Math.PI / 2; m2.position.set(L[0], 0.036, L[1]); m2.scale.setScalar(L[2] * 0.62); root.add(m2);
+  });
+  /* the checkpoints: a chalk mark on the ground */
+  var cpMat = keep(new THREE.MeshBasicMaterial({ color: 0x6cf0a0, transparent: true, opacity: 0.35, depthWrite: false })), cpGeo = keep(new THREE.RingGeometry(0.7, 0.85, 24));
+  var cps = M.CHECKPOINTS.slice(1).map(function (c) { var m = new THREE.Mesh(cpGeo, cpMat.clone()); m.rotation.x = -Math.PI / 2; m.position.set(c.x, 0.04, c.z); root.add(m); return m; });
+
+  /* the men */
+  var gunMat = keep(new THREE.MeshLambertMaterial({ color: 0x23262b })), woodMat = keep(new THREE.MeshLambertMaterial({ color: 0x5a3a20 })), redMat = keep(new THREE.MeshLambertMaterial({ color: 0xc8202a }));
+  function box(parent, w, h, d, x, y, z, mat) { var g = new THREE.BoxGeometry(w, h, d); made.push(g); var m = new THREE.Mesh(g, mat); m.position.set(x, y, z); parent.add(m); return m; }
+  var qTex = keep(labelTex('?', '#ffd21f')), xTex = keep(labelTex('!', '#ff2a1a'));
+  var fanG = { guard: keep(fanGeo(0.8, 16)), sniper: keep(fanGeo(0.24, 6)), boss: keep(fanGeo(0.24, 6)) };
+  var laserGeo = keep(new THREE.CylinderGeometry(0.018, 0.018, 1, 5)); laserGeo.rotateX(Math.PI / 2); laserGeo.translate(0, 0, 0.5);
+  var dotGeo = keep(new THREE.CircleGeometry(0.16, 12));
+  var men = st.watchers.map(function (w) {
+    var variant = w.type === 'guard' ? 'thug:' + w.kind : 'thug', rig = herorig.createHeroRig(variant), muzzle = new THREE.Object3D();
+    if (w.type === 'guard') { var pis = box(rig.parts.R.wrist, 0.05, 0.1, 0.2, 0, -0.1, 0.08, gunMat); pis.add(muzzle); muzzle.position.set(0, 0, 0.12); }
+    else {
+      /* the rifle held across his chest, along his aim; a red bandana; the head sniper is bigger */
+      var rifle = new THREE.Group(); rifle.position.set(0.1, 0.32, 0.18); rig.spine.add(rifle);
+      box(rifle, 0.07, 0.1, 1.15, 0, 0, 0.35, gunMat); box(rifle, 0.08, 0.16, 0.34, 0, -0.04, -0.2, woodMat); box(rifle, 0.05, 0.07, 0.3, 0, 0.09, 0.25, gunMat);
+      rifle.add(muzzle); muzzle.position.set(0, 0, 0.95);
+      box(rig.head, 0.28, 0.07, 0.28, 0, 0.1, 0, redMat); box(rig.head, 0.05, 0.1, 0.06, 0.06, 0.02, -0.16, redMat);
+      if (w.type === 'boss') rig.root.scale.setScalar(1.12);
+    }
+    root.add(rig.root);
+    var fanMat = new THREE.MeshBasicMaterial({ color: w.type === 'guard' ? 0xffe27a : 0xff4a3a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }); made.push(fanMat);
+    var fan = new THREE.Mesh(fanG[w.type], fanMat); fan.position.y = 0.05; root.add(fan);
+    var lmat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }); made.push(lmat);
+    var laser = new THREE.Mesh(laserGeo, lmat); root.add(laser); laser.visible = false;
+    var dot = new THREE.Mesh(dotGeo, lmat); dot.rotation.x = -Math.PI / 2; root.add(dot); dot.visible = false;
+    var sm = new THREE.SpriteMaterial({ map: qTex, depthTest: false, transparent: true }); made.push(sm);
+    var mark = new THREE.Sprite(sm); mark.renderOrder = 20; mark.scale.setScalar(0.7); root.add(mark); mark.visible = false;
+    var baseY = w.type === 'sniper' ? 5.12 : w.type === 'boss' ? M.OFFICE.h : 0;
+    return { w: w, rig: rig, muzzle: muzzle, fan: fan, fanMat: fanMat, laser: laser, dot: dot, mark: mark, sm: sm, cur: posemath.named('stand'), face: w.face, t: Math.random() * 5, y: baseY, ph: 0 };
+  });
+  function manPose(v, dt) {
+    var w = v.w, stand = posemath.named('stand'), out;
+    if (w.st === 'out' || w.st === 'stunned') {
+      var k = w.st === 'out' ? 1 : Math.min(1, w.outT / 0.9);
+      out = posemath.layer(stand, w.st === 'stunned' && w.outT < 0.45 ? { 'spine.rx': -20, 'head.rx': -35, 'armA.sz': 40, 'armB.sz': 40, 'legA.k': 25, 'legB.k': 25 } : posemath.named('down'), k, k, k, k);
+    } else if (w.type !== 'guard') {
+      /* snipers stand aiming down the rifle: both arms forward to it, cheek on the stock */
+      out = posemath.layer(stand, { 'armA.sx': 70, 'armA.sz': 10, 'armA.e': 70, 'armB.sx': 62, 'armB.sz': -8, 'armB.e': 40, 'head.rx': 12, 'head.ry': -8, 'spine.rx': 6, 'legA.hx': 10, 'legB.hx': -12, 'legB.k': 8 }, 1, 1, 1, 1);
+    } else if (w.st === 'lock') {
+      out = posemath.layer(stand, { 'armB.sx': 88, 'armB.e': 0, 'armB.sz': -6, 'armA.sx': 30, 'armA.e': 70, 'head.rx': 4, 'hip.ry': -15, 'spine.ry': 15 }, 1, 1, 1, 1);
+    } else if (w.moving) {
+      v.ph += dt * 6.4; out = posemath.walkPose(v.ph, w.st === 'search' ? 0.7 : 0.8);
+      if (w.st === 'search') out = posemath.layer(out, { 'armB.sx': 60, 'armB.e': 20, 'head.ry': 20 * Math.sin(v.t * 3) }, 0, 1, 0, 1);
+    } else {
+      out = posemath.layer(posemath.idlePose(v.t), { 'head.ry': w.st === 'search' ? 30 * Math.sin(v.t * 2.4) : 0, 'armB.sx': w.st === 'search' ? 50 : 0, 'armB.e': w.st === 'search' ? 30 : 0 }, 0, 1, 0, 1);
+    }
+    posemath.approach(v.cur, out, 14, dt);
+    return v.cur;
+  }
+  var v3 = new THREE.Vector3(), v4 = new THREE.Vector3();
+  /* shots: a muzzle flash and a tracer, gone in a moment */
+  var flashMat = keep(new THREE.MeshBasicMaterial({ color: 0xfff1a8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })), flashGeo = keep(new THREE.SphereGeometry(0.22, 8, 6));
+  var tracerMat = keep(new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })), tracerGeo = keep(new THREE.CylinderGeometry(0.03, 0.03, 1, 5)); tracerGeo.rotateX(Math.PI / 2); tracerGeo.translate(0, 0, 0.5);
+  var shots = [];
+  function shot(id, tx, ty, tz) {
+    var v = men.filter(function (q) { return q.w.id === id; })[0]; if (!v) return;
+    v.muzzle.getWorldPosition(v3);
+    var fl = new THREE.Mesh(flashGeo, flashMat), tr = new THREE.Mesh(tracerGeo, tracerMat);
+    fl.position.copy(v3); tr.position.copy(v3); v4.set(tx, ty, tz); tr.scale.set(1, 1, v3.distanceTo(v4)); tr.lookAt(v4);
+    root.add(fl); root.add(tr); shots.push({ fl: fl, tr: tr, t: 0 });
+  }
+
+  /* Toofan */
+  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face; root.add(hero.root);
+  function heroPose(p, dt) {
+    var stand = posemath.named('stand'), out;
+    if (st.state === 'fail') out = posemath.layer(stand, posemath.named('down'), 1, 1, 1, 1);
+    else if (p.act) {
+      /* the takedown: a step in, his left hand clamps the man's shoulder, the right hand chops down at the neck, twice */
+      var u = p.act.t, chop = Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.25) / 0.35)) * Math.PI)) + Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.62) / 0.3)) * Math.PI)) * 0.8;
+      out = posemath.layer(stand, { 'armA.sx': 80, 'armA.sz': 6, 'armA.e': 40, 'armB.sx': 110 - 70 * chop, 'armB.sz': 12, 'armB.e': 80 - 60 * chop, 'spine.rx': 14 + 8 * chop, 'hip.y': -0.12, 'legA.hx': 24, 'legA.k': 30, 'legB.hx': -16, 'legB.k': 18, 'head.rx': 10 }, 1, 1, 1, 1);
+    } else if (st.state === 'won') out = posemath.layer(stand, { 'armA.sx': 170, 'armA.e': 0, 'armA.sz': 10, 'head.rx': -14, 'armB.sz': 30 }, 1, 1, 1, 1);
+    else if (p.crouch) {
+      /* sneaking: low, knees deep, back bent forward, hands up and ready */
+      var mv = p.moving ? 1 : 0; if (p.moving) hph += dt * 6.2;
+      var s = Math.sin(hph), sk = { 'hip.y': -0.38, 'spine.rx': 26, 'head.rx': -18, 'legA.hx': 62 + 20 * s * mv, 'legA.k': 95 - 15 * s * mv, 'legB.hx': 62 - 20 * s * mv, 'legB.k': 95 + 15 * s * mv,
+        'legA.a': -30, 'legB.a': -30, 'armA.sx': 40 - 15 * s * mv, 'armA.e': 70, 'armA.sz': 10, 'armB.sx': 40 + 15 * s * mv, 'armB.e': 70, 'armB.sz': 10 };
+      out = posemath.layer(stand, sk, 1, 1, 1, 1);
+    } else if (p.moving) { hph += dt * 8.2; out = posemath.walkPose(hph, 1); }
+    else out = posemath.idlePose(ht);
+    if (p.flash > 0.5) out = posemath.layer(out, { 'spine.rx': -18, 'head.rx': -20, 'armA.sz': 30, 'armB.sz': 30 }, 1, 1, 1, 1);
+    posemath.approach(cur, out, 16, dt);
+    return cur;
+  }
+
+  return {
+    hero: hero,
+    sync: function (alpha, dt) {
+      var p = st.player, x = p.px + (p.x - p.px) * alpha, z = p.pz + (p.z - p.pz) * alpha; ht += dt;
+      heroFace += Math.atan2(Math.sin(p.face - heroFace), Math.cos(p.face - heroFace)) * (1 - Math.exp(-14 * dt));
+      hero.root.position.set(x, p.y, z); hero.root.rotation.y = heroFace; hero.applyPose(heroPose(p, dt), { plant: true }); hero.flutter(ht, p.moving ? 0.6 : 0);
+      men.forEach(function (v) {
+        var w = v.w; v.t += dt;
+        var wx = w.px + (w.x - w.px) * alpha, wz = w.pz + (w.z - w.pz) * alpha;
+        v.face += Math.atan2(Math.sin(w.face - v.face), Math.cos(w.face - v.face)) * (1 - Math.exp(-12 * dt));
+        v.rig.root.position.set(wx, v.y, wz); v.rig.root.rotation.y = v.face; v.rig.applyPose(manPose(v, dt), { plant: true });
+        var down = w.st === 'out' || w.st === 'stunned';
+        /* the view fan on the ground (for a sniper it starts at the foot of his tower) */
+        v.fan.visible = !down && st.state !== 'won';
+        if (v.fan.visible) {
+          var reach = w.type === 'guard' ? 6.5 : w.type === 'boss' && w.glance < 0 ? 8 : w.range * 0.8;
+          v.fan.position.set(wx, (w.type === 'boss' && w.glance < 0 ? M.OFFICE.h : 0) + 0.05, wz); v.fan.rotation.y = v.face; v.fan.scale.set(reach, 1, reach);
+          var hot = w.st === 'lock' ? 1 : w.sus;
+          v.fanMat.opacity = 0.07 + 0.16 * hot + (w.st === 'lock' ? 0.06 * Math.sin(v.t * 18) : 0);
+          v.fanMat.color.setHex(w.st === 'lock' ? 0xff2a1a : w.type === 'guard' ? (hot > 0.3 ? 0xffa21a : 0xffe27a) : 0xff4a3a);
+        }
+        /* the laser: snipers always (sweeping), a man on foot only once he has drawn on him */
+        var lz = !down && st.state !== 'won' && (w.type !== 'guard' || w.st === 'lock');
+        v.laser.visible = lz; v.dot.visible = lz;
+        if (lz) {
+          v.rig.root.updateMatrixWorld(true); v.muzzle.getWorldPosition(v3);
+          if (w.st === 'lock' && w.aim) v4.set(w.aim.x, w.aim.y + p.y * 0, w.aim.z);
+          else { var reach2 = w.type === 'guard' ? 6 : w.range * 0.78; v4.set(wx + Math.sin(v.face) * reach2, w.type === 'boss' ? 0.02 : 0.02, wz + Math.cos(v.face) * reach2); }
+          if (w.st === 'lock') v4.y = (p.up ? p.y : 0) + (p.crouch ? 0.85 : 1.3);
+          v.laser.position.copy(v3); v.laser.scale.set(w.st === 'lock' ? 1.6 : 1, w.st === 'lock' ? 1.6 : 1, v3.distanceTo(v4)); v.laser.lookAt(v4);
+          v.laser.material.opacity = w.st === 'lock' ? 0.85 + 0.15 * Math.sin(v.t * 30) : 0.55;
+          v.dot.position.set(v4.x, w.st === 'lock' ? v4.y : 0.045, v4.z); v.dot.rotation.x = w.st === 'lock' ? 0 : -Math.PI / 2; if (w.st === 'lock') v.dot.lookAt(v3);
+        }
+        /* ? and ! over his head */
+        var show = !down && (w.st === 'lock' || w.sus > 0.05 || w.st === 'search');
+        v.mark.visible = show && st.state === 'play';
+        if (v.mark.visible) {
+          var lock = w.st === 'lock'; v.sm.map = lock ? xTex : qTex; v.mark.position.set(wx, v.y + 2.5 * (w.type === 'boss' ? 1.12 : 1), wz);
+          v.mark.scale.setScalar(lock ? 0.85 + 0.1 * Math.sin(v.t * 20) : 0.4 + 0.4 * Math.max(w.sus, w.st === 'search' ? 0.6 : 0)); v.sm.opacity = lock ? 1 : 0.5 + 0.5 * w.sus;
+        }
+      });
+      cps.forEach(function (m, i) { m.material.opacity = st.checkpoint > i ? 0.12 : 0.3 + 0.12 * Math.sin(ht * 3 + i); });
+      for (var i = shots.length - 1; i >= 0; i--) {
+        var s = shots[i]; s.t += dt; s.fl.scale.setScalar(1 + s.t * 8); s.fl.material.opacity = Math.max(0, 1 - s.t / 0.12); s.tr.material.opacity = Math.max(0, 1 - s.t / 0.14);
+        if (s.t > 0.16) { root.remove(s.fl); root.remove(s.tr); shots.splice(i, 1); }
+      }
+      hide.update(ht);
+    },
+    shot: shot,
+    /* fade whatever stands between the camera and him */
+    fade: function (camera, dt) { var p = st.player, lo = p.up ? 1.9 : 1.0; av.fade(camera, [new THREE.Vector3(p.x, p.y + lo, p.z), new THREE.Vector3(p.x, p.y + lo + 0.7, p.z)], dt); },   /* (on the roof, aim above its rail so the office doesn't fade under him) */
+    dispose: function () {
+      scene.remove(root); hide.dispose(); av.dispose(); made.forEach(function (m) { m.dispose && m.dispose(); });
+      scene.background.setHex(sky.bg); scene.fog.color.setHex(sky.fc); scene.fog.near = sky.fn; scene.fog.far = sky.ff;
+    }
+  };
+}
+
+module.exports = { createStealthView: createStealthView };
 
 };
 defs["view/studioui"]=function(module,exports,require){

@@ -107,11 +107,13 @@ function createTitle() {
           (cont ? '<div style="margin-top:10px;font-size:12px;letter-spacing:.2em;color:#ffd21f;text-shadow:2px 2px 0 #000">CLEARED ' + cleared + ' / 10  \u00b7  TAKA: ?</div>' : '') + '</div>' +
           '<div style="pointer-events:auto">' +
           (cont ? '<button id="tCont" data-ok="1" style="' + BTN + ';background:#ffd21f;color:#000">CONTINUE</button>' : '') +
-          '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button></div>';
+          '<button id="tNew" data-ok="1" style="' + BTN + ';background:' + (cont ? '#fff' : '#ffd21f') + ';color:#000">NEW GAME</button>' +
+          '<button id="tStealth" data-ok="1" style="' + BTN + ';background:rgba(0,0,0,.55);color:#ffd21f;border-color:#ffd21f;font-size:.82em">DEMO: STEALTH</button></div>';
         document.body.appendChild(el); scope.add(function () { el.remove(); });
         setTimeout(function () { el.style.opacity = 1; }, 1600);
         var nb = el.querySelector('#tNew'), cb = el.querySelector('#tCont');
         nb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.save.set('ride.missions', null); ctx.save.set('ride.pos', null); ctx.ride = null; ctx.go('wake', { next: 'hideout' }); });
+        el.querySelector('#tStealth').addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('stealth'); });
         if (cb) cb.addEventListener('click', function () { S.sfx.wake(); bigScreen(); ctx.go('ride'); });
       }
     },

@@ -1,0 +1,120 @@
+/* modes: the stealth stage demo (from the title menu, or #stealth). Antu's container yard at night: get to the head sniper on the site
+   office roof and take him down, unseen. The rules are sim/stealth's; this draws them (view/stealthview), follows Toofan with a high
+   camera from the south so the men's view fans and the snipers' lasers can be read, and keeps the screen talk short:
+     top        HIDDEN / SUSPICIOUS / SPOTTED, with how close they are to seeing him; his two hits
+     bottom     STUN when a man is within reach from behind (the Attack button), CROUCH on the Block button
+     middle     the brief at the start, CHECKPOINT, the shot, back to the checkpoint, and STAGE CLEAR with play-again / title */
+'use strict';
+
+var ST = require('../sim/stealth');
+var M = require('../sim/stealthmap');
+var svMod = require('../view/stealthview');
+var sfxmod = require('../view/sfx');
+var musicMod = require('../view/music');
+
+var FONT = "'ToofanPx',monospace";
+
+function createStealth() {
+  var S = {};
+  function el(css, html, parent) { var d = document.createElement('div'); d.setAttribute('data-ok', '1'); d.style.cssText = css; d.innerHTML = html || ''; (parent || document.body).appendChild(d); return d; }
+  function say(text, col, secs) {
+    var m = S.msg; m.textContent = text; m.style.color = col || '#fff'; m.style.opacity = '1'; m.style.transform = 'translate(-50%,-50%) scale(1)';
+    clearTimeout(S.msgT); S.msgT = setTimeout(function () { m.style.opacity = '0'; m.style.transform = 'translate(-50%,-50%) scale(.9)'; }, (secs || 1.6) * 1000);
+  }
+  /* small sounds made here: the lock-on beep and the rifle crack */
+  function beep(f, d, v) { var A = S.sfx.audio(); if (!A) return; var t = A.ac.currentTime, o = A.ac.createOscillator(), g = A.ac.createGain(); o.type = 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v || 0.06, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(g); g.connect(A.out); o.start(t); o.stop(t + d + 0.02); }
+  function crack(far) {
+    var A = S.sfx.audio(); if (!A) return; var ac = A.ac, t = ac.currentTime, n = Math.floor(ac.sampleRate * 0.5), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0), i;
+    for (i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * (0.012 + 0.06 * (i > ac.sampleRate * 0.03 ? 1 : 0))));
+    var src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); src.buffer = b; f.type = 'lowpass'; f.frequency.value = far ? 2400 : 5200; g.gain.value = far ? 0.5 : 0.8;
+    src.connect(f); f.connect(g); g.connect(A.out); src.start(t);
+  }
+  return {
+    name: 'stealth',
+    enter: function (ctx, scope) {
+      var view = ctx.view, st = S.st = ST.create({ bus: { emit: function (n, d) { S.ev.push([n, d]); } } });
+      S.ev = []; S.t = 0; S.last = ctx.now(); S.cam = null; S.shake = 0; S.lockBeep = 0; ctx.debug.stealth = S;
+      ctx.hudRoot.hidden = true; ctx.touchRoot.hidden = false; ctx.touch.setFinisherVisible(false);
+      S.sv = svMod.createStealthView(view, st); scope.add(function () { S.sv.dispose(); ctx.debug.stealth = null; });
+      var off = view.onFrame(function (camera, dt) { S.sv.fade(camera, dt); }); scope.add(off);
+      S.sfx = sfxmod.createSfx(); S.music = musicMod.createMusic(S.sfx); S.music.setTrack('night');
+      /* the screen */
+      var ui = S.ui = el('position:fixed;inset:0;z-index:30;pointer-events:none;font-family:' + FONT + ';color:#fff;letter-spacing:.08em');
+      scope.add(function () { ui.remove(); clearTimeout(S.msgT); });
+      S.state = el('position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);padding:7px 12px 9px;background:rgba(0,0,0,.6);border:2px solid #222;font-size:13px;text-align:center;min-width:150px', '', ui);
+      S.hits = el('position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));padding:7px 10px;background:rgba(0,0,0,.6);font-size:13px', '', ui);
+      S.prompt = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 150px);right:max(22px,env(safe-area-inset-right));padding:6px 10px;background:#ffd21f;color:#000;font-size:14px;border:2px solid #000;box-shadow:3px 3px 0 #000;display:none', 'STUN ▼', ui);
+      S.crouchTag = el('position:absolute;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 92px);right:calc(max(22px,env(safe-area-inset-right)) + 100px);padding:4px 8px;background:rgba(0,0,0,.6);font-size:11px', 'CROUCH', ui);
+      S.msg = el('position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);font-size:clamp(18px,5vw,30px);text-align:center;text-shadow:3px 3px 0 #000,-1px -1px 0 #000;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap', '', ui);
+      S.red = el('position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(255,0,0,0) 40%,rgba(255,0,0,.55) 100%);opacity:0', '', ui);
+      /* the brief: tap to start */
+      var brief = S.brief = el('position:fixed;inset:0;z-index:46;display:flex;align-items:center;justify-content:center;background:rgba(3,5,10,.72);font-family:' + FONT + ';color:#fff;padding:16px;cursor:pointer;touch-action:manipulation',
+        '<div style="max-width:420px;background:#0d1018;border:3px solid #ffd21f;box-shadow:6px 6px 0 #000;padding:18px 18px 16px;font-size:12px;line-height:1.75;letter-spacing:.06em">' +
+        '<div style="font-size:18px;color:#ffd21f;margin-bottom:8px">ANTU KA GODAM · NIGHT</div>' +
+        'GET TO THE HEAD SNIPER ON THE SITE OFFICE ROOF AND TAKE HIM DOWN.<br><br>' +
+        '· STAY IN THE DARK. LIGHT GIVES YOU AWAY.<br>· <b style="color:#ffd21f">BLOCK</b> = CROUCH. CRATES HIDE YOU FROM MEN ON FOOT, NOT FROM SNIPERS.<br>' +
+        '· A RED LASER ON YOU = SPOTTED. GET BEHIND A CONTAINER, FAST.<br>· <b style="color:#ffd21f">ATTACK</b> FROM BEHIND = STUN.<br>· THE STAIRS ARE ON THE OFFICE\'S EAST SIDE.' +
+        '<div style="margin-top:14px;text-align:center;color:#ffd21f">[ TAP TO START ]</div></div>');
+      S.paused = true;
+      brief.addEventListener('pointerdown', function () { S.sfx.wake(); brief.remove(); S.paused = false; });
+      scope.add(function () { brief.remove(); if (S.endCard) S.endCard.remove(); });
+      ctx.input.reset();
+    },
+    step: function (ctx, tick) {
+      ctx.input.tick(tick);
+      if (S.paused) return;
+      ST.step(S.st, ctx.input);
+    },
+    render: function (ctx, alpha) {
+      var view = ctx.view, st = S.st, p = st.player, now = ctx.now(), dt = Math.min(0.1, Math.max(0.001, (now - S.last) / 1000)); S.last = now; S.t += dt;
+      /* what happened since the last frame */
+      S.ev.splice(0).forEach(function (e) {
+        var n = e[0], d = e[1];
+        if (n === 'st:spotted') { say(d.type === 'guard' ? 'SPOTTED!' : 'SNIPER!', '#ff3a2a', 1.0); beep(1400, 0.08, 0.08); }
+        else if (n === 'st:shot') { S.sv.shot(d.id, d.tx, d.ty, d.tz); crack(Math.hypot(d.x - d.tx, d.z - d.tz) > 12); S.shake = 0.35; S.red.style.transition = 'none'; S.red.style.opacity = '1'; setTimeout(function () { S.red.style.transition = 'opacity .6s'; S.red.style.opacity = '0'; }, 60); if (d.hits < 2) say('HIT!', '#ff3a2a', 0.9); }
+        else if (n === 'st:down') { say('SHOT DOWN · BACK TO CHECKPOINT', '#ff3a2a', 2.1); S.sfx.fall(); }
+        else if (n === 'st:checkpoint') { say('CHECKPOINT', '#6cf0a0', 1.4); beep(880, 0.1, 0.05); setTimeout(function () { beep(1320, 0.12, 0.05); }, 110); }
+        else if (n === 'st:takedown') { S.sfx.whoosh(0.4); setTimeout(function () { S.sfx.hit('elbow', 0.5); }, 330); setTimeout(function () { S.sfx.hit('jab', 0.4); }, 650); }
+        else if (n === 'st:out') { S.sfx.fall(); }
+        else if (n === 'st:heard') beep(520, 0.12, 0.04);
+        else if (n === 'st:lost') beep(300, 0.18, 0.04);
+        else if (n === 'st:won') { S.music.setTrack('menu'); setTimeout(function () { endCard(ctx, d); }, 1300); say('HEAD SNIPER DOWN', '#ffd21f', 2.5); }
+      });
+      /* the lock-on beeps quicken as the shot nears */
+      var lk = 0; st.watchers.forEach(function (w) { if (w.st === 'lock') lk = Math.max(lk, w.lockT / ST.LOCK); });
+      if (lk > 0 && st.state === 'play') { S.lockBeep -= dt; if (S.lockBeep <= 0) { beep(1900, 0.05, 0.05); S.lockBeep = 0.22 - 0.16 * lk; } } else S.lockBeep = 0;
+      S.sv.sync(alpha, dt);
+      /* the screen talk */
+      var seen = p.seen, lab = lk > 0 ? 'SPOTTED' : seen > 0.05 ? 'SUSPICIOUS' : 'HIDDEN', col = lk > 0 ? '#ff3a2a' : seen > 0.05 ? '#ffd21f' : (p.light > 0.6 ? '#ffe9b0' : '#8fb0c8');
+      var bar = Math.round((lk > 0 ? 1 : seen) * 10), shade = p.light > 0.6 ? 'IN LIGHT' : 'IN SHADOW';
+      var html = '<div style="color:' + col + '">' + lab + '</div><div style="font-size:9px;color:#9aa;margin-top:3px">' + shade + (p.crouch ? ' · CROUCHED' : '') + '</div>' +
+        '<div style="margin-top:5px;height:5px;background:#222"><div style="height:5px;width:' + bar * 10 + '%;background:' + col + '"></div></div>';
+      if (html !== S.lastHtml) { S.state.innerHTML = html; S.lastHtml = html; }
+      var hh = 'LIFE ' + (p.hits >= 1 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>') + (p.hits >= 2 ? '<span style="color:#444">■</span>' : '<span style="color:#ff3a2a">■</span>');
+      if (hh !== S.lastHits) { S.hits.innerHTML = hh; S.lastHits = hh; }
+      var narrow = window.innerWidth < 560; if (narrow !== S.narrow) { S.narrow = narrow; S.state.style.top = narrow ? 'calc(max(14px,env(safe-area-inset-top)) + 42px)' : 'max(14px,env(safe-area-inset-top))'; }
+      S.prompt.style.display = ST.prompt(st) ? 'block' : 'none';
+      S.crouchTag.textContent = p.crouch ? 'CROUCHING' : 'CROUCH'; S.crouchTag.style.color = p.crouch ? '#ffd21f' : '#fff';
+      /* the camera: high and from the south, a little ahead of where he's going; higher on a tall phone screen */
+      var tall = window.innerHeight > window.innerWidth, H = tall ? 17 : 14.5, B = tall ? 9.5 : 10;
+      var want = { x: p.x, y: p.y + H, z: p.z + B, lx: p.x, ly: p.y + 0.4, lz: p.z - (tall ? 2.2 : 1.6), fov: tall ? 56 : 52 };
+      if (!S.cam) S.cam = want; else { var k = 1 - Math.exp(-5 * dt); for (var q in want) S.cam[q] += (want[q] - S.cam[q]) * k; }
+      var shot = { x: S.cam.x, y: S.cam.y, z: S.cam.z, lx: S.cam.lx, ly: S.cam.ly, lz: S.cam.lz, fov: S.cam.fov };
+      if (S.shake > 0) { S.shake -= dt; var a = S.shake * 0.6; shot.x += Math.sin(S.t * 90) * a; shot.y += Math.sin(S.t * 77) * a; }
+      view.followCamera(p.x, p.z, shot);
+      view.render();
+    },
+    exit: function () {}
+  };
+  function endCard(ctx, d) {
+    var BTN = 'display:block;width:100%;margin:10px 0 0;padding:11px;border:2px solid #000;box-shadow:3px 3px 0 #000;font-family:' + FONT + ';font-size:13px;letter-spacing:.1em;cursor:pointer;touch-action:manipulation';
+    S.endCard = el('position:fixed;inset:0;z-index:46;display:flex;align-items:center;justify-content:center;background:rgba(3,5,10,.6);font-family:' + FONT + ';color:#fff;padding:16px',
+      '<div style="width:min(340px,100%);background:#0d1018;border:3px solid #ffd21f;box-shadow:6px 6px 0 #000;padding:18px;text-align:center;font-size:12px;line-height:1.8">' +
+      '<div style="font-size:20px;color:#ffd21f">STAGE CLEAR</div>MEN KNOCKED OUT: ' + d.stunned + '<br>TIMES SPOTTED: ' + d.alarms +
+      '<button id="stAgain" style="' + BTN + ';background:#ffd21f;color:#000">PLAY AGAIN</button><button id="stTitle" style="' + BTN + ';background:#fff;color:#000">TITLE</button></div>');
+    S.endCard.querySelector('#stAgain').addEventListener('click', function () { ctx.go('stealth'); });
+    S.endCard.querySelector('#stTitle').addEventListener('click', function () { ctx.go('title', { menu: true }); });
+  }
+}
+
+module.exports = { createStealth: createStealth };
