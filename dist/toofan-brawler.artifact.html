@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 86',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 87',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -8323,11 +8323,12 @@ defs["view/music"]=function(module,exports,require){
      ride    - lighter cruising groove, vocal every 16 bars    road    - fast and heavy for the road fights, vocal chops
      arena   - the heaviest riff for the fight areas            boss    - arena at full tilt with the lead and chops
      hideout - laid-back clean guitar                           thappad - dreamy pad and bells
-     jam     - the hideout's music corner: the full band WITH Ravi's vocal (the only track that sings)
+     jam     - the hideout's music corner: the full band WITH Ravi's vocal
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
-     dance:<gang> - Toofan's own beat in his earbuds in a brawl, one per gang's stages, each at its own faster tempo: b-boy break
-               (Raju, 138), electro (Antu, 134), headbang rock (Kalia, 146), bhangra dhol with tumbi (Bhairav, 140), rolling break (Teja, 160)
+     dance:<gang> - the brawl songs in Toofan's earbuds, tech-rock grunge, one per gang's pair of stages (SONGS below): Lootera (Kalia,
+               sludge, sung), Nitro (Raju, tech-rock gallop, sung), Automatic (Antu, industrial, 134), Kalari (Bhairav, dhol grunge, 140),
+               Talwar (Teja, grunge-punk, 160)
      sting   - a two-bar victory hit, then back to the track it interrupted
    Bars are scheduled a little ahead on the audio clock, so the beat stays tight when the frame rate drops. Music can be switched off on its
    own (the effects stay on); the setting is kept. */
@@ -8348,12 +8349,53 @@ var BREAK = ['K', '', '', 'K', 'S', '', 'K', '', '', 'K', 'K', '', 'S', '', '', 
 var CRUISE = ['K', '', 't', '', 'S', '', 't', 'K', '', 'K', 't', '', 'S', '', 't', ''];             /* the ride's second groove */
 /* Toofan's own dance beat, in his earbuds once a brawl starts: a b-boy breakbeat, no guitar, a funky sub bass and a bright lead */
 var BBOY = ['K', '', '', 'K', 'S', '', '', 'K', '', 'K', 'K', '', 'S', '', 't', 'K'];
-/* his dance beats for each gang's stage, each at its own tempo, each matched to the moves he does to it */
-var ELECTRO = ['K', '', 't', '', 'S', '', 't', 'K', 'K', '', 't', '', 'S', 't', 't', ''];       /* Antu's stages: electro for the robot */
-var BANG = ['K', '', 'K', '', 'S', '', 'K', 'K', '', 'K', 'K', '', 'S', '', 'K', ''];          /* Kalia's: a heavy headbang groove */
-var BHANGRA = ['T', '', 't', 'T', 'S', 't', 'T', '', 'T', 't', 'T', '', 'S', 't', 'T', 'K'];   /* Bhairav's: the dhol's bhangra chaal */
-var RUN = ['K', '', 'S', '', 't', 'K', 'S', '', 'K', 't', 'S', 'K', 't', '', 'S', 't'];        /* Teja's: a fast rolling break for the running man */
-var TEMPO = { 'dance:antu': 134, 'dance:kalia': 146, 'dance:bhairav': 140, 'dance:teja': 160, 'dance:raju': 138, dance: 138 };
+/* THE BRAWL SONGS: Toofan's own tech-rock grunge in his earbuds once a brawl starts, one song for each gang's pair of stages. Each has
+   its own key, chord loop, riff, lead line and tempo, so no two stages sound alike. The two at 128 BPM in E minor (Kalia's, Raju's) carry
+   Ravi's sung hook, which was recorded at that tempo in that key; the other three are instrumental until he records for them.
+   A riff is 16 steps: '.' rest, a number = a palm-muted power chord that many semitones above the bar's root, 'N~' = an open chord ringing
+   to the next hit, 'Nx' = a short open stab. */
+var GRIND = ['K', '', 'K', '', 'S', '', 'K', 't', 'K', 'K', '', 't', 'S', '', 'K', 't'];     /* industrial grind */
+var DRIVE = ['K', '', 't', 'K', 'S', '', 't', 'K', '', 'K', 't', '', 'S', 't', 'K', 't'];    /* tech-rock drive */
+var PUNK = ['K', '', 'S', '', 'K', '', 'S', '', 'K', '', 'S', '', 'K', 'K', 'S', ''];         /* fast grunge-punk two-step */
+var BHANGRA = ['T', '', 't', 'T', 'S', 't', 'T', '', 'T', 't', 'T', '', 'S', 't', 'T', 'K']; /* the dhol's bhangra chaal */
+var STOMPG = ['K', '', '', 'K', 'S', '', '', '', 'K', '', 'K', '', 'S', '', '', 't'];        /* a slow sludge stomp */
+var SONGS = {
+  /* Kalia's market and slum: "LOOTERA" - sludgy grunge, quiet verse under the vocal, then the fuzz wall; for the headbang */
+  kalia: { bpm: 128, roots: [40, 43, 45, 38], riff: '0~ . . . . . 3~ . . . 5x . 3x . 0~ .', verse: '0~ . . . . . . . 0~ . . . . . . .',
+    lead: [64, 0, 67, 0, 69, 0, 67, 64], hold: [74, 71, 76, 71], arp: [64, 67, 71, 74, 71, 67, 64, 59], vox: true,
+    bar: function (m) {
+      if (m < 2) return { drums: m ? STOMPG : null, gtr: 'riff', bass: 'dist', crash: m === 0, hats: 8 };
+      if (m < 10) return { drums: STOMPG, gtr: 'verse', bass: 'dist', hats: 8, vox: m % 2 === 0 ? (m - 2) / 2 : null, vol: 0.95 };   /* the quiet verse: the vocal */
+      return { drums: m < 14 ? DOUBLE : DRIVE, gtr: 'riff', bass: 'dist', hats: 16, lead: m % 2 === 1, fill: m === 15, crash: m % 2 === 0, vol: 1.08 }; } },
+  /* Rocket Raju's flyover and bus stand: "NITRO" - tech-rock, a palm-muted gallop, a synth arpeggio, vocal chops then the full hook */
+  raju: { bpm: 128, roots: [40, 43, 45, 38], riff: '0 . 0 0 . 0 0 . 0 . 0 0 5~ . 3~ .', lead: [71, 69, 67, 69, 71, 74, 71, 69], hold: [76, 79, 78, 74],
+    arp: [64, 67, 71, 76, 71, 67, 64, 71], vox: true,
+    bar: function (m) {
+      if (m < 2) return { drums: m ? DRIVE : null, arp: true, bass: 'saw', crash: m === 0, hats: 16 };
+      if (m < 8) return { drums: DRIVE, gtr: 'riff', bass: 'saw', hats: 16, arp: m >= 4, chop: m % 2 === 0 ? (m >> 1) % 4 : null, crash: m === 2 };
+      return { drums: DRIVE, gtr: 'riff', bass: 'dist', hats: 16, arp: true, lead: m >= 12 && m % 2 === 1, vox: m < 12 && m % 2 === 0 ? (m - 8) / 2 : null, fill: m === 15, crash: m % 4 === 0 }; } },
+  /* Antu's construction site and warehouse: "AUTOMATIC" - industrial tech-metal in D, a machine-gun chug with a tritone, gated synth stabs */
+  antu: { bpm: 134, roots: [38, 38, 41, 36], riff: '0 0 0 . 0 0 0 . 0 0 1 . 0 . 6~ .', lead: [62, 65, 69, 65, 62, 65, 67, 65], hold: [74, 72, 77, 72],
+    arp: [62, 65, 69, 72, 69, 65, 62, 57],
+    bar: function (m) {
+      if (m < 2) return { drums: m ? GRIND : null, stab: true, bass: 'saw', arp: true, crash: m === 0 };
+      return { drums: GRIND, gtr: 'riff', bass: 'dist', hats: 16, stab: m % 2 === 0, arp: m >= 8, lead: m >= 12 && m % 2 === 1, fill: m % 8 === 7, crash: m % 4 === 0 }; } },
+  /* Bhairav's temple and railway crossing: "KALARI" - dhol grunge in A Phrygian, fuzz riff on the tom chaal, a tumbi line, an eastern lead */
+  bhairav: { bpm: 140, roots: [45, 45, 46, 45], riff: '0~ . . 0 . 1 0 . 0~ . . 0 . 3 1 .', lead: [69, 70, 73, 74, 73, 70, 69, 0], hold: [76, 74, 77, 76],
+    arp: [57, 58, 61, 64, 61, 58, 57, 52],
+    bar: function (m) {
+      if (m < 2) return { drums: BHANGRA, tumbi: true, bass: 'sub', crash: m === 0 };
+      return { drums: BHANGRA, gtr: 'riff', bass: m < 8 ? 'sub' : 'dist', hats: 8, tumbi: true, lead: m >= 6 && m % 2 === 1, fill: m % 8 === 7, crash: m % 4 === 0 }; } },
+  /* Teja's petrol pump and toll plaza: "TALWAR" - fast grunge-punk in F sharp minor, open chords hammered on every eighth */
+  teja: { bpm: 160, roots: [42, 42, 38, 40], riff: '0x . 0x . 0x . 0x . 0x . 0x . 0x 0x 2x .', lead: [66, 69, 71, 73, 71, 69, 66, 64], hold: [78, 76, 81, 78],
+    arp: [66, 69, 73, 78, 73, 69, 66, 61],
+    bar: function (m) {
+      if (m < 2) return { drums: m ? PUNK : null, gtr: 'riff', bass: 'dist', crash: true };
+      return { drums: m % 8 < 6 ? PUNK : BLAST, gtr: 'riff', bass: 'dist', hats: 8, lead: m >= 4 && m % 2 === 1, arp: m >= 10, fill: m % 8 === 7, crash: m % 2 === 0, vol: 1.05 }; } }
+};
+function parseRiff(str) { return str.split(/\s+/).map(function (t) { if (t === '.') return null; return { off: parseInt(t, 10), ring: t.indexOf('~') > 0, stab: t.indexOf('x') > 0 }; }); }
+var TEMPO = { dance: 128 };
+Object.keys(SONGS).forEach(function (g) { var S = SONGS[g]; S.R = parseRiff(S.riff); S.V = S.verse ? parseRiff(S.verse) : null; TEMPO['dance:' + g] = S.bpm; });
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -8384,11 +8426,11 @@ var TRACKS = {
   'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
   'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
   dance: function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, fill: m === 7, crash: m === 0, vol: 1.0 }; },
-  'dance:raju': function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, stab: m % 2 === 0, fill: m === 7, crash: m === 0 }; },
-  'dance:antu': function (n) { var m = n % 8; return { drums: ELECTRO, hats: 16, bass: 'saw', arp: true, stab: m >= 4, fill: m === 7, crash: m === 0 }; },
-  'dance:kalia': function (n) { var m = n % 8; return { drums: m < 6 ? BANG : DOUBLE, hats: 8, gtr: m % 2 ? 'chug' : 'riff', bass: 'dist', lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m % 2 === 0, vol: 1.05 }; },
-  'dance:bhairav': function (n) { var m = n % 8; return { drums: BHANGRA, hats: 8, bass: 'sub', tumbi: true, lead: m >= 4 && m % 2 === 1, fill: m === 7, crash: m === 0 }; },
-  'dance:teja': function (n) { var m = n % 8; return { drums: RUN, hats: 16, bass: 'saw', arp: m >= 2, stab: m % 2 === 1, fill: m === 7, crash: m % 4 === 0 }; },
+  'dance:kalia': function (n) { return SONGS.kalia.bar(n % 16); },
+  'dance:raju': function (n) { return SONGS.raju.bar(n % 16); },
+  'dance:antu': function (n) { return SONGS.antu.bar(n % 16); },
+  'dance:bhairav': function (n) { return SONGS.bhairav.bar(n % 16); },
+  'dance:teja': function (n) { return SONGS.teja.bar(n % 16); },
   'arena:raju': function (n) { var m = n % 8; return { drums: BREAK, hats: 16, gtr: m % 2 ? 'chug' : 'riff', bass: 'saw', lead: m >= 4, fill: m === 7, crash: m === 0 || m === 4 }; },
   thappad: function (n) { var m = n % 8; return { pad: true, bell: true, vox: m === 4 ? 3 : null, voxSoft: true, vol: 0.8 }; },
   night: function (n) { return { pad: true, drums: n >= 1 ? HEART : null, vol: 0.55 }; },
@@ -8480,7 +8522,8 @@ function createMusic(sfx) {
   }
   function scheduleBar(t, n) {
     SPB = 60 / (TEMPO[track] || BPM); STEP = SPB / 4; BAR = SPB * 4; marks.push({ t: t, n: n, spb: SPB }); if (marks.length > 12) marks.shift();   /* (each track its own tempo, from its bar line) */
-    var name = track, P = TRACKS[name](n - (startBar[name] || 0)), root = ROOTS[n % 4], i;
+    var name = track, P = TRACKS[name](n - (startBar[name] || 0)), SG = name.indexOf('dance:') === 0 ? SONGS[name.slice(6)] : null, root = (SG ? SG.roots : ROOTS)[n % 4], i;
+    var LD = SG ? SG.lead : LEAD, AR = SG ? SG.arp : ARP, RF = SG ? (P.gtr === 'verse' ? SG.V : SG.R) : null;
     if (P.sting !== undefined) {
       if (P.sting === 0) { kick(t, true); crash(t); chord(t, 40, BAR * 0.9, true); lead(t, 76, BAR * 1.6, 0.09); }
       else { [0, 3, 6].forEach(function (s, k) { kick(t + s * STEP, true); chord(t + s * STEP, [40, 43, 45][k], STEP * 2.5, true); }); crash(t + 8 * STEP); chord(t + 8 * STEP, 40, BAR * 0.5, true); if (after) switchTo(after, true); }
@@ -8493,21 +8536,28 @@ function createMusic(sfx) {
       if (!D && P.kickOnly && i % 4 === 0) kick(s);
       if (P.fill && i >= 12) tom(s + STEP * 0.5, 140 - (i - 12) * 15);
       if (P.hats === 16 || (P.hats === 8 && i % 2 === 0)) hat(s, i % 8 === 6);
-      if (P.gtr === 'riff') { if (i === 0 || i === 10) chord(s, root, i === 0 ? STEP * 6 : STEP * 5, true); else if (i % 2 === 0 && i !== 12) chord(s, root, STEP * 0.8, false); }
+      if (RF && P.gtr) {                                                   /* a song's own riff */
+        var h = RF[i];
+        if (h) {
+          if (h.ring) { var nx = i + 1; while (nx < 16 && !RF[nx]) nx++; chord(s, root + h.off, STEP * (nx - i) * 0.95, true, P.gtr === 'verse'); }
+          else if (h.stab) chord(s, root + h.off, STEP * 1.5, true);
+          else chord(s, root + h.off, STEP * 0.7, false);
+        }
+      } else if (P.gtr === 'riff') { if (i === 0 || i === 10) chord(s, root, i === 0 ? STEP * 6 : STEP * 5, true); else if (i % 2 === 0 && i !== 12) chord(s, root, STEP * 0.8, false); }
       else if (P.gtr === 'chug' && i % 2 === 0 && n % 2 === 0) chord(s, root, i === 0 ? STEP * 3 : STEP * 0.8, i === 0);
       else if (P.gtr === 'open' && i % 4 === 0) chord(s, root, STEP * 3.6, true);
       else if (P.gtr === 'clean' && i % 2 === 0) lead(s, ARP[(i / 2 + n * 2) % 8] - 12, STEP * 1.6, 0.03);
       if (P.bass && i % 2 === 0) bass(s, root + (i === 14 ? 7 : 0), STEP * 1.6, P.bass);
-      if (P.lead && LEAD[i]) lead(s, LEAD[i] + 12, STEP * 0.85, 0.07);
+      if (P.lead && i < 8 && LD[i]) lead(s, LD[i] + 12, STEP * 0.85, 0.07);
       if (P.bell && i % 4 === 0) bell(s, ARP[(i / 4 + n) % 8] + 12);
-      if (P.arp) lead(s, ARP[(i + n * 3) % 8] + 12, STEP * 0.7, 0.035);                                   /* a running synth arpeggio */
+      if (P.arp) lead(s, AR[(i + n * 3) % 8] + 12, STEP * 0.7, 0.035);                                   /* a running synth arpeggio */
       if (P.stab && (i === 3 || i === 6 || i === 11)) chord(s, root, STEP * 0.6, true, true);             /* bright off-beat stabs */
-      if (P.tumbi && (i % 4 === 2 || i === 7 || i === 15)) tone(s, 'square', hz(ARP[(i + n) % 8] + 24), hz(ARP[(i + n) % 8] + 24), STEP * 0.5, 0.05, null, true);   /* a plucked tumbi */
+      if (P.tumbi && (i % 4 === 2 || i === 7 || i === 15)) tone(s, 'square', hz(AR[(i + n) % 8] + 24), hz(AR[(i + n) % 8] + 24), STEP * 0.5, 0.05, null, true);   /* a plucked tumbi */
     }
-    if (P.lead) lead(t + STEP * 8, LEAD_HOLD[n % 4], STEP * 7.5, 0.085);
+    if (P.lead) lead(t + STEP * 8, (SG ? SG.hold : LEAD_HOLD)[n % 4], STEP * 7.5, 0.085);
     if (P.crash) crash(t);
     if (P.pad) pad(t, root, BAR);
-    var sing = name === 'jam';                                          /* Ravi's vocal: only in the hideout's music corner */
+    var sing = name === 'jam' || !!(SG && SG.vox);                      /* Ravi's vocal: the music corner, and the brawl songs in its key and tempo */
     if (sing && P.vox !== null && P.vox !== undefined) vox(t, P.vox, VOCAL.SLOT, P.voxSoft);
     if (sing && P.chop !== null && P.chop !== undefined) { vox(t, P.chop, SPB * 1.0); vox(t + SPB * 2, P.chop, SPB * 0.5); }
     var target = (P.vol || 1) * 0.6; bus.gain.setTargetAtTime(target, t, 0.3);
