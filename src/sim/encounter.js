@@ -32,7 +32,7 @@ function canStart(r) {
   return runAhead(r.map, b.x, b.z, axisH) > E.MIN_RUN;
 }
 
-function start(r, kind) {
+function start(r, kind, gang) {                                   /* gang: whose men these are (their song plays) */
   var b = r.bike, h = Math.round(b.h / (Math.PI / 2)) * (Math.PI / 2);
   if (runAhead(r.map, b.x, b.z, h) < 60 && runAhead(r.map, b.x, b.z, h + Math.PI) > runAhead(r.map, b.x, b.z, h)) h += Math.PI;   /* (a test start near the edge turns round) */
   h = Math.atan2(Math.sin(h), Math.cos(h));
@@ -45,7 +45,7 @@ function start(r, kind) {
   var e = {
     kind: kind, phase: 'intro', t: 0, f: { x: fx, z: fz }, l: { x: lx, z: lz }, speed: E.SPEED,
     hero: { act: null, guard: false, blockTick: -999, hurt: 0, inv: 0, roof: false, leap: 0, leapDir: 0 },
-    foes: [], car: null, crew: [], police: null, beaten: 0
+    foes: [], car: null, crew: [], police: null, beaten: 0, gang: gang || null
   };
   r.enc = e; r.state = 'enc'; r.hearts = 3; r.encCount = (r.encCount || 0) + 1;
   if (kind === 'arrest') {                                        /* after a fight in a trouble spot: the police take the goons away; Toofan waits on Bijli */
@@ -59,7 +59,7 @@ function start(r, kind) {
     e.car = { u: -18, lat: E.LAT, st: 'approach', t: 0, cd: 60, sw: 0, yaw: 0, look: 1 };
     for (i = 0; i < E.CREW; i++) e.crew.push({ id: i + 1, crew: true, hp: 2, st: 'hidden', t: 0, cd: 40, side: i % 2 ? -1 : 1, rise: 0 });
   }
-  r.bus.emit('enc:start', { kind: kind });
+  r.bus.emit('enc:start', { kind: kind, gang: e.gang });
   return e;
 }
 
@@ -248,7 +248,7 @@ function step(r, input) {
   if (e.kind === 'bikes') {
     if (e.phase === 'fight') heroStrike(r, e, input, e.foes, E.REACH);
     stepFoes(r, e);
-    if (e.phase === 'clear' && e.t > 60) { var keep = r.hearts; start(r, 'car'); r.hearts = keep; }     /* the car gang follows straight on: the mini boss of this chase */
+    if (e.phase === 'clear' && e.t > 60) { var keep = r.hearts; start(r, 'car', e.gang); r.hearts = keep; }     /* the car gang follows straight on: the mini boss of this chase */
   } else {
     if (e.phase === 'fight') { heroStrike(r, e, input, [], 0); stepCar(r, e); }
     else if (e.phase === 'leap') { H.leap = Math.min(1, e.t / 36); if (H.leap >= 1) { e.phase = 'roof'; e.t = 0; H.roof = true; } }

@@ -125,7 +125,7 @@ function stepPatrols(r) {
     var q = r.patrols[i];
     if (Math.hypot(q.x - b.x, q.z - b.z) < CHASE_R && Math.hypot(r.map.home.x - b.x, r.map.home.z - b.z) > 30 && enc.canStart(r)) {   /* (never on his own doorstep) */
       r.patrols.splice(i, 1); r.patrolCool = 600; r.chases[q.gang] = (r.chases[q.gang] || 0) + 1;
-      enc.start(r, q.kind); r.bus.emit('ride:chase', { kind: q.kind, gang: q.gang }); return;
+      enc.start(r, q.kind, q.gang); r.bus.emit('ride:chase', { kind: q.kind, gang: q.gang }); return;
     }
   }
 }

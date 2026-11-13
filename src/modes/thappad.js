@@ -11,7 +11,7 @@ var maavox = require('../view/maavox');
 var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 
-var LINE = 'UTH JA, BETA!';                           /* Maa's words (placeholder until Ravi gives hers) */
+var LINE = 'UTH BETA UTH!';                           /* Maa's words (Ravi's): shouted again and again, louder each time, until he wakes */
 var SLAPS = 12;                                       /* quick slaps before the big one */
 function slapLen(n) { return Math.max(0.09, 0.5 * Math.pow(0.82, n)); }
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
@@ -45,8 +45,22 @@ function createThappad(ctx, opts) {
     '<div style="color:#d8d0c4;font-size:13px;letter-spacing:.24em;margin-bottom:10px;text-shadow:0 0 8px #000">TOOFAN IS DOWN</div>' +
     '<button data-ok="1" data-c="save" style="' + BTN + ';border:1px solid #ffd21f;background:#ffd21f;color:#000">SAVE TOOFAN</button>' +
     '<button data-ok="1" data-c="die" style="' + BTN + ';border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.6);color:#ddd">LET HIM DIE</button>');
-  var line = el('position:fixed;left:0;right:0;bottom:22%;z-index:44;text-align:center;pointer-events:none;color:#fff5e0;font-size:clamp(20px,6vw,34px);letter-spacing:.16em;text-shadow:0 0 12px #000,0 2px 2px #000;opacity:0;transition:opacity .6s');
+  /* Maa shouting: her words over and over, each time bigger and redder, shaking harder - a scream on the screen - until he wakes */
+  var line = el('position:fixed;left:50%;top:70%;z-index:44;text-align:center;pointer-events:none;white-space:nowrap;color:#fff5e0;letter-spacing:.1em;text-shadow:0 0 14px #000,3px 3px 0 #000;opacity:0;transition:opacity .4s;transform:translate(-50%,-50%)');
   line.textContent = LINE;
+  var shout = { n: -1, t: 0, pop: 0 };
+  function nextShout() {
+    shout.n++; shout.t = 0; shout.pop = 1;
+    var txt = LINE + (shout.n >= 4 ? '!' : '') + (shout.n >= 8 ? '!' : '');
+    var w = window.innerWidth, h = window.innerHeight, base = Math.min(w, h) * 0.055;
+    var fit = w * 0.9 / (txt.length * 1.0);                             /* (the whole line always on screen: the pixel font runs about 1 em a letter, spacing included) */
+    var size = Math.min(base * Math.pow(1.22, shout.n), fit, h * 0.16);
+    line.style.fontSize = size.toFixed(1) + 'px';
+    var k = Math.min(1, shout.n / 7);                                   /* cream to burning red as she gets louder */
+    line.style.color = 'rgb(255,' + Math.round(245 - 170 * k) + ',' + Math.round(224 - 190 * k) + ')';
+    line.style.top = (70 - 22 * k) + '%';                                /* and rising to the middle of the screen */
+    line.textContent = txt;
+  }
   var prompt = el('position:fixed;left:0;right:0;bottom:12%;z-index:44;text-align:center;pointer-events:none;color:#ffd21f;font-size:clamp(16px,4.5vw,24px);letter-spacing:.2em;text-shadow:0 0 10px #000;opacity:0');
   prompt.textContent = '✊ TAP TAP TAP!';
   var flash = el('position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff;opacity:0');
@@ -112,7 +126,14 @@ function createThappad(ctx, opts) {
       if (S.phase === 'kneel' && S.tp > 1.2) go('line');
       if (S.phase === 'line' && S.tp > 2.2) { go('ready'); S.raise = 0; }
       if (S.phase === 'ready' || S.phase === 'slaps') S.raise = Math.min(1, (S.raise || 0) + dt / 0.6);
-      line.style.opacity = (S.phase === 'line' || S.phase === 'ready' || S.phase === 'slaps') ? 1 : 0;
+      var shouting = S.phase === 'line' || S.phase === 'ready' || S.phase === 'slaps' || (S.phase === 'final' && !(S.final && S.final.hit));
+      line.style.opacity = shouting ? 1 : 0;
+      if (shouting) {
+        shout.t += dt; if (shout.n < 0 || shout.t > Math.max(0.45, 1.0 - S.n * 0.05)) nextShout();      /* again and again, quicker as the slaps quicken */
+        shout.pop = Math.max(0, shout.pop - dt * 5);
+        var amp = 1.5 + shout.n * 1.1, jx = (Math.random() - 0.5) * amp, jy = (Math.random() - 0.5) * amp, rot = (Math.random() - 0.5) * (0.6 + shout.n * 0.35);
+        line.style.transform = 'translate(calc(-50% + ' + jx.toFixed(1) + 'px), calc(-50% + ' + jy.toFixed(1) + 'px)) rotate(' + rot.toFixed(2) + 'deg) scale(' + (1 + shout.pop * 0.35).toFixed(3) + ')';
+      }
       pool.material.opacity = Math.min(1, Math.max(0, (t - 0.5) / 1.2));
       motes.material.opacity = 0.5 * pool.material.opacity;
       prompt.style.opacity = (S.phase === 'ready' && S.raise >= 1) || (S.phase === 'slaps' && S.n < SLAPS) ? 1 : 0;

@@ -152,7 +152,7 @@ function createFight() {
       scope.add(function () { S.fx.dispose(); });
       S.txt = lettering.createLettering(); S.sfx = sfxmod.createSfx(); S.lastMv = null; S.whirlT = -9;
       scope.add(function () { S.txt.dispose(); });
-      S.music = musicMod.createMusic(S.sfx); S.gk = GANGS.gangOf(type) || 'raju'; S.danceTrack = 'dance:' + S.gk; S.arenaTrack = 'arena:' + (GANGS.gangOf(type) || 'kalia'); S.music.setTrack(S.arenaTrack);       /* each gang's own groove, until his earbuds go in */
+      S.music = musicMod.createMusic(S.sfx); S.gk = GANGS.gangOf(type) || 'raju'; S.danceTrack = 'dance:' + S.gk; S.arenaTrack = 'intro:' + S.gk; S.music.setTrack(S.arenaTrack);       /* his song for this gang's stage, held back until his earbuds go in */
       /* HIS ENTRANCE: he walks in, a punch line at the men held on his face (a goon may answer), earbuds in, his stage's own beat drops with
          his signature move, and the fight is on.
          The men wait. Any tap or key skips it. In the fight, whenever he stands free he grooves to the beat. */

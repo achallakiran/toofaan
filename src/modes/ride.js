@@ -39,6 +39,8 @@ function ensureRide(ctx) {
 }
 
 function createRide() {
+  /* the music on the road: the ride's own, or in a road fight the song of the gang it is with (the brawl songs' loud half) */
+  function encTrack(e) { return !e || e.kind === 'arrest' ? 'ride' : e.gang ? 'chase:' + e.gang : (e.kind === 'car' ? 'boss' : 'road'); }
   var S = {};
   /* home: Bijli turns in to the shop, the loose brick is pressed, the shutter rolls up, the floor splits, the ramp tips down and she rolls
      down into the dark. Then the hideout. (6.4 s) */
@@ -135,7 +137,7 @@ function createRide() {
       scope.add(ctx.bus.on('ride:mansion', function () { S.say('THE GATE STANDS OPEN', 3); }));
       scope.add(ctx.bus.on('ride:chase', function (e) { var G = GANGS.GANGS[e.gang]; if (G) say(G.name.toUpperCase() + ' KE AADMI!', 1.6); }));
       /* road fights */
-      S.music = musicMod.createMusic(S.sfx); S.music.setTrack(S.r.enc ? (S.r.enc.kind === 'car' ? 'boss' : S.r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');
+      S.music = musicMod.createMusic(S.sfx); S.music.setTrack(encTrack(S.r.enc));
       /* Toofan's punch lines on the road, in speech bubbles over him: a chase starting, a goon knocked off, the chase won */
       S.speech = speechMod.createSpeech(); scope.add(function () { S.speech.dispose(); });
       var quipN = { start: 0, ko: 0, won: 0 }, lastQuip = -9;
@@ -147,7 +149,7 @@ function createRide() {
       scope.add(ctx.bus.on('enc:start', function (e) { if (e.kind !== 'arrest') quip('start', 2.0); }));     /* (after the gang's name has cleared) */
       scope.add(ctx.bus.on('enc:ko', function () { quip('ko', 0.5); }));
       scope.add(ctx.bus.on('enc:clear', function () { quip('won', 1.2); }));
-      scope.add(ctx.bus.on('enc:start', function (e) { S.music.setTrack(e.kind === 'car' ? 'boss' : e.kind === 'bikes' ? 'road' : 'ride'); if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
+      scope.add(ctx.bus.on('enc:start', function (e) { S.music.setTrack(encTrack(e)); if (e.kind === 'arrest') return; S.sfx.honk(); say(e.kind === 'car' ? 'CAR GANG!' : 'BIKE GOONS!', 1.8); }));
       scope.add(ctx.bus.on('enc:swing', function () { S.sfx.whoosh(0.5); }));
       scope.add(ctx.bus.on('enc:hit', function (e) { S.sfx.hit(/kick|Kick/.test(e.move) ? 'kick' : 'jab', 0.8); word(WORD[e.move.replace(/R$/, 'L')] || 'DISHUM!'); S.shake = 0.15; boom(e.id, 0xffffff, 0.8); }));
       scope.add(ctx.bus.on('enc:ko', function (e) { S.sfx.hit('uppercut', 1); S.sfx.fall(); word('DHADAAM!'); big('ko', e.id, 1.3, 1.0); }));
@@ -190,10 +192,10 @@ function createRide() {
         bolt.strike(b.x + e.f.x * -0.8 + e.l.x * -1.7, b.z + e.f.z * -0.8 + e.l.z * -1.7, 1.9 * R.SCALE); S.sfx.bolt(); S.shake = 0.3;
         white.style.transition = 'none'; white.style.opacity = 0.55; requestAnimationFrame(function () { white.style.transition = 'opacity .5s'; white.style.opacity = 0; });
       }));
-      scope.add(ctx.bus.on('enc:resume', function () { var e = S.r.enc; S.music.setTrack(e && e.kind === 'car' ? 'boss' : 'road'); say('TOOFAN IS BACK!', 1.4); S.sfx.start && S.sfx.start(); }));
+      scope.add(ctx.bus.on('enc:resume', function () { var e = S.r.enc; S.music.setTrack(encTrack(e)); say('TOOFAN IS BACK!', 1.4); S.sfx.start && S.sfx.start(); }));
       scope.add(ctx.bus.on('enc:end', function (e) { if (S.music.track() !== 'sting') S.music.setTrack('ride'); if (e.kind !== 'bikes') { var T = S.r.target; cinecard.show({ title: 'TOOFAN IS BACK!', sub: T ? 'Next: ' + T.name : 'All clear', ms: 1400 }); } }));
       ctx.debug.rideMode = S;
-      ctx.debug.rideStart = function (k) { if (S.r.state === 'ride') rideSim.startEncounter(S.r, k); };     /* for the test tools */
+      ctx.debug.rideStart = function (k, gang) { if (S.r.state === 'ride') rideSim.startEncounter(S.r, k, gang); };     /* for the test tools */
       if (S.r.target && !(args && args.after)) say('Signal: ' + S.r.target.name, 2.2);
     },
     step: function (ctx, tick) {
@@ -253,7 +255,7 @@ function createRide() {
         }
       }
       if (S.slow > 0) S.slow -= dt;
-      if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(r.enc ? (r.enc.kind === 'car' ? 'boss' : r.enc.kind === 'bikes' ? 'road' : 'ride') : 'ride');   /* music switched back on, or sound just unlocked */
+      if (S.music.enabled && !S.music.playing() && S.sfx.on) S.music.setTrack(encTrack(r.enc));   /* music switched back on, or sound just unlocked */
 
       /* ---- the arrival cut shot: circle low round Toofan as he pulls up, then the card and the fight area ---- */
       if (S.r.atHome && !S.cut) startHome();                              /* (whatever the order of things, home always plays its scene) */

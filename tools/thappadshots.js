@@ -24,7 +24,7 @@ await p.waitForFunction(()=>__game.ctx.fight.riseT>95,null,{timeout:20000}).catc
 await p.waitForFunction(()=>__game.ctx.fight.state==='fight',null,{timeout:20000}).catch(()=>log.push('no resume'));
 await p.waitForTimeout(500);await shot('8resume');
 var st=await p.evaluate(()=>{var f=__game.ctx.fight;return {state:f.state,hp:f.player.hp,men:f.combat.enemies.filter(e=>!e.dead).length,thappads:f.thappads,music:__game.ctx.debug.music.track()}});
-var ok=st.state==='fight'&&st.hp===100&&st.thappads===1&&/^(arena|dance)/.test(st.music)&&!log.length&&!errs.length;if(!ok)fails++;console.log((ok?'PASS ':'FAIL ')+vp[2],JSON.stringify(st),'secs',((Date.now()-t0)/1000).toFixed(1),JSON.stringify(log),JSON.stringify(errs));await p.close();}
+var ok=st.state==='fight'&&st.hp===100&&st.thappads===1&&/^(intro|dance):/.test(st.music)&&!log.length&&!errs.length;if(!ok)fails++;console.log((ok?'PASS ':'FAIL ')+vp[2],JSON.stringify(st),'secs',((Date.now()-t0)/1000).toFixed(1),JSON.stringify(log),JSON.stringify(errs));await p.close();}
 /* let him die: game over, back to the title menu */
 var p2=await b.newPage({viewport:{width:900,height:540}}),errs2=[];p2.on('pageerror',e=>errs2.push(e.message));
 await p2.goto(FILE+'?dev=1#fight=market,1');await p2.waitForSelector('html[data-ready="1"]');await p2.evaluate(()=>{var F=__game.ctx.debug.fight;if(F&&F.finishIntro)F.finishIntro();});await p2.waitForTimeout(1200);

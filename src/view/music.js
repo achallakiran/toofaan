@@ -10,6 +10,7 @@
      jam     - the hideout's music corner: the full band WITH Ravi's vocal
      arena:<gang> - each gang's own groove for its fight areas (machine, stomp, dhol, blast, breakbeat)
      night   - the nightmare: a low pad and a heartbeat, no singing
+     intro:<gang> / chase:<gang> - the same song held back for a brawl's walk-in, and its loud half for a road fight with that gang
      dance:<gang> - the brawl songs in Toofan's earbuds, tech-rock grunge, one per gang's pair of stages (SONGS below): Lootera (Kalia,
                sludge), Nitro (Raju, tech-rock gallop), Automatic (Antu, industrial, 134), Kalari (Bhairav, dhol grunge, 140),
                Talwar (Teja, grunge-punk, 160)
@@ -78,7 +79,10 @@ var SONGS = {
 };
 function parseRiff(str) { return str.split(/\s+/).map(function (t) { if (t === '.') return null; return { off: parseInt(t, 10), ring: t.indexOf('~') > 0, stab: t.indexOf('x') > 0 }; }); }
 var TEMPO = { dance: 128 };
-Object.keys(SONGS).forEach(function (g) { var S = SONGS[g]; S.R = parseRiff(S.riff); S.V = S.verse ? parseRiff(S.verse) : null; TEMPO['dance:' + g] = S.bpm; });
+var CLEAN;   /* a song with no verse of its own is held back on two ringing clean chords a bar */
+function introOf(n) { var m = n % 4; return { drums: m % 2 ? HEART : null, hats: 8, gtr: 'verse', bass: 'sub', crash: n === 0, vol: 0.7 }; }
+CLEAN = parseRiff('0~ . . . . . . . 3~ . . . . . . .');
+Object.keys(SONGS).forEach(function (g) { var S = SONGS[g]; S.R = parseRiff(S.riff); S.V = S.verse ? parseRiff(S.verse) : null; TEMPO['dance:' + g] = TEMPO['intro:' + g] = TEMPO['chase:' + g] = S.bpm; });
 var HEART = ['K', '', 'K', '', '', '', '', '', '', '', '', '', '', '', '', ''];
 var SOFT = ['K', '', '', '', 't', '', '', '', 'K', '', 'K', '', 't', '', '', ''];
 var ROOTS = [40, 43, 45, 38];
@@ -109,6 +113,12 @@ var TRACKS = {
   'arena:bhairav': function (n) { var m = n % 8; return { drums: DHOL, hats: m >= 4 ? 8 : 0, gtr: m < 4 ? 'open' : 'riff', bass: 'saw', lead: m >= 6 && m % 2 === 1, crash: m === 0 }; },
   'arena:teja': function (n) { var m = n % 8; return { drums: m < 6 ? BLAST : DOUBLE, hats: 16, gtr: 'riff', bass: 'dist', lead: m % 2 === 1, fill: m === 7, crash: m % 2 === 0 }; },
   dance: function (n) { var m = n % 8; return { drums: BBOY, hats: 16, bass: 'sub', lead: m >= 2 && m % 2 === 1, fill: m === 7, crash: m === 0, vol: 1.0 }; },
+  /* the same five songs through the rest of a brawl and on the road: intro = the song held back while he walks in and talks (quiet clean
+     chords, hats, bass - the full song drops when his earbuds go in); chase = the song's loud half, for a road fight with that gang */
+  'intro:kalia': introOf, 'intro:raju': introOf, 'intro:antu': introOf, 'intro:bhairav': introOf, 'intro:teja': introOf,
+  'chase:kalia': function (n) { return SONGS.kalia.bar(8 + n % 8); }, 'chase:raju': function (n) { return SONGS.raju.bar(8 + n % 8); },
+  'chase:antu': function (n) { return SONGS.antu.bar(8 + n % 8); }, 'chase:bhairav': function (n) { return SONGS.bhairav.bar(8 + n % 8); },
+  'chase:teja': function (n) { return SONGS.teja.bar(8 + n % 8); },
   'dance:kalia': function (n) { return SONGS.kalia.bar(n % 16); },
   'dance:raju': function (n) { return SONGS.raju.bar(n % 16); },
   'dance:antu': function (n) { return SONGS.antu.bar(n % 16); },
@@ -205,8 +215,8 @@ function createMusic(sfx) {
   }
   function scheduleBar(t, n) {
     SPB = 60 / (TEMPO[track] || BPM); STEP = SPB / 4; BAR = SPB * 4; marks.push({ t: t, n: n, spb: SPB }); if (marks.length > 12) marks.shift();   /* (each track its own tempo, from its bar line) */
-    var name = track, P = TRACKS[name](n - (startBar[name] || 0)), SG = name.indexOf('dance:') === 0 ? SONGS[name.slice(6)] : null, root = (SG ? SG.roots : ROOTS)[n % 4], i;
-    var LD = SG ? SG.lead : LEAD, AR = SG ? SG.arp : ARP, RF = SG ? (P.gtr === 'verse' ? SG.V : SG.R) : null;
+    var name = track, P = TRACKS[name](n - (startBar[name] || 0)), SG = /^(dance|intro|chase):/.test(name) ? SONGS[name.split(':')[1]] : null, root = (SG ? SG.roots : ROOTS)[n % 4], i;
+    var LD = SG ? SG.lead : LEAD, AR = SG ? SG.arp : ARP, RF = SG ? (P.gtr === 'verse' ? (SG.V || CLEAN) : SG.R) : null;
     if (P.sting !== undefined) {
       if (P.sting === 0) { kick(t, true); crash(t); chord(t, 40, BAR * 0.9, true); lead(t, 76, BAR * 1.6, 0.09); }
       else { [0, 3, 6].forEach(function (s, k) { kick(t + s * STEP, true); chord(t + s * STEP, [40, 43, 45][k], STEP * 2.5, true); }); crash(t + 8 * STEP); chord(t + 8 * STEP, 40, BAR * 0.5, true); if (after) switchTo(after, true); }
