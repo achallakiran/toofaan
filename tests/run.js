@@ -108,8 +108,10 @@ test('fight replay: recorded fights play out exactly as recorded (won, knocked o
   /* re-recorded again for build 80 (the guitar counter no longer spends rage): with rage left out of the hash, old and new code give
      identical fingerprints for every replay, and the outcomes, kills and health are unchanged. Market re-recorded once more in build 80:
      its lane now has baskets along both sides that the men walk round (the other recorded places' props did not move) */
-  var GOLD = { market: [['cleared', 6, 35, 723372299], ['thappad', 0, 0, 3490199743]], temple: [['cleared', 6, 63, 4046417842], ['fight', 2, 29, 1480076574]],
-    toll: [['thappad', 2, 0, 3833356648], ['thappad', 1, 0, 2055069415]], railway: [['cleared', 6, 100, 3945096846], ['thappad', 2, 0, 3074116866]], warehouse: [['cleared', 6, 15, 803876446], ['thappad', 1, 0, 1846114681]] };
+  /* re-recorded for build 94 (ordinary knockdowns): with the knockdown switched off (KD_GAP huge) every replay gives the old values
+     exactly; the only changes come from the stick and heavy blows now flooring him for a moment untouchable */
+  var GOLD = { market: [['cleared', 6, 74, 3440018290], ['thappad', 0, 0, 3086184449]], temple: [['cleared', 6, 47, 2381917211], ['fight', 2, 29, 1480076574]],
+    toll: [['cleared', 6, 35, 2010628159], ['thappad', 2, 0, 1515159462]], railway: [['cleared', 6, 100, 3945096846], ['thappad', 2, 0, 2022374063]], warehouse: [['cleared', 6, 61, 2598942102], ['thappad', 1, 0, 2910714258]] };
   if (process.env.PRINT_GOLD) Object.keys(GOLD).forEach(function (type, i) { console.log(type, JSON.stringify([replay(type, i, 0.3), replay(type, i, 0.03)]), JSON.stringify(GOLD[type])); });
   Object.keys(GOLD).forEach(function (type, i) { assert.deepStrictEqual([replay(type, i, 0.3), replay(type, i, 0.03)], GOLD[type], type); });
 });
@@ -154,7 +156,7 @@ function fightWorld() {
   var bus = busMod.createBus(), w = fwMod.create({ seed: 7, bus: bus, type: 'market' }), inp = inputMod.createInput(), t = 0, ev = [];
   w.combat.enemies.length = 0; w.hadMen = false; w.arena = { solids: [], ox: 0, oz: 0 }; w.bounds = { x0: -60, z0: -60, x1: 60, z1: 60 };
   var p = w.player; p.x = p.px = 0; p.z = p.pz = 0; p.face = 0;
-  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'ko', 'wave', 'heroDown', 'fight:clear', 'fight:lost', 'fight:thappad', 'fight:rise', 'fight:spark', 'fight:resume'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
+  ['hit', 'enemyBlock', 'block', 'counter', 'guardbreak', 'playerHurt', 'heroFloored', 'heroUp', 'ko', 'wave', 'heroDown', 'fight:clear', 'fight:lost', 'fight:thappad', 'fight:rise', 'fight:spark', 'fight:resume'].forEach(function (n) { bus.on(n, function (e) { ev.push([n, e]); }); });
   return { w: w, inp: inp, ev: ev, tick: function (n) { for (var i = 0; i < (n || 1); i++) { inp.tick(t++); fwMod.step(w, inp); } },
     count: function (n) { return ev.filter(function (e) { return e[0] === n; }).length; } };
 }
@@ -245,6 +247,18 @@ test('fight: a guarding enemy blocks the first two blows, then his cover breaks 
 test('fight: guitar counters and the finisher go straight through a guard', function () {
   var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.1); var e = f.w.combat.enemies[0]; e.cd = 9999; e.canBlock = true; f.w.player.face = 0; f.tick(2);
   assert.ok(e.guarding); f.w.pendingStrikes.push('counterSmash'); f.tick(1); assert.ok(e.hp < 8.8);
+});
+test('fight: a heavy\'s unblockable punch floors Toofan; he is untouchable until he is up in his rock stand; a second within the gap only staggers', function () {
+  var f = fightWorld(); combatMod.spawn(f.w, 'heavy', 0, 1.2); var e = f.w.combat.enemies[0], p = f.w.player; p.face = Math.PI;   /* (facing away: no guard) */
+  var i; for (i = 0; i < 600 && !f.count('heroFloored'); i++) f.tick(1);
+  assert.strictEqual(f.count('heroFloored'), 1, 'the heavy\'s punch floors him'); assert.ok(p.kd > 0 && p.hp > 0 && !p.down);
+  var hp = p.hp; f.tick(combatMod.KD - 5); assert.strictEqual(p.hp, hp, 'nobody hurts him while he is down and getting up'); assert.ok(p.kd > 0);
+  f.tick(10); assert.strictEqual(p.kd, 0); assert.strictEqual(f.count('heroUp'), 1, 'up again');
+  for (i = 0; i < 300 && f.count('playerHurt') < 2; i++) f.tick(1);
+  assert.strictEqual(f.count('playerHurt'), 2, 'the heavy lands again'); assert.strictEqual(f.count('heroFloored'), 1, 'but within the gap it only staggers him');
+  f = fightWorld(); combatMod.spawn(f.w, 'thug', 0, 1.2); f.w.player.face = Math.PI;
+  for (i = 0; i < 600 && !f.count('playerHurt'); i++) f.tick(1);
+  assert.strictEqual(f.count('playerHurt'), 1); assert.strictEqual(f.count('heroFloored'), 0, 'an ordinary punch never floors him');
 });
 test('fight: a normal blow hits only one man', function () {
   var f = fightWorld(); combatMod.spawn(f.w, 'thug', 0.2, 1.1); combatMod.spawn(f.w, 'thug', -0.2, 1.3);

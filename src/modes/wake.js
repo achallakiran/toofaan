@@ -9,6 +9,7 @@ var herorig = require('../view/herorig');
 var posemath = require('../view/posemath');
 var dogvox = require('../view/dogvox');
 var dreamview = require('../view/dreamview');
+var quiltMod = require('../view/quilt');
 var boxmesh = require('../view/boxmesh');
 var sfxmod = require('../view/sfx');
 var musicMod = require('../view/music');
@@ -18,6 +19,7 @@ var hideoutview = require('../view/hideoutview');
 var rngMod = require('../core/rng');
 var CONFIG = require('../data/config');
 
+var ARM0 = { sx: 19, sz: -16, e: 14, w: 0 };   /* his arms asleep: lying on top of the quilt, hands resting on his stomach (found by search: forearms ~3 cm clear of it) */
 function ease(t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
@@ -25,7 +27,7 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 
 function createWake() {
   var S = {};
-  return {
+  var M = {
     name: 'wake',
     enter: function (ctx, scope, args) {
       var view = ctx.view;
@@ -40,22 +42,10 @@ function createWake() {
       S.rig = herorig.createHeroRig('home'); S.bed = new THREE.Group(); S.lie = new THREE.Group(); view.scene.add(S.bed); S.bed.add(S.lie); S.lie.add(S.rig.root);
       S.bed.rotation.y = Math.PI / 2; S.bed.position.set(0.75, 0, -1.1);
       S.rig.guitar.visible = false;                                         /* no guitar in bed */
-      /* his blanket: a patterned quilt pulled up to his chest while he sleeps, bunched over his legs once he sits up */
-      function quilt(sit) {
-        var K = kit.createBuilder(rngMod.createRng(sit ? 5 : 4)), C = kit.C, x, z, k = 0; K.at(0, 0, 0);
-        var x0 = sit ? -0.32 : -0.5, top = sit ? 0.78 : 0.86;
-        for (x = x0; x < 1.08; x += 0.16) for (z = -1.64; z < -0.56; z += 0.16) {
-          var edge = Math.min(z + 1.64, -0.56 - z), lump = Math.sin(x * 9 + z * 5) * 0.025 + (sit ? Math.max(0, 0.08 - Math.abs(x - 0.1) * 0.2) : 0);
-          var y1 = edge < 0.12 ? 0.42 + edge * 2.6 : top + lump - (x > 0.85 ? (x - 0.85) * 0.6 : 0);
-          K.b(x, 0.4, z, x + 0.16, y1, z + 0.16, ((Math.round(x / 0.16) + Math.round(z / 0.16)) % 2) ? C.MAUVE : C.PLUM); k++;
-        }
-        K.b(x0 - 0.06, top - 0.06, -1.6, x0 + 0.06, top + 0.05, -0.6, C.OFFWHITE);           /* the folded-over sheet at the top */
-        var a2 = boxmesh.boxesToArrays(K.out.boxes, CONFIG.PALETTE), g2 = new THREE.BufferGeometry();
-        g2.setAttribute('position', new THREE.BufferAttribute(a2.positions, 3)); g2.setAttribute('normal', new THREE.BufferAttribute(a2.normals, 3));
-        g2.setAttribute('color', new THREE.BufferAttribute(a2.colors, 3)); g2.setIndex(new THREE.BufferAttribute(a2.indices, 1));
-        return new THREE.Mesh(g2, S.roomMat);
-      }
-      S.quiltLie = quilt(false); S.quiltSit = quilt(true); S.quiltSit.visible = false; view.scene.add(S.quiltLie); view.scene.add(S.quiltSit);
+      /* his blanket: a patterned quilt draped over him (view/quilt) - up to his chest while he sleeps, his arms resting on top; over his
+         legs once he sits up. It takes his shape every frame, so nothing of him goes through it. */
+      S.quiltLie = quiltMod.createQuilt(view.scene, { x0: -0.56, x1: 1.08, z0: -1.64, z1: -0.56 });
+      S.quiltSit = quiltMod.createQuilt(view.scene, { x0: -0.32, x1: 1.08, z0: -1.64, z1: -0.56, sitting: true }); S.quiltSit.visible = false;
       S.lie.rotation.set(-Math.PI / 2, 0, Math.PI / 2, 'XYZ');                 /* on his back: head toward the pillow (-x), chest up */
       S.lie.position.set(0, 0.68, 0);
       /* Raka, asleep by the door at first */
@@ -76,9 +66,10 @@ function createWake() {
       skip.addEventListener('click', function (e) { e.stopPropagation(); finish(); }); document.body.appendChild(skip);
       function finish() { if (S.done) return; S.done = true; ctx.go(S.next, S.next === 'hideout' ? { from: 'bed' } : undefined); }
       S.finish = finish;
+      S.renderOnce = function () { S.noDraw = true; S.last = performance.now(); M.render(ctx); S.noDraw = false; };   /* (tools: pose everything at S.t without drawing) */
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
-        view.scene.remove(S.quiltLie); view.scene.remove(S.quiltSit); S.quiltLie.geometry.dispose(); S.quiltSit.geometry.dispose();
+        S.quiltLie.dispose(); S.quiltSit.dispose();
         S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); if (S.rig.root.parent) S.rig.root.parent.remove(S.rig.root);   /* (he is moved out of the bed group when he sits up: take him away wherever he is) */ view.scene.remove(S.dog.root); S.dog.dispose();
         S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
       });
@@ -93,21 +84,26 @@ function createWake() {
       /* ---- Toofan ---- */
       if (t < UP) {
         var restless = t > 2.5 && t < SCREAM + 1.4, hard = t > 8 ? 1 : 0.6, toss = restless ? Math.sin(t * (t > 8 ? 7 : 4)) * hard : 0, scream = t > SCREAM && t < SCREAM + 1.6;
-        var p = posemath.layer(sleepP, { 'armA.sx': scream ? 150 : 10 + toss * 25, 'armB.sx': scream ? 150 : 10 - toss * 25, 'armA.sz': 20, 'armB.sz': 20, 'armA.e': scream ? 20 : 40, 'armB.e': scream ? 20 : 40,
+        /* asleep with his arms on top of the quilt, hands resting on his stomach; the tossing is in his head, shoulders and knees */
+        var ARM = S.ARM || ARM0;
+        var p = posemath.layer(sleepP, { 'armA.sx': scream ? 150 : ARM.sx + toss * 5, 'armB.sx': scream ? 150 : ARM.sx - toss * 5, 'armA.sz': scream ? 20 : ARM.sz, 'armB.sz': scream ? 20 : ARM.sz,
+          'armA.e': scream ? 20 : ARM.e, 'armB.e': scream ? 20 : ARM.e, 'armA.w': scream ? 0 : ARM.w, 'armB.w': scream ? 0 : ARM.w,
           'head.ry': toss * 40, 'head.rx': scream ? -25 : 0, 'spine.ry': toss * 12, 'legA.hx': 8 + toss * 10, 'legB.hx': 8 - toss * 10, 'legA.k': 10, 'legB.k': 10 }, 1, 1, 1, 1);
         rig.applyPose(p, { plant: false }); S.lie.rotation.z = 0; S.lie.position.y = 0.68 + Math.abs(toss) * 0.03 + Math.sin(t * 1.6) * 0.005;
-        S.quiltLie.position.set(0, Math.abs(toss) * 0.02, toss * 0.03); S.quiltLie.rotation.x = toss * 0.02;
+        S.quiltLie.update(rig);
       } else {
         /* jolted awake: sitting up in bed, legs along it, turning to the dog, catching his breath */
         if (S.rig.root.parent !== view.scene) { view.scene.add(S.rig.root); S.rig.root.rotation.set(0, Math.PI / 2, 0); S.rig.root.position.set(-0.55, -0.32, -1.1); S.lie.visible = false; S.quiltLie.visible = false; S.quiltSit.visible = true; }
         var u = ease((t - UP) / 1.2), br = Math.sin(t * 5) * (1 - ease((t - UP) / 3));
         rig.applyPose(posemath.layer(sleepP, { 'legA.hx': 88, 'legB.hx': 88, 'legA.k': 6, 'legB.k': 6, 'spine.rx': 8 - u * 6 + br * 4, 'head.ry': -55 * u, 'neck.ry': -20 * u,
           'armA.sx': 20 + 40 * u, 'armA.e': 30 + 40 * u, 'armB.sx': -10, 'armB.sz': 25, 'armB.e': 20 }, 1, 1, 1, 1), { plant: false });
+        S.quiltSit.update(rig);
       }
       rig.flutter(t, 0);
       /* ---- Raka ---- */
       var D = S.dog, dx;
-      if (t < DOG) D.pose('sleep', t);
+      if (t < SCREAM + 0.35) D.pose('sleep', t);
+      else if (t < DOG) D.pose('sit', t);                                     /* the shout wakes him: head up, ears up, looking at the bed */
       else if (t < LICK) { var w = ease((t - DOG) / (LICK - DOG)); dx = lerp(3.4, 1.15, w); D.root.position.set(dx, 0, lerp(0.35, -0.2, w)); D.root.rotation.y = -Math.PI / 2 - 0.4 * w; D.pose(w < 1 ? 'walk' : 'stand', t); }
       else if (t < BARK) { D.root.position.set(-0.5, 0, -0.32); D.root.rotation.y = Math.PI; D.pose('lick', t); }
       else { D.pose(t < BARK + 1.8 ? 'bark' : 'sit', t); [0.05, 0.55, 1.4].forEach(function (o, i) { if (t > BARK + o && S.barked < i + 1) { S.barked = i + 1; S.sfx.bark(); } }); }
@@ -118,8 +114,13 @@ function createWake() {
       var shake = (t > SCREAM && t < SCREAM + 1.5) ? 0.04 : 0, sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
       if (t < 2.5) shot = { x: 2.3 - t * 0.12, y: 1.9, z: 1.8, lx: -0.2, ly: 0.6, lz: -1.1, fov: 52 };
       else if (t < DOG) { var c = ease((t - 2.5) / 12); shot = { x: lerp(1.4, 0.2, c) + sx, y: lerp(1.8, 1.55, c) + sy, z: lerp(0.4, -0.4, c), lx: -0.65, ly: 0.7, lz: -1.1, fov: lerp(50, 40, c) }; }
-      else if (t < LICK) shot = { x: 1.0, y: 1.3, z: 1.7, lx: 1.4, ly: 0.4, lz: -0.2, fov: 55 };
-      else if (t < UP) shot = { x: -0.2, y: 1.25, z: 0.6, lx: -0.7, ly: 0.65, lz: -0.9, fov: 46 };
+      else if (t < LICK) {
+        /* wide, from the room side past the foot of the bed: Toofan thrashing in bed and Raka by the door in the same frame - he lifts
+           his head at the shout, gets up and trots across to the bed (the camera stays on this side of the two of them from here on) */
+        var wk = ease((t - (SCREAM + 1.0)) / (LICK - SCREAM - 1.0)), tk = view.renderer.domElement.clientHeight > view.renderer.domElement.clientWidth ? 1.55 : 1;
+        shot = { x: lerp(1.6, 1.2, wk), y: 1.85 + 0.5 * (tk - 1), z: 2.7 * tk, lx: lerp(1.3, 0.4, wk), ly: 0.55, lz: -0.45, fov: 52 };
+      }
+      else if (t < UP) shot = { x: 1.55, y: 1.6, z: 0.45, lx: -0.6, ly: 0.62, lz: -0.85, fov: 50 };   /* closer, both in frame: his paws on the bed, the lick, Toofan's face */
       else shot = { x: 0.9, y: 1.5, z: 1.5, lx: -0.5, ly: 0.9, lz: -0.8, fov: 48 };
       view.followCamera(0, 0, shot);
       /* ---- the dream: each shot fades up from black, holds, says its line, fades back to the room ---- */
@@ -132,12 +133,14 @@ function createWake() {
       S.red.style.background = t > UP - 0.1 && t < UP + 0.15 ? '#fff' : '#b0102a';
       if (t > UP - 0.1 && t < UP + 0.15) S.red.style.opacity = 0.85;
       S.tint.style.opacity = dreamOn ? 0 : 1; S.hide.update(t);
+      if (S.noDraw) return;
       if (dreamOn) S.dream.render(t - D0); else view.render();
       /* ---- awake: the player takes over in the hideout ---- */
       if (t > END) S.finish();
     },
     exit: function () {}
   };
+  return M;
 }
 
 module.exports = { createWake: createWake };

@@ -23,10 +23,12 @@ function keys(rock) {
 }
 
 
-/* the pose at time t (seconds) since he started getting up; lift = how high the kick-up carries him (metres) */
-function at(t) {
+/* the pose at time t (seconds) since he started getting up; lift = how high the kick-up carries him (metres). He holds the stand until
+   `end` (default 3.8 s, after Maa) then drops into his guard over `dur` (default 1 s); an ordinary knockdown holds it shorter */
+function at(t, end, dur) {
+  end = end === undefined ? 3.8 : end; dur = dur || 1.0;
   var ru = Math.min(1, t / 1.4), rock = pose(), p = posemath.keyed(keys(rock), ru);
-  if (t > 3.8) p = posemath.blend(rock, posemath.named('guard') || posemath.named('stand'), posemath.smooth((t - 3.8) / 1.0));
+  if (t > end) p = posemath.blend(rock, posemath.named('guard') || posemath.named('stand'), posemath.smooth((t - end) / dur));
   return { pose: p, lift: ru > 0.35 && ru < 0.75 ? Math.sin(Math.PI * (ru - 0.35) / 0.4) * 0.45 : 0 };
 }
 

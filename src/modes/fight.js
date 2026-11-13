@@ -27,6 +27,7 @@ var musicMod = require('../view/music');
 var arenaview = require('../view/arenaview');
 var cinecard = require('../view/cinecard');
 var dancemoves = require('../view/dancemoves');
+var combatMod = require('../sim/combat');
 var thappadMod = require('./thappad');
 var rockstand = require('../view/rockstand');
 var skybolt = require('../view/skybolt');
@@ -216,6 +217,8 @@ function createFight() {
         S.slow = 1.1; S.focusPt = { x: e.x, z: e.z }; S.focusT = 1.7;
         S.cine.playShot([{ t: 0, dist: 5.2, h: 2.2, look: 1.3, fov: 42, rel: 2.3 }, { t: 0.7, dist: 3.9, h: 1.4, look: 1.3, fov: 34, rel: 3.5 }, { t: 1.7, dist: 5.6, h: 2.6, look: 1.2, fov: 44, rel: 4.5 }], 1.7);
       }));
+      scope.add(ctx.bus.on('heroFloored', function () { S.cine.shake(0.16, 0.45); S.freeze = 0.12; S.txt.say('fall', heroPoint(0.6), view.camera, true); S.sfx.fall && S.sfx.fall(); }));
+      scope.add(ctx.bus.on('heroUp', function () { S.sfx.whoosh && S.sfx.whoosh(0.5); }));
       scope.add(ctx.bus.on('playerHurt', function (e) {
         S.mp.cancel(); S.hurtW = 1; S.cine.shake(0.1, 0.25); S.freeze = 0.1; S.txt.say('hurt', heroPoint(1.8), view.camera, true); S.sfx.hit('cross', 0.8);
         S.fx.spawn('spark', heroPoint(1.4), 0.6);
@@ -299,6 +302,13 @@ function createFight() {
       if (S.hurtW > 0.02) { var hw = posemath.smooth(S.hurtW); pose = posemath.layer(pose, posemath.named('hurt'), hw, hw, hw, hw); }
       if (S.downW > 0.02) { var dw = posemath.smooth(S.downW); pose = posemath.layer(pose, posemath.named('down'), dw, dw, dw, dw); }
       var riseLift = 0;
+      if (p.kd > 0 && !p.down) {
+        /* an ordinary knockdown: thrown on his back, a moment on the floor, then up into the rock stand, held, and back to his guard */
+        var ke = (combatMod.KD - p.kd + alpha) / 60, kdn = combatMod.KD_DOWN / 60;
+        if (ke < kdn) pose = posemath.blend(S.cur, posemath.named('down'), posemath.smooth(ke / 0.22));
+        else { var ks = rockstand.at(ke - kdn, 1.75, 0.45); pose = ks.pose; riseLift = ks.lift; }
+        S.cur = posemath.copy(pose); S.mp.cancel();
+      }
       if (S.rise && fw.state === 'rise') {                                                /* the rock stand: kip up from the floor and hold it */
         var rs = rockstand.at(fw.riseT / 60); pose = rs.pose; riseLift = rs.lift;
         S.cur = posemath.copy(pose);

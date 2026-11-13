@@ -6,6 +6,10 @@ var enemiesData = require('../data/enemies');
 var moves = require('../data/moves');
 
 var GH = enemiesData.GUARD_HITS, GCOOL = enemiesData.GUARD_COOLDOWN, GBREAK = enemiesData.GUARD_BREAK;
+/* ordinary knockdowns: an unblockable blow (the stick fighter's swing, the heavy's punch) that does not finish him throws Toofan on his
+   back; he lies a moment, then gets up into his rock stand and holds it, untouchable all the while (KD ticks), and then fights on.
+   Not again within KD_GAP ticks of the last one ending: a second big blow in that time only staggers him. */
+var KD = 180, KD_DOWN = 48, KD_GAP = 480;
 var TPS = 60, KINDS = enemiesData.KINDS, STRIKES = enemiesData.STRIKES, RAGE = enemiesData.RAGE;
 var TIMED_WINDOW = 12;
 
@@ -120,7 +124,7 @@ function playerStrike(world, entry) {
 
 function enemyStrike(world, e, input) {
   var p = world.player, K = KINDS[e.kind], c = world.combat, s = input.state;
-  if (p.invuln || p.down) return;
+  if (p.invuln || p.down || p.kd > 0) return;
   if (dist(e, p) > K.reach + 0.35) { world.bus.emit('whiff', { id: e.id }); return; }
   if (K.ranged) world.bus.emit('throw', { id: e.id, x: e.x, z: e.z, tx: p.x, tz: p.z });
   var toE = Math.atan2(e.x - p.x, e.z - p.z), front = Math.abs(angDiff(toE, p.face)) < 80 * Math.PI / 180;
@@ -145,8 +149,10 @@ function enemyStrike(world, e, input) {
     return;
   }
   p.hp -= K.damage; p.stun = 26; addRage(p, RAGE.hurt); c.combo = 0;
-  var hx = p.x - e.x, hz = p.z - e.z, hd = Math.hypot(hx, hz) || 1; p.x += hx / hd * 0.25; p.z += hz / hd * 0.25;
+  var hx = p.x - e.x, hz = p.z - e.z, hd = Math.hypot(hx, hz) || 1, floored = !K.blockable && p.hp > 0 && (c.tick || 0) - (p.kdEnd || -1e9) > KD_GAP;
+  p.x += hx / hd * (floored ? 0.6 : 0.25); p.z += hz / hd * (floored ? 0.6 : 0.25);
   world.bus.emit('playerHurt', { id: e.id, damage: K.damage, unblockable: !K.blockable });
+  if (floored) { p.kd = KD; p.stun = KD; p.kdEnd = (c.tick || 0) + KD; p.face = Math.atan2(-hx, -hz); world.bus.emit('heroFloored', { id: e.id, ticks: KD, down: KD_DOWN }); }
 }
 
 function stepEnemy(world, e, input) {
@@ -166,7 +172,7 @@ function stepEnemy(world, e, input) {
         if (K.keep && d < K.keep - 1.2) { sp = K.speed / TPS; e.x -= dx / d * sp; e.z -= dz / d * sp; e.phase += sp; e.moving = true; }   /* the thrower backs away to throw */
         else if (d > (K.keep || want)) { sp = K.speed / TPS; e.x += dx / d * sp; e.z += dz / d * sp; e.phase += sp; e.moving = true; } else e.moving = false;
         if (e.cd > 0) e.cd--;
-        else if (d <= K.reach && attackers(c) < limit(world) && c.windGap <= 0 && !p.down && !(e.guarding && world.attackLock && c.target === e.id)) {     /* a guarder keeps his arms up while the hero is swinging */ e.st = 'windup'; e.t = 0; c.windGap = 28 + Math.floor(world.rng.next() * 20); world.bus.emit('windup', { id: e.id, blockable: K.blockable }); }
+        else if (d <= K.reach && attackers(c) < limit(world) && c.windGap <= 0 && !p.down && !(p.kd > 0) && !(e.guarding && world.attackLock && c.target === e.id)) {     /* a guarder keeps his arms up while the hero is swinging */ e.st = 'windup'; e.t = 0; c.windGap = 28 + Math.floor(world.rng.next() * 20); world.bus.emit('windup', { id: e.id, blockable: K.blockable }); }
       } else {
         /* waiting their turn: hold a ring round the hero and circle slowly */
         var ring = 3.6, cx = -dz / d, cz = dx / d, dir = (e.id % 2) ? 1 : -1; e.moving = true;
@@ -218,6 +224,8 @@ function step(world, input) {
   if (!c.enabled) return;
   p.guard = !!(s.held.block && !world.attackLock && p.stun <= 0 && !p.down);
   if (p.stun > 0) p.stun--;
+  if (p.kd > 0 && --p.kd === 0) world.bus.emit('heroUp', {});
+  c.tick = (c.tick || 0) + 1;
   if (p.guard) c.guardIdle = 0; else if (++c.guardIdle > 100) c.guardHits = 0;
   if (c.comboT > 0 && --c.comboT === 0) c.combo = 0;
   if (c.bannerT > 0) c.bannerT--;
@@ -271,4 +279,4 @@ function step(world, input) {
   if (p.down) c.downT++;                              /* how long he has been down: the fight decides when it is lost */
 }
 
-module.exports = { startLocation: startLocation, createCombat: createCombat, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS };
+module.exports = { startLocation: startLocation, createCombat: createCombat, step: step, spawn: spawn, playerStrike: playerStrike, KINDS: KINDS, KD: KD, KD_DOWN: KD_DOWN, KD_GAP: KD_GAP };

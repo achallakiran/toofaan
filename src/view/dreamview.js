@@ -25,10 +25,46 @@ var BG_FS = [
   '  gl_FragColor = vec4(col, 1.0);',
   '}'].join('\n');
 
+/* the fog: low mist lying on the ground and drifting (a layer of world-space planes, soft noise, thinned round the boy so his feet and
+   the trail read), and in two shots a veil of it drifting right past the lens. Drawn once, after the people, so it never stacks up in
+   the outline passes. Depth haze comes from the scene's own fog (everything far off sinks into the red). */
+var MIST_VS = 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }';
+var NOISE = [
+  'float h(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5); }',
+  'float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }',
+  'float fb(vec2 p){ return n(p) * 0.55 + n(p * 2.1 + 3.7) * 0.3 + n(p * 4.3 - 1.3) * 0.15; }'].join('\n');
+var MIST_FS = [
+  'uniform float uT, uA, uK; uniform vec3 uHole, uCam, uCol; varying vec3 vW;', NOISE,
+  'void main(){',
+  '  vec2 q = vW.xz * 0.32 + vec2(uT * 0.05 + uK * 3.1, -uT * 0.03 + uK * 1.7);',
+  '  float m = smoothstep(0.35, 0.85, fb(q + vec2(fb(q * 0.7 + uT * 0.02), 0.0) * 0.8));',
+  '  float hole = smoothstep(uHole.z * 0.45, uHole.z, length(vW.xz - uHole.xy));',
+  '  float d = length(vW - uCam), near = smoothstep(0.6, 2.2, d), far = 1.0 - smoothstep(18.0, 30.0, d);',
+  '  gl_FragColor = vec4(uCol, m * uA * hole * near * far);',
+  '}'].join('\n');
+var VEIL_FS = [
+  'uniform float uT, uA; varying vec2 vUv;', NOISE,
+  'void main(){',
+  '  vec2 p = vUv * vec2(2.4, 1.4) + vec2(-uT * 0.09, uT * 0.015);',
+  '  float m = smoothstep(0.4, 0.9, fb(p + fb(p * 0.6 - uT * 0.03)));',
+  '  float edge = max(smoothstep(0.55, 0.0, vUv.y), max(smoothstep(0.3, 0.0, vUv.x), smoothstep(0.7, 1.0, vUv.x)));',
+  '  gl_FragColor = vec4(vec3(0.62, 0.16, 0.18), m * uA * (0.25 + 0.75 * edge));',
+  '}'].join('\n');
+
 function createDream(renderer) {
   var scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, 0.05, 120), bgScene = new THREE.Scene(), bgCam = new THREE.Camera();
   var U = { uT: { value: 0 } }, bgMat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: BG_VS, fragmentShader: BG_FS, depthTest: false, depthWrite: false });
   bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat));
+  /* the fog (see above): depth haze on the whole scene; the ground mist and the lens veil drawn last, once */
+  var FOGC = new THREE.Color(0x4a0a14); scene.fog = new THREE.Fog(FOGC, 4, 36);
+  var mistScene = new THREE.Scene(), mistGeo = new THREE.PlaneGeometry(64, 64), mistMats = [];
+  [[0.06, 0.6, 0], [0.22, 0.45, 1], [0.42, 0.3, 2]].forEach(function (L) {
+    var mm = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uA: { value: L[1] }, uK: { value: L[2] }, uHole: { value: new THREE.Vector3(0, 0, 1) }, uCam: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color(0x9a3038) } },
+      vertexShader: MIST_VS, fragmentShader: MIST_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    var pl = new THREE.Mesh(mistGeo, mm); pl.rotation.x = -Math.PI / 2; pl.position.set(0, L[0], -6); mistScene.add(pl); mistMats.push(mm);
+  });
+  var veilMat = new THREE.ShaderMaterial({ uniforms: { uT: { value: 0 }, uA: { value: 0 } }, vertexShader: BG_VS, fragmentShader: VEIL_FS, transparent: true, depthTest: false, depthWrite: false });
+  var veilScene = new THREE.Scene(); veilScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), veilMat));
   var black = { skin: new THREE.MeshBasicMaterial({ color: 0x050204, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0x050204 }) };
   var pale = { skin: new THREE.MeshBasicMaterial({ color: 0xf2ece2, skinning: true }), plain: new THREE.MeshBasicMaterial({ color: 0xf2ece2 }) };
   var halo = { skin: new THREE.MeshBasicMaterial({ color: 0xffd9a0, skinning: true, depthWrite: false, transparent: true }), plain: new THREE.MeshBasicMaterial({ color: 0xffd9a0, depthWrite: false, transparent: true }) };
@@ -229,6 +265,9 @@ function createDream(renderer) {
         roll = 0.02;
       }
       cam.aspect = aspect; cam.updateProjectionMatrix(); cam.rotateZ(roll);
+      var fd = cam.position.distanceTo(FC); scene.fog.near = Math.max(2.5, fd * 0.6); scene.fog.far = scene.fog.near + 22;   /* (the people in the shot stay clear; what's behind them sinks into it) */
+      mistMats.forEach(function (mm) { mm.uniforms.uT.value = T; mm.uniforms.uCam.value.copy(cam.position); mm.uniforms.uHole.value.set(hx, hz, 1.1); });
+      veilMat.uniforms.uT.value = T; veilMat.uniforms.uA.value = shot === 2 ? 0.55 : shot === 4 ? 0.45 : 0;
       dust.forEach(function (d) { d.quaternion.copy(cam.quaternion); });
       var ac = renderer.autoClear; renderer.autoClear = false; renderer.clear();
       renderer.render(bgScene, bgCam);
@@ -256,10 +295,12 @@ function createDream(renderer) {
         all.forEach(function (f) { f.rig.root.position.addScaledVector(RT, -d[0] * px).addScaledVector(UP, -d[1] * px); });
       });
       world.visible = false; paint(black, pale); renderer.render(scene, cam); world.visible = true;
+      renderer.render(mistScene, cam);                                          /* the ground mist, over their feet (it keeps clear of the boy's) */
+      if (veilMat.uniforms.uA.value > 0) renderer.render(veilScene, bgCam);      /* the veil drifting past the lens */
       renderer.autoClear = ac;
     },
     dispose: function () {
-      bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember, ghost.skin, ghost.plain, bloodM, doorM].forEach(function (m) { m.dispose(); }); dust.forEach(function (d) { d.material.dispose(); });
+      bgMat.dispose(); mistGeo.dispose(); veilMat.dispose(); mistMats.forEach(function (m) { m.dispose(); }); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember, ghost.skin, ghost.plain, bloodM, doorM].forEach(function (m) { m.dispose(); }); dust.forEach(function (d) { d.material.dispose(); });
       geos.forEach(function (g) { g.dispose(); }); floor.material.dispose(); maaModel.dispose();
     }
   };
