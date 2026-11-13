@@ -71,12 +71,12 @@ function createWake() {
       skip.addEventListener('click', function (e) { e.stopPropagation(); finish(); }); document.body.appendChild(skip);
       function finish() { if (S.done) return; S.done = true; ctx.go(S.next, S.next === 'hideout' ? { from: 'bed' } : undefined); }
       S.finish = finish;
-      S.renderOnce = function () { S.noDraw = true; S.last = performance.now(); M.render(ctx); S.noDraw = false; };   /* (tools: pose everything at S.t without drawing) */
+      S.renderOnce = function () { S.noDraw = true; S.last = ctx.now(); M.render(ctx); S.noDraw = false; };   /* (tools: pose everything at S.t without drawing) */
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         S.quiltLie.dispose(); S.quiltSit.dispose();
         S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); if (S.rig.root.parent) S.rig.root.parent.remove(S.rig.root);   /* (he is moved out of the bed group when he sits up: take him away wherever he is) */ view.scene.remove(S.dog.root); S.dog.dispose();
-        S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
+        S.dream.dispose(); ctx.view.holdLook(false); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
       });
     },
     step: function () {},
@@ -132,6 +132,7 @@ function createWake() {
       var dreamOn = t > D0 && t < D1, fadeB = Math.max(0, 1 - Math.abs(t - D0) / 0.45, 1 - Math.abs(t - D1) / 0.45);
       fadeB = Math.max(fadeB, t > END - 0.9 ? ease((t - (END - 0.9)) / 0.8) : 0);
       S.black.style.opacity = Math.max(0, fadeB).toFixed(3);
+      view.holdLook(dreamOn && fadeB < 1);                                   /* (the dream keeps its own look; the room takes the game's) */
       var line = dreamOn ? S.dream.caption(t - D0) : '';
       if (line) {
         if (line !== S.capLine) { S.capText.textContent = line; S.capLine = line; }

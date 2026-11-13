@@ -18,7 +18,7 @@ function createSfx() {
 }
 
 function make() {
-  var ac = null, master = null, nbuf = null, on = true, unlocked = false;
+  var ac = null, master = null, nbuf = null, on = true, unlocked = false, held = false;
   try { on = localStorage.getItem('toofan.sound') !== '0'; } catch (e) { }
   function ctx() {
     if (!ac) {
@@ -85,13 +85,15 @@ function make() {
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07 * p, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.2);
     },
     wake: function () {
-      if (!on) return; var c = ctx(); if (!c) return;
+      if (!on || held) return;                                          /* (paused from the menu: a tap in it must not start the sound again) */ var c = ctx(); if (!c) return;
       if (c.state !== 'running') { try { c.resume(); } catch (e) { } }
       if (!unlocked) {                                                  /* a silent blip inside the tap unlocks audio on older iPhones */
         try { var b = c.createBuffer(1, 1, 22050), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); unlocked = c.state === 'running'; } catch (e) { }
       }
     },
-    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
+    /* the pause menu: hold all sound (the music stops where it is and carries on from there) */
+    hold: function (h) { held = !!h; var c = ac; if (!c) return; if (held) { this.engineOff(); c.suspend(); } else if (on && !document.hidden) c.resume(); },
+    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on && !held) ac.resume(); },
     toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
     /* Raka's bark: a quick rising yap, a growl of noise under it */
     bark: function () { if (!on || !ctx()) return; thump(380, 620, 0.09, 0.35, 0); thump(560, 300, 0.12, 0.3, 0.07); burst(0.14, 0.12, 'bandpass', 1100, 700, 0.02, 2); },

@@ -19,6 +19,7 @@ var HEAD = { x: 0.05, z: 0 };                         /* where his head lies in 
 var KNEEL = { x: -0.05, z: -0.5 };                    /* where Maa kneels, beside his head */
 
 function createThappad(ctx, opts) {
+  ctx.view.holdLook && ctx.view.holdLook(true);                            /* (Maa's world keeps its own look) */
   var renderer = ctx.view.renderer, scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(50, 1, 0.05, 60), made = [];
   scene.background = new THREE.Color(0x000000);
   scene.add(new THREE.HemisphereLight(0xd9d2e4, 0x2a2018, 0.7));
@@ -119,7 +120,7 @@ function createThappad(ctx, opts) {
     choose: function (c) { var b = choice.querySelector('[data-c="' + c + '"]'); if (b) b.click(); },
     phase: function () { return S.phase; },
     render: function () {
-      var now = performance.now(), dt = S.last ? Math.min(0.1, (now - S.last) / 1000) : 1 / 60; S.last = now;     /* its own clock: the same pace wherever it is shown */
+      var now = ctx.now(), dt = S.last ? Math.min(0.1, (now - S.last) / 1000) : 1 / 60; S.last = now;     /* its own clock: the same pace wherever it is shown */
       S.t += dt; S.tp += dt; var t = S.t;
       if (S.phase === 'dark' && S.tp > 1.2) { go('choice'); choice.style.opacity = 1; }
       if (S.phase === 'walk' && S.tp > 3.2) go('kneel');
@@ -174,6 +175,7 @@ function createThappad(ctx, opts) {
       return o;
     },
     dispose: function () {
+      ctx.view.holdLook && ctx.view.holdLook(false);
       scene.remove(maa.root); maa.dispose(); scene.remove(hero.root); made.forEach(function (x) { x.dispose(); });
       [choice, line, prompt, flash, words].forEach(function (d) { d.remove(); });
     }

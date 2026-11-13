@@ -20,6 +20,7 @@ var wake = require('./modes/wake');
 var hideoutMode = require('./modes/hideout');
 var stealthMode = require('./modes/stealth');
 var musicMod = require('./view/music');
+var pauseMenuMod = require('./view/pausemenu');
 var pixelfont = require('./view/pixelfont');
 
 function boot() {
@@ -35,7 +36,7 @@ function boot() {
   var bus = busMod.createBus();
   var input = inputMod.createInput();
   var world = { seed: seed };                                            /* the game's seed: the ride's city and every fight grow from it */
-  var tierName = params.get('tier');
+  var tierName = params.get('tier') || save.get('tier', null);              /* (the quality chosen in the menu, kept on this device) */
   if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
   var view = viewMod.createView(document.getElementById('game'), tierName);
   var hud = hudMod.createHud(document.getElementById('hud'));
@@ -43,31 +44,14 @@ function boot() {
   var touch = controls.attachTouch(input, document.getElementById('touch'));
   /* the player sees no debug text: the readout panel shows only in the developer view (?dev=1); a speaker icon switches sound */
   if (!params.get('dev')) document.getElementById('hud').style.display = 'none';
-  (function () {
-    var sfx = sfxMod.createSfx(), b = document.createElement('button');
-    var ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>';
-    var OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
-    b.setAttribute('aria-label', 'Sound'); b.setAttribute('data-ok', '1');
-    var PILL = 'position:fixed;z-index:20;top:max(12px,env(safe-area-inset-top));height:34px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;padding:0 9px 0 7px;color:#fff;font-size:11px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
-    function lab(icon, t) { return icon.replace('width="22" height="22"', 'width="18" height="18"').replace('width="20" height="20"', 'width="16" height="16"') + '<span>' + t + '</span>'; }
-    b.style.cssText = PILL + ';left:max(12px,env(safe-area-inset-left))';
-    b.innerHTML = lab(sfx.on ? ON : OFF, 'SFX');
-    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = lab(on ? ON : OFF, 'SFX'); });
-    document.body.appendChild(b);
-    /* the music switch beside it: music off keeps the effects */
-    var music = musicMod.createMusic(sfx), mb = document.createElement('button');
-    var NOTE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="17.5" cy="16" r="2.5" fill="#fff"/></svg>';
-    var NOTE_OFF = NOTE.replace('</svg>', '<path d="M3 3l18 18" stroke="#ff5a5a"/></svg>');
-    mb.setAttribute('aria-label', 'Music'); mb.setAttribute('data-ok', '1');
-    mb.style.cssText = PILL + ';left:calc(max(12px,env(safe-area-inset-left)) + 76px)';
-    mb.innerHTML = lab(music.enabled ? NOTE : NOTE_OFF, 'MUSIC');
-    mb.addEventListener('click', function () { var on = music.toggle(); mb.innerHTML = lab(on ? NOTE : NOTE_OFF, 'MUSIC'); window.dispatchEvent(new Event('toofan:music')); });
-    document.body.appendChild(mb);
-  })();
-
-  var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
+  var sfx = sfxMod.createSfx(), music = musicMod.createMusic(sfx);
+  /* the game's clock, which the pause menu stops: every mode and the fixed-step loop read time from it, so a pause freezes the play,
+     the cameras and the cutscenes alike, and picks up exactly where it stopped */
+  var clockOff = 0, pausedAt = null;
+  function now() { return (pausedAt !== null ? pausedAt : performance.now()) - clockOff; }
+  var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: now,
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: { require: require } };   /* (debug.require: tools load view modules for model sheets) */
-  ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
+  ctx.debug.music = music;
   var modes = modesMod.createModes(ctx);
   modes.register(fight.createFight());
   modes.register(studio.createStudio());
@@ -81,7 +65,9 @@ function boot() {
   var DEV = !!params.get('dev');
   var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio', stealth: '#stealth' };
+  var lastGo = { name: null, args: undefined };
   function go(name, args) {
+    lastGo = { name: name, args: args };
     if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
@@ -103,14 +89,51 @@ function boot() {
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
     step: function (t) { modes.step(t); },
     render: function (a) { modes.render(a); },
-    schedule: function (f) { return requestAnimationFrame(f); },
+    schedule: function (f) { return requestAnimationFrame(function () { f(now()); }); },   /* (the game's clock, not the frame's: a pause stops the ticks) */
     cancel: function (h) { cancelAnimationFrame(h); },
     now: ctx.now
   });
   loop.start();
   document.addEventListener('visibilitychange', function () { input.reset(); });
 
-  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
+  /* ---- the pause button and its menu (view/pausemenu): pause, restart, back to the title, start over, and the settings ---- */
+  function pauseGame() { if (pausedAt !== null) return; pausedAt = performance.now(); sfx.hold(true); input.reset(); }
+  function resumeGame() { if (pausedAt === null) return; clockOff += performance.now() - pausedAt; pausedAt = null; sfx.hold(false); input.reset(); }
+  var tierNow = view.tierId, tierPick = tierNow;
+  if (DEV) view.setLook(save.get('look', { style: 'current', px: 3, vignette: false }));   /* (the look under test; players see the game as it is) */
+  var menu = pauseMenuMod.createPauseMenu({
+    dev: DEV,
+    settings: function () { return { sfx: sfx.on, music: music.enabled, tier: tierPick, tiers: Object.keys(CONFIG.TIERS), tierPending: tierPick !== tierNow, look: view.getLook(), styles: view.LOOK_STYLES }; },
+    set: function (k, v) {
+      if (k === 'sfx') { if (sfx.on !== v) sfx.toggle(); }
+      else if (k === 'music') { if (music.enabled !== v) { music.toggle(); window.dispatchEvent(new Event('toofan:music')); } }
+      else if (k === 'tier') { tierPick = v; save.set('tier', v); }
+      else if (k === 'look') { var L = view.getLook(); for (var q in v) L[q] = v[q]; view.setLook(L); save.set('look', L); }
+    },
+    actions: function () {
+      var m = modes.currentName(), out = [], fightLike = m === 'fight' || m === 'stealth';
+      if (fightLike) out.push({ id: 'restart', label: 'RESTART', ask: m === 'fight' ? 'RESTART THIS FIGHT?' : 'START THE STAGE AGAIN?' });
+      out.push({ id: 'title', label: 'MAIN MENU', ask: fightLike ? 'LEAVE THIS ' + (m === 'fight' ? 'FIGHT' : 'STAGE') + '?' : null });
+      out.push({ id: 'new', label: 'NEW GAME', ask: 'START OVER? YOUR PROGRESS WILL BE LOST' });
+      return out;
+    },
+    act: function (id) {
+      resumeGame();
+      if (tierPick !== tierNow) { location.reload(); return; }                /* (a new quality needs a fresh start; the place is kept as on any reload) */
+      if (id === 'restart') go(lastGo.name, lastGo.args);
+      else if (id === 'title') { if (modes.currentName() === 'ride') window.dispatchEvent(new Event('pagehide')); ctx.ride = null; go('title', { menu: true }); }   /* (leaving the ride parks Bijli, as closing the page does) */
+      else if (id === 'new') { save.set('ride.missions', null); save.set('ride.pos', null); ctx.ride = null; go('wake', { next: 'hideout' }); }
+    },
+    open: pauseGame,
+    close: function () { resumeGame(); if (tierPick !== tierNow) location.reload(); }
+  });
+  function menuFor(name) { menu.setMode(name === 'title' ? 'title' : name === 'studio' ? 'none' : 'play'); }
+  bus.on('mode:changed', function (d) { menuFor(d.name); });
+  menuFor(modes.currentName());
+  /* the phone switching apps or locking pauses the game, menu open */
+  document.addEventListener('visibilitychange', function () { if (document.hidden && !menu.isOpen() && modes.currentName() !== 'title' && modes.currentName() !== 'studio') menu.open(); });
+
+  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, menu: menu, pause: pauseGame, resume: resumeGame, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
   document.documentElement.setAttribute('data-ready', '1');
 }
 

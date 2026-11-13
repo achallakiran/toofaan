@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 95',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 96',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1035,6 +1035,7 @@ var wake = require('./modes/wake');
 var hideoutMode = require('./modes/hideout');
 var stealthMode = require('./modes/stealth');
 var musicMod = require('./view/music');
+var pauseMenuMod = require('./view/pausemenu');
 var pixelfont = require('./view/pixelfont');
 
 function boot() {
@@ -1050,7 +1051,7 @@ function boot() {
   var bus = busMod.createBus();
   var input = inputMod.createInput();
   var world = { seed: seed };                                            /* the game's seed: the ride's city and every fight grow from it */
-  var tierName = params.get('tier');
+  var tierName = params.get('tier') || save.get('tier', null);              /* (the quality chosen in the menu, kept on this device) */
   if (!CONFIG.TIERS[tierName]) tierName = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) && Math.min(screen.width, screen.height) < 900 ? 'low' : 'high';   /* phones start light */
   var view = viewMod.createView(document.getElementById('game'), tierName);
   var hud = hudMod.createHud(document.getElementById('hud'));
@@ -1058,31 +1059,14 @@ function boot() {
   var touch = controls.attachTouch(input, document.getElementById('touch'));
   /* the player sees no debug text: the readout panel shows only in the developer view (?dev=1); a speaker icon switches sound */
   if (!params.get('dev')) document.getElementById('hud').style.display = 'none';
-  (function () {
-    var sfx = sfxMod.createSfx(), b = document.createElement('button');
-    var ON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>';
-    var OFF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
-    b.setAttribute('aria-label', 'Sound'); b.setAttribute('data-ok', '1');
-    var PILL = 'position:fixed;z-index:20;top:max(12px,env(safe-area-inset-top));height:34px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;padding:0 9px 0 7px;color:#fff;font-size:11px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
-    function lab(icon, t) { return icon.replace('width="22" height="22"', 'width="18" height="18"').replace('width="20" height="20"', 'width="16" height="16"') + '<span>' + t + '</span>'; }
-    b.style.cssText = PILL + ';left:max(12px,env(safe-area-inset-left))';
-    b.innerHTML = lab(sfx.on ? ON : OFF, 'SFX');
-    b.addEventListener('click', function () { var on = sfx.toggle(); b.innerHTML = lab(on ? ON : OFF, 'SFX'); });
-    document.body.appendChild(b);
-    /* the music switch beside it: music off keeps the effects */
-    var music = musicMod.createMusic(sfx), mb = document.createElement('button');
-    var NOTE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="17.5" cy="16" r="2.5" fill="#fff"/></svg>';
-    var NOTE_OFF = NOTE.replace('</svg>', '<path d="M3 3l18 18" stroke="#ff5a5a"/></svg>');
-    mb.setAttribute('aria-label', 'Music'); mb.setAttribute('data-ok', '1');
-    mb.style.cssText = PILL + ';left:calc(max(12px,env(safe-area-inset-left)) + 76px)';
-    mb.innerHTML = lab(music.enabled ? NOTE : NOTE_OFF, 'MUSIC');
-    mb.addEventListener('click', function () { var on = music.toggle(); mb.innerHTML = lab(on ? NOTE : NOTE_OFF, 'MUSIC'); window.dispatchEvent(new Event('toofan:music')); });
-    document.body.appendChild(mb);
-  })();
-
-  var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
+  var sfx = sfxMod.createSfx(), music = musicMod.createMusic(sfx);
+  /* the game's clock, which the pause menu stops: every mode and the fixed-step loop read time from it, so a pause freezes the play,
+     the cameras and the cutscenes alike, and picks up exactly where it stopped */
+  var clockOff = 0, pausedAt = null;
+  function now() { return (pausedAt !== null ? pausedAt : performance.now()) - clockOff; }
+  var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: now,
     hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: { require: require } };   /* (debug.require: tools load view modules for model sheets) */
-  ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
+  ctx.debug.music = music;
   var modes = modesMod.createModes(ctx);
   modes.register(fight.createFight());
   modes.register(studio.createStudio());
@@ -1096,7 +1080,9 @@ function boot() {
   var DEV = !!params.get('dev');
   var tabs = { studio: document.getElementById('tabStudio'), fight: document.getElementById('tabStreet'), ride: document.getElementById('tabRide') };
   var HASH = { ride: '#ride', fight: DEV ? '#fight' : '#ride', wake: '#wake', hideout: '#hideout', studio: '#studio', stealth: '#stealth' };
+  var lastGo = { name: null, args: undefined };
   function go(name, args) {
+    lastGo = { name: name, args: args };
     if (name === 'studio') musicMod.createMusic(sfxMod.createSfx()).stop(0.5);   /* the developer view is silent */
     modes.switchTo(name, args);
     Object.keys(tabs).forEach(function (k) { tabs[k].setAttribute('aria-pressed', k === name ? 'true' : 'false'); });
@@ -1118,14 +1104,51 @@ function boot() {
     hz: CONFIG.TICK_HZ, maxSteps: CONFIG.MAX_STEPS_PER_FRAME,
     step: function (t) { modes.step(t); },
     render: function (a) { modes.render(a); },
-    schedule: function (f) { return requestAnimationFrame(f); },
+    schedule: function (f) { return requestAnimationFrame(function () { f(now()); }); },   /* (the game's clock, not the frame's: a pause stops the ticks) */
     cancel: function (h) { cancelAnimationFrame(h); },
     now: ctx.now
   });
   loop.start();
   document.addEventListener('visibilitychange', function () { input.reset(); });
 
-  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
+  /* ---- the pause button and its menu (view/pausemenu): pause, restart, back to the title, start over, and the settings ---- */
+  function pauseGame() { if (pausedAt !== null) return; pausedAt = performance.now(); sfx.hold(true); input.reset(); }
+  function resumeGame() { if (pausedAt === null) return; clockOff += performance.now() - pausedAt; pausedAt = null; sfx.hold(false); input.reset(); }
+  var tierNow = view.tierId, tierPick = tierNow;
+  if (DEV) view.setLook(save.get('look', { style: 'current', px: 3, vignette: false }));   /* (the look under test; players see the game as it is) */
+  var menu = pauseMenuMod.createPauseMenu({
+    dev: DEV,
+    settings: function () { return { sfx: sfx.on, music: music.enabled, tier: tierPick, tiers: Object.keys(CONFIG.TIERS), tierPending: tierPick !== tierNow, look: view.getLook(), styles: view.LOOK_STYLES }; },
+    set: function (k, v) {
+      if (k === 'sfx') { if (sfx.on !== v) sfx.toggle(); }
+      else if (k === 'music') { if (music.enabled !== v) { music.toggle(); window.dispatchEvent(new Event('toofan:music')); } }
+      else if (k === 'tier') { tierPick = v; save.set('tier', v); }
+      else if (k === 'look') { var L = view.getLook(); for (var q in v) L[q] = v[q]; view.setLook(L); save.set('look', L); }
+    },
+    actions: function () {
+      var m = modes.currentName(), out = [], fightLike = m === 'fight' || m === 'stealth';
+      if (fightLike) out.push({ id: 'restart', label: 'RESTART', ask: m === 'fight' ? 'RESTART THIS FIGHT?' : 'START THE STAGE AGAIN?' });
+      out.push({ id: 'title', label: 'MAIN MENU', ask: fightLike ? 'LEAVE THIS ' + (m === 'fight' ? 'FIGHT' : 'STAGE') + '?' : null });
+      out.push({ id: 'new', label: 'NEW GAME', ask: 'START OVER? YOUR PROGRESS WILL BE LOST' });
+      return out;
+    },
+    act: function (id) {
+      resumeGame();
+      if (tierPick !== tierNow) { location.reload(); return; }                /* (a new quality needs a fresh start; the place is kept as on any reload) */
+      if (id === 'restart') go(lastGo.name, lastGo.args);
+      else if (id === 'title') { if (modes.currentName() === 'ride') window.dispatchEvent(new Event('pagehide')); ctx.ride = null; go('title', { menu: true }); }   /* (leaving the ride parks Bijli, as closing the page does) */
+      else if (id === 'new') { save.set('ride.missions', null); save.set('ride.pos', null); ctx.ride = null; go('wake', { next: 'hideout' }); }
+    },
+    open: pauseGame,
+    close: function () { resumeGame(); if (tierPick !== tierNow) location.reload(); }
+  });
+  function menuFor(name) { menu.setMode(name === 'title' ? 'title' : name === 'studio' ? 'none' : 'play'); }
+  bus.on('mode:changed', function (d) { menuFor(d.name); });
+  menuFor(modes.currentName());
+  /* the phone switching apps or locking pauses the game, menu open */
+  document.addEventListener('visibilitychange', function () { if (document.hidden && !menu.isOpen() && modes.currentName() !== 'title' && modes.currentName() !== 'studio') menu.open(); });
+
+  window.__game = { ctx: ctx, loop: loop, modes: modes, go: go, menu: menu, pause: pauseGame, resume: resumeGame, hashFight: function () { return ctx.fight ? fightworld.hash(ctx.fight) : 0; } };
   document.documentElement.setAttribute('data-ready', '1');
 }
 
@@ -2296,6 +2319,7 @@ var HEAD = { x: 0.05, z: 0 };                         /* where his head lies in 
 var KNEEL = { x: -0.05, z: -0.5 };                    /* where Maa kneels, beside his head */
 
 function createThappad(ctx, opts) {
+  ctx.view.holdLook && ctx.view.holdLook(true);                            /* (Maa's world keeps its own look) */
   var renderer = ctx.view.renderer, scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(50, 1, 0.05, 60), made = [];
   scene.background = new THREE.Color(0x000000);
   scene.add(new THREE.HemisphereLight(0xd9d2e4, 0x2a2018, 0.7));
@@ -2396,7 +2420,7 @@ function createThappad(ctx, opts) {
     choose: function (c) { var b = choice.querySelector('[data-c="' + c + '"]'); if (b) b.click(); },
     phase: function () { return S.phase; },
     render: function () {
-      var now = performance.now(), dt = S.last ? Math.min(0.1, (now - S.last) / 1000) : 1 / 60; S.last = now;     /* its own clock: the same pace wherever it is shown */
+      var now = ctx.now(), dt = S.last ? Math.min(0.1, (now - S.last) / 1000) : 1 / 60; S.last = now;     /* its own clock: the same pace wherever it is shown */
       S.t += dt; S.tp += dt; var t = S.t;
       if (S.phase === 'dark' && S.tp > 1.2) { go('choice'); choice.style.opacity = 1; }
       if (S.phase === 'walk' && S.tp > 3.2) go('kneel');
@@ -2451,6 +2475,7 @@ function createThappad(ctx, opts) {
       return o;
     },
     dispose: function () {
+      ctx.view.holdLook && ctx.view.holdLook(false);
       scene.remove(maa.root); maa.dispose(); scene.remove(hero.root); made.forEach(function (x) { x.dispose(); });
       [choice, line, prompt, flash, words].forEach(function (d) { d.remove(); });
     }
@@ -2865,12 +2890,12 @@ function createWake() {
       skip.addEventListener('click', function (e) { e.stopPropagation(); finish(); }); document.body.appendChild(skip);
       function finish() { if (S.done) return; S.done = true; ctx.go(S.next, S.next === 'hideout' ? { from: 'bed' } : undefined); }
       S.finish = finish;
-      S.renderOnce = function () { S.noDraw = true; S.last = performance.now(); M.render(ctx); S.noDraw = false; };   /* (tools: pose everything at S.t without drawing) */
+      S.renderOnce = function () { S.noDraw = true; S.last = ctx.now(); M.render(ctx); S.noDraw = false; };   /* (tools: pose everything at S.t without drawing) */
       S.dream = dreamview.createDream(view.renderer);
       scope.add(function () {
         S.quiltLie.dispose(); S.quiltSit.dispose();
         S.hide.dispose(); S.roomMat.dispose(); view.scene.remove(S.key); view.scene.remove(S.bed); if (S.rig.root.parent) S.rig.root.parent.remove(S.rig.root);   /* (he is moved out of the bed group when he sits up: take him away wherever he is) */ view.scene.remove(S.dog.root); S.dog.dispose();
-        S.dream.dispose(); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
+        S.dream.dispose(); ctx.view.holdLook(false); tint.remove(); red.remove(); word.remove(); skip.remove(); cap.remove(); blackout.remove();
       });
     },
     step: function () {},
@@ -2926,6 +2951,7 @@ function createWake() {
       var dreamOn = t > D0 && t < D1, fadeB = Math.max(0, 1 - Math.abs(t - D0) / 0.45, 1 - Math.abs(t - D1) / 0.45);
       fadeB = Math.max(fadeB, t > END - 0.9 ? ease((t - (END - 0.9)) / 0.8) : 0);
       S.black.style.opacity = Math.max(0, fadeB).toFixed(3);
+      view.holdLook(dreamOn && fadeB < 1);                                   /* (the dream keeps its own look; the room takes the game's) */
       var line = dreamOn ? S.dream.caption(t - D0) : '';
       if (line) {
         if (line !== S.capLine) { S.capText.textContent = line; S.capLine = line; }
@@ -5614,6 +5640,16 @@ defs["view/app"]=function(module,exports,require){
 var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
 
+/* THE LOOK (a test switch for now, in the pause menu with ?dev=1): the whole game's style as a few high-level values, laid over whatever
+   each place sets. filter: a colour grade over the finished picture (so it reaches everything, lit or not); hemi / sun: the lights,
+   scaled; haze: the fog pulled nearer and toward a soft colour, the sky with it; px: draw at 1/px the size and blow it up crisp (Retro).
+   The dream and the thappad keep their own look (their modes suspend it). */
+var LOOKS = {
+  current: { filter: '', hemi: 1, sun: 1, haze: 0 },
+  soft: { filter: 'saturate(.66) brightness(1.1) contrast(.85) sepia(.08)', hemi: 1.3, sun: 0.62, sunColor: '#ffe2bd', haze: 0.32, hazeColor: '#eadfd2', fogNear: 0.55, fogFar: 0.85 },
+  retro: { filter: 'saturate(1.22) contrast(1.08)', hemi: 1, sun: 1.05, haze: 0, pixel: true }
+};
+
 function createView(canvas, tierName) {
   var tier = CONFIG.TIERS[tierName] || CONFIG.TIERS.high, tierId = CONFIG.TIERS[tierName] ? tierName : 'high';
   var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: tier.aa, powerPreference: 'high-performance' });
@@ -5635,6 +5671,18 @@ function createView(canvas, tierName) {
   }
   /* turning the phone: the size can settle a moment after the event, so measure again shortly after */
   function resizeSoon() { resize(); setTimeout(resize, 120); setTimeout(resize, 450); }
+  /* the look's grade, vignette and pixel size go on the page (see LOOKS); held off for the dream and the thappad */
+  var look = { style: 'current', px: 3, vignette: false }, lookHeld = false, lookState = '', tmpC = new THREE.Color();
+  var vig = document.createElement('div'); vig.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;display:none;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,0) 52%,rgba(20,8,4,.42) 100%)';
+  if (canvas.parentNode) canvas.parentNode.insertBefore(vig, canvas.nextSibling);
+  function lookOn(on, force) {
+    on = on && !lookHeld; var L = LOOKS[look.style] || LOOKS.current, key = on ? look.style + look.px + look.vignette : 'off';
+    if (key === lookState && !force) return; lookState = key;
+    canvas.style.filter = on ? L.filter : ''; vig.style.display = on && look.vignette ? 'block' : 'none';
+    var pr = on && L.pixel ? 1 / look.px : Math.min(window.devicePixelRatio || 1, tier.pr);
+    canvas.style.imageRendering = on && L.pixel ? 'pixelated' : '';
+    if (renderer.getPixelRatio() !== pr) { renderer.setPixelRatio(pr); resize(); }
+  }
   window.addEventListener('resize', resizeSoon); window.addEventListener('orientationchange', resizeSoon);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resizeSoon);
   resize();
@@ -5681,8 +5729,23 @@ function createView(canvas, tierName) {
     render: function () {
       var n = performance.now(), dt = lastT ? Math.min(0.1, (n - lastT) / 1000) : 1 / 60; if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
       for (var h = 0; h < frameHooks.length; h++) frameHooks[h](camera, dt);   /* last word before drawing, once the camera is placed (the arena's see-through fade) */
+      lookOn(true);
+      var L = LOOKS[look.style] || LOOKS.current, keep = null;
+      if (!lookHeld && (L.hemi !== 1 || L.sun !== 1 || L.haze)) {
+        /* the look over this frame only: the place's own lights and fog are put back straight after, so nothing that sets them is touched */
+        keep = { hi: hemi.intensity, si: sun.intensity, sc: sun.color.getHex(), fc: scene.fog && scene.fog.color.getHex(), fn: scene.fog && scene.fog.near, ff: scene.fog && scene.fog.far, bg: scene.background && scene.background.isColor ? scene.background.getHex() : null };
+        hemi.intensity *= L.hemi; sun.intensity *= L.sun; if (L.sunColor) sun.color.lerp(tmpC.set(L.sunColor), 0.6);
+        if (L.haze && scene.fog) { tmpC.set(L.hazeColor); scene.fog.color.lerp(tmpC, L.haze); scene.fog.near *= L.fogNear; scene.fog.far *= L.fogFar; if (keep.bg !== null) scene.background.lerp(tmpC, L.haze * 0.8); }
+      }
       renderer.render(scene, camera);
+      if (keep) { hemi.intensity = keep.hi; sun.intensity = keep.si; sun.color.setHex(keep.sc); if (scene.fog) { scene.fog.color.setHex(keep.fc); scene.fog.near = keep.fn; scene.fog.far = keep.ff; } if (keep.bg !== null && scene.background && scene.background.isColor) scene.background.setHex(keep.bg); }
     },
+    /* the look: { style: 'current' | 'soft' | 'retro', px: 2 | 3, vignette: bool } */
+    setLook: function (o) { look = { style: LOOKS[o.style] ? o.style : 'current', px: o.px === 2 ? 2 : 3, vignette: !!o.vignette }; lookOn(!lookHeld, true); },
+    getLook: function () { return { style: look.style, px: look.px, vignette: look.vignette }; },
+    LOOK_STYLES: Object.keys(LOOKS),
+    /* the dream and the thappad draw in their own style: they hold the look off while they show */
+    holdLook: function (h) { lookHeld = !!h; lookOn(!lookHeld, true); },
     onFrame: function (fn) { frameHooks.push(fn); return function () { var i = frameHooks.indexOf(fn); if (i >= 0) frameHooks.splice(i, 1); }; },
     stats: function () {
       var i = renderer.info;
@@ -9476,6 +9539,106 @@ function createOrbit(camera, dom) {
 module.exports = { createOrbit: createOrbit };
 
 };
+defs["view/pausemenu"]=function(module,exports,require){
+/* view: the pause button and its menu. One button in the top-left corner (where SFX and MUSIC used to sit): in play it pauses the game
+   and opens the menu (Resume, Restart, Main menu, New game, Settings); on the title screen it is a gear that opens only the Settings.
+   The settings: sound, music, quality; and with ?dev=1 a LOOK (TEST) section that changes the game's style live behind the menu.
+   What the buttons do is the caller's (main.js): this only draws and asks. */
+'use strict';
+
+var FONT = "'ToofanPx',monospace";
+var PILL = 'position:fixed;z-index:20;top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));height:34px;min-width:34px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;gap:6px;padding:0 9px;color:#fff;font-family:' + FONT + ';font-size:11px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
+var BTN = 'display:block;width:100%;margin:9px 0 0;padding:12px 10px;border:2px solid #000;border-radius:4px;box-shadow:3px 3px 0 #000;font-family:' + FONT + ';font-size:14px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation;text-align:center';
+var ROW = 'display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 0;font-size:12px;letter-spacing:.1em;color:#e8e8e8';
+var CHIP = 'padding:8px 10px;border:2px solid #000;border-radius:4px;box-shadow:2px 2px 0 #000;font-family:' + FONT + ';font-size:11px;letter-spacing:.08em;cursor:pointer;touch-action:manipulation;background:#2a2d33;color:#fff';
+var PAUSE = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="6" y="5" width="4" height="14" fill="#fff"/><rect x="14" y="5" width="4" height="14" fill="#fff"/></svg>';
+var GEAR = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>';
+
+/* o: { dev, settings(): {sfx, music, tier, tiers, look, styles}, set(key, value), actions(): [{id, label, ask?}] for the current mode
+   (empty: the title, settings only), act(id), open(), close() } */
+function createPauseMenu(o) {
+  var btn = document.createElement('button'), shade = null, mode = 'play', page = 'main';
+  btn.setAttribute('data-ok', '1'); btn.setAttribute('aria-label', 'Pause'); btn.style.cssText = PILL;
+  btn.addEventListener('click', function (e) { e.stopPropagation(); openMenu(); });
+  document.body.appendChild(btn);
+
+  function el(tag, css, html) { var d = document.createElement(tag); if (css) d.style.cssText = css; if (html != null) d.innerHTML = html; return d; }
+  function button(label, css, fn) { var b = el('button', BTN + ';' + css, label); b.setAttribute('data-ok', '1'); b.addEventListener('click', function (e) { e.stopPropagation(); fn(); }); return b; }
+  function chips(cur, list, fn) {
+    var w = el('div', 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end');
+    list.forEach(function (it) {
+      var c = el('button', CHIP + (it.v === cur ? ';background:#ffd21f;color:#000' : ''), it.t); c.setAttribute('data-ok', '1');
+      c.addEventListener('click', function (e) { e.stopPropagation(); fn(it.v); draw(); }); w.appendChild(c);
+    });
+    return w;
+  }
+  function row(label, ctl) { var r = el('div', ROW); r.appendChild(el('span', '', label)); r.appendChild(ctl); return r; }
+
+  function draw() {
+    if (!shade) return;
+    var panel = shade.firstChild; panel.innerHTML = '';
+    /* a wide, short screen (a computer, a phone on its side): the buttons on the left, the settings on the right, so it all fits */
+    var wide = window.innerWidth > window.innerHeight && window.innerWidth >= 600;
+    panel.style.width = wide ? 'min(94vw,680px)' : 'min(86vw,340px)';
+    var colA = panel, colB = panel;
+    if (wide && page !== 'ask') {
+      panel.style.display = 'grid'; panel.style.gridTemplateColumns = '1fr 1.25fr'; panel.style.columnGap = '20px'; panel.style.alignItems = 'start';
+      colA = el('div'); colB = el('div'); panel.appendChild(colA); panel.appendChild(colB);
+    } else panel.style.display = 'block';
+    var S = o.settings(), acts = mode === 'title' ? [] : o.actions();
+    if (page === 'ask') {
+      panel.appendChild(el('div', 'font-size:15px;letter-spacing:.12em;color:#ffd21f;text-align:center;margin-bottom:6px', ask.q));
+      panel.appendChild(button('YES', 'background:#ffd21f;color:#000', function () { var id = ask.id; close(true); o.act(id); }));
+      panel.appendChild(button('NO', 'background:#fff;color:#000', function () { page = 'main'; draw(); }));
+      return;
+    }
+    colA.appendChild(el('div', 'font-size:18px;letter-spacing:.24em;color:#ffd21f;text-align:center;text-shadow:2px 2px 0 #000;margin-bottom:4px', mode === 'title' ? 'SETTINGS' : 'PAUSED'));
+    colA.appendChild(button(mode === 'title' ? 'BACK' : 'RESUME', 'background:#ffd21f;color:#000', function () { close(); }));
+    acts.forEach(function (a) {
+      colA.appendChild(button(a.label, 'background:#fff;color:#000', function () { if (a.ask) { ask = { id: a.id, q: a.ask }; page = 'ask'; draw(); } else { close(true); o.act(a.id); } }));
+    });
+    var set = el('div', colB === panel ? 'margin-top:14px;padding-top:10px;border-top:1px dashed rgba(255,255,255,.25)' : '');
+    set.appendChild(el('div', 'font-size:12px;letter-spacing:.2em;color:#9fd8aa', 'SETTINGS'));
+    set.appendChild(row('SOUND', chips(S.sfx, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('sfx', v); })));
+    set.appendChild(row('MUSIC', chips(S.music, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('music', v); })));
+    set.appendChild(row('QUALITY', chips(S.tier, S.tiers.map(function (t) { return { v: t, t: t.toUpperCase() }; }), function (v) { o.set('tier', v); })));
+    if (S.tierPending) set.appendChild(el('div', 'margin-top:4px;font-size:10px;letter-spacing:.08em;color:#ffb38a;text-align:right', 'APPLIES WHEN THE GAME RELOADS'));
+    colB.appendChild(set);
+    if (o.dev) {
+      var lk = el('div', 'margin-top:14px;padding-top:10px;border-top:1px dashed rgba(255,210,31,.4)'), L = S.look;
+      lk.appendChild(el('div', 'font-size:12px;letter-spacing:.2em;color:#ffd21f', 'LOOK (TEST)'));
+      lk.appendChild(row('STYLE', chips(L.style, S.styles.map(function (t) { return { v: t, t: t.toUpperCase() }; }), function (v) { o.set('look', { style: v }); })));
+      if (L.style === 'retro') lk.appendChild(row('PIXELS', chips(L.px, [{ v: 3, t: '1/3' }, { v: 2, t: '1/2' }], function (v) { o.set('look', { px: v }); })));
+      lk.appendChild(row('VIGNETTE', chips(L.vignette, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { vignette: v }); })));
+      colB.appendChild(lk);
+    }
+  }
+  var ask = null;
+  function openMenu() {
+    if (shade) return;
+    page = 'main';
+    /* see-through enough that a change of look shows behind it */
+    shade = el('div', 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(3,5,10,.42);padding:16px;font-family:' + FONT + ';color:#fff;touch-action:manipulation');
+    var panel = el('div', 'width:min(86vw,340px);max-height:calc(100vh - 32px);overflow:auto;padding:16px 16px 18px;background:rgba(12,14,20,.86);border:2px solid #000;border-radius:6px;box-shadow:5px 5px 0 #000');
+    shade.appendChild(panel);
+    ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'keydown'].forEach(function (k) { shade.addEventListener(k, function (e) { e.stopPropagation(); }); });
+    shade.addEventListener('click', function (e) { if (e.target === shade) close(); });
+    document.body.appendChild(shade);
+    if (mode !== 'title') o.open(); draw();
+  }
+  function close(silent) { if (!shade) return; shade.remove(); shade = null; if (mode !== 'title') o.close(silent); }
+  window.addEventListener('keydown', function (e) { if (e.code === 'Escape' || e.code === 'KeyP') { if (shade) close(); else if (btn.style.display !== 'none') openMenu(); } });
+  return {
+    /* 'play': the pause button; 'title': the gear (settings only); 'none': hidden (the developer studio) */
+    setMode: function (m) { if (shade) close(); mode = m; btn.style.display = m === 'none' ? 'none' : 'flex'; btn.innerHTML = m === 'title' ? GEAR : PAUSE; btn.setAttribute('aria-label', m === 'title' ? 'Settings' : 'Pause'); },
+    isOpen: function () { return !!shade; },
+    open: openMenu, close: close, redraw: draw
+  };
+}
+
+module.exports = { createPauseMenu: createPauseMenu };
+
+};
 defs["view/pixelfont"]=function(module,exports,require){
 /* view: ToofanPx, the game's "code terminal" pixel font (square voxel pixels, built by tools/font/makefont.py and embedded, so it works
    offline). Installed once as a web font; every piece of interface text uses FAMILY. The comic hit words keep their comic lettering. */
@@ -10369,7 +10532,7 @@ function createSfx() {
 }
 
 function make() {
-  var ac = null, master = null, nbuf = null, on = true, unlocked = false;
+  var ac = null, master = null, nbuf = null, on = true, unlocked = false, held = false;
   try { on = localStorage.getItem('toofan.sound') !== '0'; } catch (e) { }
   function ctx() {
     if (!ac) {
@@ -10436,13 +10599,15 @@ function make() {
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07 * p, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.2);
     },
     wake: function () {
-      if (!on) return; var c = ctx(); if (!c) return;
+      if (!on || held) return;                                          /* (paused from the menu: a tap in it must not start the sound again) */ var c = ctx(); if (!c) return;
       if (c.state !== 'running') { try { c.resume(); } catch (e) { } }
       if (!unlocked) {                                                  /* a silent blip inside the tap unlocks audio on older iPhones */
         try { var b = c.createBuffer(1, 1, 22050), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); unlocked = c.state === 'running'; } catch (e) { }
       }
     },
-    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on) ac.resume(); },
+    /* the pause menu: hold all sound (the music stops where it is and carries on from there) */
+    hold: function (h) { held = !!h; var c = ac; if (!c) return; if (held) { this.engineOff(); c.suspend(); } else if (on && !document.hidden) c.resume(); },
+    sleep: function (hidden) { if (!ac) return; if (hidden) { this.engineOff(); ac.suspend(); } else if (on && !held) ac.resume(); },
     toggle: function () { on = !on; try { localStorage.setItem('toofan.sound', on ? '1' : '0'); } catch (e) { } if (on) ctx(); else this.engineOff(); return on; },
     /* Raka's bark: a quick rising yap, a growl of noise under it */
     bark: function () { if (!on || !ctx()) return; thump(380, 620, 0.09, 0.35, 0); thump(560, 300, 0.12, 0.3, 0.07); burst(0.14, 0.12, 'bandpass', 1100, 700, 0.02, 2); },
