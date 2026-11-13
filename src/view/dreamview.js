@@ -9,6 +9,7 @@
 
 var herorig = require('./herorig');
 var posemath = require('./posemath');
+var maavox = require('./maavox');
 
 var BG_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 var BG_FS = [
@@ -35,21 +36,22 @@ function createDream(renderer) {
   var ember = new THREE.MeshBasicMaterial({ color: 0xff3a2a }), geos = [];
   function box(w, h, d) { var g = new THREE.BoxGeometry(w, h, d); geos.push(g); return g; }
   /* the people */
-  function person(variant, scale, extra) {
-    var rig = herorig.createHeroRig(variant), meshes = [];
+  function person(variant, scale, extra, built) {
+    var rig = built ? built.rig : herorig.createHeroRig(variant), meshes = [];
     if (extra) extra(rig);
     rig.root.traverse(function (m) { if (m.isMesh) meshes.push(m); }); rig.root.scale.setScalar(scale); scene.add(rig.root);
     return { rig: rig, meshes: meshes, scale: scale };
   }
   var sariGeo = new THREE.CylinderGeometry(0.2, 0.38, 0.95, 10), headGeo = new THREE.SphereGeometry(0.16, 10, 8); geos.push(sariGeo, headGeo);
-  var maa = person('thug', 0.95, function (rig) { var s = new THREE.Mesh(sariGeo, black.plain); s.position.set(0, 0.5, 0); rig.root.add(s); var veil = new THREE.Mesh(headGeo, black.plain); veil.scale.set(1.15, 1.2, 1.15); veil.position.set(0, 0.06, -0.02); rig.head.add(veil); });
-  maa.pale = true;
-  /* the two-headed man: nothing like Toofan. Huge (half again his height) and hunched, broad spiked shoulders, a long coat flaring from
+  /* Maa: her own model from the game (view/maavox) as she was then - the same white sari with the pallu over her head, younger */
+  var maaModel = maavox.createMaa({ young: true }), maa = person(null, 1.0, null, maaModel);
+  maa.pale = true; maa.sync = maaModel.sync;
+  /* the two-headed man: nothing like Toofan. Huge (about 2.6 m, more than twice the boy's height) and hunched, broad spiked shoulders, a long coat flaring from
      his waist to his shins with tails behind; two heads splayed apart in a V on one thick neck, each with a pair of short horns, and four
      burning eyes */
-  var coatGeo = new THREE.CylinderGeometry(0.3, 0.55, 1.05, 10), tails = [];
+  var coatGeo = new THREE.CylinderGeometry(0.3, 0.38, 1.05, 10), tails = [];
   geos.push(coatGeo);
-  var villain = person('thug', 1.6, function (rig) {
+  var villain = person('thug', 1.45, function (rig) {
     rig.head.position.x -= 0.15; rig.head.rotation.z = 0.25;
     var h2 = new THREE.Mesh(box(0.3, 0.34, 0.31), black.plain); h2.position.set(rig.head.position.x + 0.36, rig.head.position.y + 0.12, rig.head.position.z); h2.rotation.z = -0.38; rig.neck.add(h2);
     var jaw = new THREE.Mesh(box(0.24, 0.1, 0.27), black.plain); jaw.position.set(0, -0.17, 0.02); h2.add(jaw);
@@ -66,7 +68,8 @@ function createDream(renderer) {
       [-0.07, 0.07].forEach(function (u) { var sp = new THREE.Mesh(box(0.04, 0.13, 0.04), black.plain); sp.position.set(u, 0.15, 0); pad.add(sp); });
     });
   });
-  var hero = person(undefined, 1.0);
+  /* Toofan as a boy of 7-8: a child's build (herorig 'kid'), about 0.62 of the man's height, under a third of the two-headed man's */
+  var KID = 0.62, KH = 1.25, hero = person('kid', KID);
   var all = [maa, villain, hero];
 
   /* the gate and the mansion behind it */
@@ -133,7 +136,7 @@ function createDream(renderer) {
 
   /* the story, by its own clock T (seconds since the dream began), in six shots */
   var SHOTS = [0, 3, 6, 9, 12, 14, 17];
-  var LINES = ['BETA... TOOFAN...', '', 'MAA!', '', '', 'MAA... RUKO!'];
+  var LINES = ['BETA...!', '', 'MAA!', 'BETA...!', 'MAA!', 'MAAA!'];      /* Maa calls for her son; the boy keeps shouting for her */
   function shotOf(T) { for (var k = 0; k < 6; k++) if (T < SHOTS[k + 1]) return k; return 5; }
   /* where things are at story time T */
   function villainZ(T) { return T < 9 ? lerp(-1.5, -6.3, T / 9) : (T < 12 ? lerp(-6.3, -10.2, (T - 9) / 3) : lerp(-10.2, -14.9, clamp01((T - 12) / 3.6))); }
@@ -141,6 +144,8 @@ function createDream(renderer) {
   function heroZ(T) { return T < ARRIVE ? lerp(9.0, BARS, T / ARRIVE) : BARS; }
   return {
     LENGTH: SHOTS[6], cam: cam,
+    /* (for tools: where the people and the grip are) */
+    probe: function () { var r = function (v) { return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)]; }; return { villain: r(villain.rig.root.position), maa: r(maa.rig.root.position), fist: r(HV), wrist: r(HM), arm: maa.armAng, cam: r(cam.position) }; },
     caption: function (T) { var k = shotOf(T), t = T - SHOTS[k], len = SHOTS[k + 1] - SHOTS[k]; return t > 0.5 && len - t > 0.4 ? LINES[k] : ''; },
     /* draw the dream at story time T */
     render: function (T) {
@@ -149,19 +154,33 @@ function createDream(renderer) {
       /* THE DRAG: he strides for the gate bent into it, his arm stretched back with her wrist in his fist (her hand is put exactly in his),
          one head turned back to her; she is hauled along leaning right back, heels dug in and skidding, her free arm flung back toward
          her son. Through the gate he hauls her faster, up the drive and the steps, and the door shuts on them. */
-      var vz = villainZ(T), vx = 0.6, yank = Math.max(0, Math.sin(T * 2.6)) * 0.12, gone = T > 16.1;
+      /* THE DRAG, read at a glance: the two of them an arm-span apart with red sky between, his arm and hers one straight taut line from
+         his shoulder to hers, his fist closed round her wrist. It goes in yanks: every YANK seconds he lurches forward and wrenches the
+         arm, she is jerked off balance and stumbles a step toward him, then throws her weight back and digs her heels in again. */
+      var YANK = 0.85, yu = (T % YANK) / YANK, jerk = yu < 0.16 ? Math.sin(yu / 0.16 * Math.PI / 2) : Math.max(0, 1 - (yu - 0.16) / 0.5);   /* 1 at the wrench, easing off */
+      var vz = villainZ(T), vx = 0.6, yank = jerk * 0.12, gone = T > 16.1;
       var stride = T < 9 ? T * 2.0 : 18 + (T - 9) * 3.0;
       tails.forEach(function (tl, k) { tl.rotation.x = 0.35 + Math.sin(T * 4 + k) * 0.15; });
-      place(villain, vx, vz, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 30, 'hip.rx': 6, 'head.rx': 4, 'head.ry': 28, 'neck.ry': 14,
-        'armB.sx': -62, 'armB.sz': -8, 'armB.e': 4, 'armB.pr': 20, 'armA.sx': 25 + Math.sin(stride) * 20, 'armA.e': 50 }, 1, 1, 1, 1));
+      /* (the grip is his RIGHT hand - he faces -z, so his right is +x, the side the profile camera sees - reaching down and back past his
+         coat. He leans only a little into the pull: a deep hunch carries his shoulder forward past where any arm could reach back to her.
+         His shoulder is about 0.9 m above hers, so the one straight line from his shoulder to hers runs about 36 degrees down: his arm is
+         set about 55 degrees back from hanging, hers is raised to meet it, and their bodies end up about 1.4 m apart) */
+      place(villain, vx, vz - jerk * 0.06, Math.PI, posemath.layer(posemath.walkPose(stride, 1.0), { 'spine.rx': 12 + jerk * 6, 'hip.rx': 6, 'head.rx': 4, 'head.ry': -28, 'neck.ry': -14,
+        'armB.sx': -52 + jerk * 6, 'armB.sz': -10, 'armB.e': 0, 'armB.pr': 0, 'armA.sx': 25 + Math.sin(stride) * 20, 'armA.e': 50 }, 1, 1, 1, 1));
       villain.rig.root.position.y = vz < -14.2 ? (vz + 14.2) * -0.85 : 0;                             /* up the steps */
-      var sk = Math.sin(T * 5.2);
-      place(maa, 0, 0, Math.PI - 0.35, posemath.layer(stand, { 'spine.rx': -30 - yank * 60, 'hip.rx': -12, 'hip.y': -0.08, 'head.rx': -6, 'head.ry': 55, 'neck.ry': 25,
-        'armA.sx': 92, 'armA.sz': 6, 'armA.e': 0, 'armA.pr': 0, 'armB.sx': -70 + sk * 6, 'armB.sz': 40, 'armB.e': 12,
-        'legA.hx': 42 + sk * 6, 'legA.k': 6, 'legA.a': 22, 'legB.hx': -8 - sk * 6, 'legB.k': 38, 'legB.a': 10 }, 1, 1, 1, 1));
-      villain.rig.root.updateMatrixWorld(true); maa.rig.root.updateMatrixWorld(true);
-      villain.rig.parts.R.wrist.getWorldPosition(HV); maa.rig.parts.L.wrist.getWorldPosition(HM);
-      maa.rig.root.position.set(HV.x - HM.x, villain.rig.root.position.y > 0 ? villain.rig.root.position.y * 0.7 : 0, HV.z - HM.z + yank * 0.4);
+      var sk = Math.sin(T * 5.2), lean = 1 - jerk;                                                        /* lean: 1 = heels dug in, 0 = jerked forward */
+      function maaPose(arm) {
+        return posemath.layer(stand, { 'spine.rx': -18 * lean + 14 * jerk, 'hip.rx': -12 * lean, 'hip.y': -0.08, 'head.rx': -6 + 10 * jerk, 'head.ry': 45, 'neck.ry': 20,
+          'armB.sx': arm, 'armB.sz': -4, 'armB.e': 0, 'armB.pr': 0, 'armA.sx': -60 * lean + 30 * jerk + sk * 6, 'armA.sz': 40, 'armA.e': 12,
+          'legA.hx': 40 * lean - 10 * jerk + sk * 5, 'legA.k': 6 + 30 * jerk, 'legA.a': 22 * lean, 'legB.hx': -10 * lean + 30 * jerk - sk * 5, 'legB.k': 38 - 20 * jerk, 'legB.a': 10 }, 1, 1, 1, 1);
+      }
+      /* her arm is raised until her wrist is at the height of his fist (a few steps of a secant search), so the hands truly meet */
+      villain.rig.root.updateMatrixWorld(true); villain.rig.parts.R.wrist.getWorldPosition(HV);
+      function handY(arm) { place(maa, 0, 0, Math.PI - 0.3, maaPose(arm)); maa.rig.root.updateMatrixWorld(true); maa.rig.parts.R.wrist.getWorldPosition(HM); return HM.y; }   /* (her right hand: the camera's side too) */
+      var a0 = 95, a1 = 140, y0 = handY(a0) - HV.y, y1 = handY(a1) - HV.y, it;
+      for (it = 0; it < 4 && Math.abs(y1) > 0.004 && Math.abs(y1 - y0) > 1e-5; it++) { var a2 = a1 - y1 * (a1 - a0) / (y1 - y0); a0 = a1; y0 = y1; a1 = Math.max(60, Math.min(175, a2)); y1 = handY(a1) - HV.y; }
+      maa.armAng = a1;
+      maa.rig.root.position.set(HV.x - HM.x, villain.rig.root.position.y > 0 ? villain.rig.root.position.y * 0.7 : 0, HV.z - HM.z); maa.sync && maa.sync();   /* (up the steps behind him) */
       villain.rig.root.visible = maa.rig.root.visible = !gone;
       var mx = maa.rig.root.position.x, mz = maa.rig.root.position.z;
       dust.forEach(function (d, k) {
@@ -175,34 +194,38 @@ function createDream(renderer) {
       /* TOOFAN, in slow motion all the way: a long heavy all-out stride at a third of the speed, arms pumping, red after-images trailing.
          He comes up to the gate just after it shuts and throws himself on the bars, gripping them, an arm reaching through after her. */
       var hz = heroZ(T), hx = 0.1, ph = T * 1.9, atBars = T >= ARRIVE, hit = clamp01((T - ARRIVE) / 0.35);
-      function runPose(q) { return posemath.layer(posemath.walkPose(q, 2.9), { 'spine.rx': 24, 'head.rx': -16, 'armA.sx': 55 + Math.sin(q) * 65, 'armA.e': 85,
-        'armB.sx': 55 - Math.sin(q) * 65, 'armB.e': 85, 'hip.y': -0.06 + Math.abs(Math.sin(q)) * 0.1 }, 1, 1, 1, 1); }
-      var heroPose = atBars ? posemath.layer(stand, { 'spine.rx': 12 - hit * 4, 'head.rx': T > 15.3 ? -8 : 14, 'armA.sx': T > 14.8 ? 92 : 115, 'armA.sz': 8, 'armA.e': T > 14.8 ? 0 : 55,
-        'armB.sx': 118, 'armB.sz': 10, 'armB.e': 50, 'legA.hx': 18, 'legA.k': 22, 'legB.hx': -12, 'legB.k': 10 }, 1, 1, 1, 1) : runPose(ph);
-      var hy = atBars ? 0 : Math.abs(Math.sin(ph)) * 0.16;
+      /* the boy's run: quick short steps flung out, arms flailing forward as if reaching for her, head up to see her */
+      function runPose(q) { return posemath.layer(posemath.walkPose(q, 2.6), { 'spine.rx': 14, 'head.rx': -22, 'armA.sx': 80 + Math.sin(q) * 55, 'armA.sz': 18, 'armA.e': 30 + Math.cos(q) * 25,
+        'armB.sx': 80 - Math.sin(q) * 55, 'armB.sz': 18, 'armB.e': 30 - Math.cos(q) * 25, 'hip.y': -0.04 + Math.abs(Math.sin(q)) * 0.07 }, 1, 1, 1, 1); }
+      /* at the bars: both small hands up round the bars above his head, then one arm pushed through after her */
+      var heroPose = atBars ? posemath.layer(stand, { 'spine.rx': 8 - hit * 4, 'head.rx': T > 15.3 ? -18 : -6, 'armA.sx': T > 14.8 ? 100 : 150, 'armA.sz': 10, 'armA.e': T > 14.8 ? 0 : 30,
+        'armB.sx': 150, 'armB.sz': 12, 'armB.e': 30, 'legA.hx': 14, 'legA.k': 18, 'legB.hx': -10, 'legB.k': 10, 'legA.a': -20 }, 1, 1, 1, 1) : runPose(ph);
+      var hy = atBars ? 0 : Math.abs(Math.sin(ph)) * 0.1;
       place(hero, hx + (atBars ? Math.sin(T * 30) * 0.015 * (1 - hit) : 0), hz, Math.PI, heroPose); hero.rig.root.position.y = hy; hero.rig.flutter(T * 0.35, 0);
-      ghostTrail = atBars ? [] : [0.3, 0.6, 0.9].map(function (lag) { var tq = T - lag; return { z: heroZ(tq), ph: tq * 1.9, y: Math.abs(Math.sin(tq * 1.9)) * 0.16 }; });
+      ghostTrail = atBars ? [] : [0.3, 0.6, 0.9].map(function (lag) { var tq = T - lag; return { z: heroZ(tq), ph: tq * 1.9, y: Math.abs(Math.sin(tq * 1.9)) * 0.1 }; });
       world.children.forEach(function (o) { if (o.userData.flick !== undefined) o.material = ember; });
 
       /* ---- the six shots ---- */
       var roll = 0, Gp = function (x, y, z) { return new THREE.Vector3(x, y, z); };
       if (shot === 0) {            /* 1. wide and low: the mansion behind the shut gate, the blood trail, him hauling her toward it */
-        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
+        frame([-0.18, 0.08, -1], [Gp(-6, 0, MZ + 2), Gp(6, 0, MZ + 2), Gp(4.2, 14.4, MZ + 0.6), Gp(-2.6, 0, GZ), Gp(2.6, 0, GZ)].concat(body(vx, 0, vz, 2.75), body(mx, 0, mz, 1.7)), tall ? 62 : 46, aspect, 0.92, 4);
         cam.position.y = Math.max(0.6, cam.position.y - 1.2); cam.lookAt(FC.x, FC.y + 1.0, FC.z); roll = -0.03;
-      } else if (shot === 1) {     /* 2. side on, medium, tracking: the drag in profile, his fist on her wrist in the middle */
-        frame([-1, -0.04, -0.12], body(vx, 0, vz, 3.05).concat(body(mx, 0, mz, 1.75)), 40, aspect, 0.8, 3);
+      } else if (shot === 1) {     /* 2. side on: first close on the grip - his fist round her wrist, in profile against the sky - then
+                                      wide enough to see both of them whole with the gap between, the one straight arm joining them */
+        if (t < 1.5) { frame([-1, 0.1, 0.05], [Gp(HV.x, HV.y - 0.45, HV.z - 0.5), Gp(HV.x, HV.y + 0.3, HV.z + 0.85)], 34, aspect, 0.85, 2.2); cam.position.y += jerk * 0.03; }   /* (a touch from below: the grip against the sky) */
+        else frame([-1, -0.04, -0.12], body(vx, 0, vz, 2.8).concat(body(mx, 0, mz, 1.65)), 40, aspect, 0.8, 3);
         roll = -0.04;
       } else if (shot === 2) {     /* 3. in front of him, low, tilted, slow motion: running at us, the after-images behind */
-        frame([0.22, 0.2, 1], body(hx, hy, hz, 1.9).concat(body(hx, 0, hz + 0.6, 1.9)), 44, aspect, 0.82, 2.4);
+        frame([0.22, 0.2, 1], body(hx, hy, hz, KH).concat(body(hx, 0, hz + 0.6, KH)), 44, aspect, 0.82, 2.4);
         roll = 0.13 + Math.sin(t * 0.6) * 0.02;
       } else if (shot === 3) {     /* 4. over his shoulder, long lens: the gate opens, he drags her through and up the drive */
-        frame([0.55, -0.05, -1], [Gp(hx - 0.4, 1.0, hz), Gp(hx + 0.4, 2.0, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.95), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
+        frame([0.55, -0.05, -1], [Gp(hx - 0.3, 0.6, hz), Gp(hx + 0.3, KH + 0.1, hz), Gp(-2.0, 0, GZ), Gp(2.0, 3.9, GZ)].concat(body(vx, 0, vz, 2.75), body(mx, 0, mz, 1.7)), 30, aspect, 0.9, 2.2);
         roll = 0.03;
       } else if (shot === 4) {     /* 5. beside the gate, low: it swings shut, the chain snaps across, he slams into the bars */
-        frame([-1, -0.04, -0.5], [Gp(-2.0, 0, GZ), Gp(2.0, 4.0, GZ)].concat(body(hx, 0, hz, 1.95)), 44, aspect, 0.85, 3);
+        frame([-1, -0.04, -0.5], [Gp(-2.0, 0, GZ), Gp(2.0, 4.0, GZ)].concat(body(hx, 0, hz, KH)), 44, aspect, 0.85, 3);
         roll = -0.05;
       } else {                     /* 6. through the bars, left behind: him gripping them, far off she is pulled up the steps and the door shuts */
-        frame([-0.12, -0.02, -1], body(hx, 0, hz, 1.95).concat([Gp(-1.8, 0, MZ + 2.6), Gp(1.8, 4.0, MZ + 2.6)]), 34, aspect, 0.88, 2.2);
+        frame([-0.12, -0.02, -1], body(hx, 0, hz, KH).concat([Gp(-1.8, 0, MZ + 2.6), Gp(1.8, 4.0, MZ + 2.6)]), 34, aspect, 0.88, 2.2);
         roll = 0.02;
       }
       cam.aspect = aspect; cam.updateProjectionMatrix(); cam.rotateZ(roll);
@@ -237,7 +260,7 @@ function createDream(renderer) {
     },
     dispose: function () {
       bgMat.dispose(); [black.skin, black.plain, edge.skin, edge.plain, pale.skin, pale.plain, halo.skin, halo.plain, ember, ghost.skin, ghost.plain, bloodM, doorM].forEach(function (m) { m.dispose(); }); dust.forEach(function (d) { d.material.dispose(); });
-      geos.forEach(function (g) { g.dispose(); }); floor.material.dispose();
+      geos.forEach(function (g) { g.dispose(); }); floor.material.dispose(); maaModel.dispose();
     }
   };
 }

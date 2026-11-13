@@ -66,7 +66,7 @@ function boot() {
   })();
 
   var ctx = { config: CONFIG, bus: bus, input: input, world: world, view: view, hud: hud, touch: touch, save: save, now: function () { return performance.now(); },
-    hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: {} };
+    hudRoot: document.getElementById('hud'), touchRoot: document.getElementById('touch'), studioRoot: document.getElementById('studio'), debug: { require: require } };   /* (debug.require: tools load view modules for model sheets) */
   ctx.debug.music = musicMod.createMusic(sfxMod.createSfx());
   var modes = modesMod.createModes(ctx);
   modes.register(fight.createFight());

@@ -18,6 +18,7 @@ var C = {
 var TH = false;   /* true while building the thug variant: plain cropped hair, bare face, no guitar */
 var MAA = false;  /* true while building Maa: full white sleeves down to the wrists (only her face and hands show) */
 var HOME = false; /* true while building Toofan at home: no costume, no goggles - a robe over loose pyjamas, bare eyes */
+var KID = false;  /* true while building Toofan as a boy of 7-8 (the dream): short messy hair, bare face, a half-sleeve shirt, shorts, bare shins */
 
 function lerpAt(tbl, y) { return vg.interp(tbl, y); }
 
@@ -25,23 +26,30 @@ function lerpAt(tbl, y) { return vg.interp(tbl, y); }
 function buildHead() {
   var g = vg.createGrid(11, 18, 13), cx = 5.5;
   function headCol(x, y, z) {
-    if (y >= 11 && y <= 12) return HOME ? C.hair : C.blu;                   /* headband (none at home) */
+    if (y >= 11 && y <= 12) return (HOME || KID) ? C.hair : C.blu;          /* headband (none at home, none on the boy) */
     if (y >= 13) return C.hair;
     if (z <= 3 && y >= 4) return C.hair;                                    /* back of head */
-    if (!TH && (x <= 1 || x >= 9) && z <= 9 && y >= 3) return C.hair;              /* long side locks */
+    if (!TH && !KID && (x <= 1 || x >= 9) && z <= 9 && y >= 3) return C.hair;      /* long side locks */
     return C.skin;
   }
   vg.ellipsoid(g, cx, 8.0, 6.0, 4.6, 6.0, 4.8, headCol);                    /* skull */
   vg.ellipsoid(g, cx, 4.3, 6.6, 3.9, 3.2, 4.0, headCol);                    /* jaw */
+  if (!KID) {
   vg.ellipsoid(g, cx, 14.4, 7.4, 2.7, 2.0, 3.3, C.hair);                    /* quiff body */
   vg.ellipsoid(g, cx, 15.4, 8.6, 2.0, 1.4, 2.2, C.hair);                    /* swept-up front */
+  }
   var HAIR2 = h('#241a16');
   function hc(x, y, z) { return ((x * 7 + y * 3 + z * 5) % 4 === 0) ? HAIR2 : C.hair; }
+  if (KID) {                                                                 /* the boy's mop: a full round cap of short hair, ragged at the edge, a few strands sticking up */
+    vg.ellipsoid(g, cx, 12.4, 5.6, 5.5, 4.2, 5.6, function (x, y, z) { return (y >= 12 && vg.h3(x, y, z, 3) > 0.12) || (y >= 13 && z <= 7) ? hc(x, y, z) : null; });
+    [[3, 16, 6], [6, 16, 8], [8, 15, 5], [2, 15, 7]].forEach(function (q) { vg.set(g, q[0], q[1], q[2], hc(q[0], q[1], q[2])); });
+  }
   vg.ellipsoid(g, cx, 12.2, 6.0, 5.4, 3.8, 5.4, function (x, y, z) { return y >= 13 ? hc(x, y, z) : null; }); /* full crown, swept back */
-  if (!TH) vg.ellipsoid(g, cx, 6.6, 3.0, 4.9, 6.2, 3.0, function (x, y, z) { return y >= 3 ? hc(x, y, z) : null; });  /* thick back and nape */
+  if (!TH && !KID) vg.ellipsoid(g, cx, 6.6, 3.0, 4.9, 6.2, 3.0, function (x, y, z) { return y >= 3 ? hc(x, y, z) : null; });  /* thick back and nape */
   vg.ellipsoid(g, cx, 10.0, 6.0, 5.3, 2.6, 5.2, function (x, y, z) { return (y >= 11 && z <= 6) ? hc(x, y, z) : null; }); /* hair sweeping over the band at the sides */
   /* long side locks falling past the ears to the jaw */
-  if (!TH) [0, 1, 9, 10].forEach(function (x) { vg.box(g, x, 3, 2, x, 10, 9, function (xx, yy, zz) { return hc(xx, yy, zz); }); });
+  if (KID) [1, 9].forEach(function (x) { vg.box(g, x, 8, 3, x, 11, 7, function (xx, yy, zz) { return hc(xx, yy, zz); }); });   /* the boy: short messy hair over the ears */
+  if (!TH && !KID) [0, 1, 9, 10].forEach(function (x) { vg.box(g, x, 3, 2, x, 10, 9, function (xx, yy, zz) { return hc(xx, yy, zz); }); });
   /* surface details */
   function face(x, y, off, c) { var z = vg.frontZ(g, x, y); if (z >= 0) vg.set(g, x, y, z + off, c); }
   if (TH) {                                                                                            /* thug face: eyes, brows, nose, stubble, scowl */
@@ -50,7 +58,7 @@ function buildHead() {
     [3, 4, 5, 6, 7].forEach(function (x) { face(x, 2, 0, C.mouth); });
     for (var sy = 0; sy <= 3; sy++) for (var sx = 2; sx <= 8; sx++) if (vg.h3(sx, sy, 3, 5) < 0.45 && !(sy === 2)) face(sx, sy, 0, C.skinDD);
   } else {
-  if (HOME) {                                                                                          /* at home: his own eyes and brows, no glasses */
+  if (HOME || KID) {                                                                                   /* at home, and as a boy: his own eyes and brows, no glasses */
     [2, 3, 4, 6, 7, 8].forEach(function (x) { face(x, 7, 1, C.white); face(x, 6, 1, C.skin); face(x, 8, 1, C.hair); face(x, 5, 0, C.skin); });
     face(3, 7, 1, C.pupil); face(7, 7, 1, C.pupil); face(4, 7, 1, C.pupil); face(6, 7, 1, C.pupil); face(5, 7, 1, C.skin);
   } else {
@@ -64,6 +72,8 @@ function buildHead() {
   }
   face(5, 6, 1, C.skin); face(5, 5, 2, C.skinL); face(4, 5, 1, C.skin); face(6, 5, 1, C.skin);        /* nose */
   face(5, 8, 0, C.skin);
+  if (KID) { face(4, 2, 0, C.mouth); face(5, 2, 0, C.mouth); face(6, 2, 0, C.mouth); }   /* a boy's mouth */
+  if (!KID) {
   /* rugged beard and moustache: extruded, two tones, a few grey flecks, cheek line left ragged */
   var GREY = h('#4b4540'), BRD = h('#1b1411');
   function tuft(x, y, off) {
@@ -85,7 +95,8 @@ function buildHead() {
   for (var mx = 2; mx <= 8; mx++) { tuft(mx, 3, 2); if (Math.abs(mx - 5) >= 2) tuft(mx, 2, 1); if (Math.abs(mx - 5) >= 3) tuft(mx, 1, 1); }   /* thick moustache, drooping ends */
   face(5, 2, 0, C.mouth); face(4, 2, 0, C.mouth); face(6, 2, 0, C.mouth);                              /* lips just visible between moustache and beard */
   }
-  if (!TH && !HOME) { face(5, 11, 1, C.yel); face(5, 12, 1, C.yel); face(4, 11, 0, C.yelD); face(6, 11, 0, C.yelD); }          /* headband stud */
+  }
+  if (!TH && !HOME && !KID) { face(5, 11, 1, C.yel); face(5, 12, 1, C.yel); face(4, 11, 0, C.yelD); face(6, 11, 0, C.yelD); }          /* headband stud */
   return { grid: g, pivot: { x: 5.5, y: 1.5, z: 5.0 } };
 }
 
@@ -130,8 +141,10 @@ function buildTorso() {
       if (dx * dx + dz * dz <= 1) vg.set(g, x, y, z, col(x, y, z));
     }
   }
+  if (!KID) {
   [1, -1].forEach(function (s) { vg.ellipsoid(g, cx + s * 4.3, 14.0, cz + 3.7, 3.8, 2.9, 2.1, col); });         /* pecs */
   [1, -1].forEach(function (s) { vg.ellipsoid(g, cx + s * 8.4, 13.5, cz - 1.2, 2.2, 4.0, 2.4, col); });        /* lats */
+  }
   return { grid: g, pivot: { x: cx, y: 2.0, z: cz } };
 }
 
@@ -162,7 +175,8 @@ function buildThigh(s) {
   var tbl = [[0, 3.0, 3.1], [2, 3.7, 3.9], [6, 4.3, 4.4], [11, 4.8, 5.0], [15, 5.0, 5.1], [19, 4.8, 4.8], [21, 4.0, 4.0], [22, 2.6, 2.6]];
   function col(x, y, z) {
     var dx = (x + 0.5 - cx) * s, rx = lerpAt(tbl, y + 0.5)[0];
-    if (dx >= rx - 1.7 && y >= 1 && y <= 20 && Math.abs(z + 0.5 - cz) <= 1.1) return C.yel;
+    if (!KID && dx >= rx - 1.7 && y >= 1 && y <= 20 && Math.abs(z + 0.5 - cz) <= 1.1) return C.yel;
+    if (KID && y <= 9) return (z + 0.5 < cz - 2.0) ? C.skinD : C.skin;                /* the boy's shorts end above the knee */
     if (dx <= -rx + 1.3) return C.pantsD;
     return (z + 0.5 < cz - 3.4) ? C.pantsD : C.pants;
   }
@@ -177,6 +191,7 @@ function buildShin(s) {
   var tbl = [[0, 2.4, 2.6], [3, 2.6, 2.8], [7, 3.1, 3.4], [12, 3.7, 4.0], [16, 3.8, 3.9], [18.5, 3.9, 3.9], [21, 3.2, 3.2]];
   function col(x, y, z) {
     var dx = (x + 0.5 - cx) * s, rx = lerpAt(tbl, y + 0.5)[0];
+    if (KID) return (z + 0.5 < cz - 2.2) ? C.skinD : C.skin;                          /* the boy's bare shins */
     if (y <= 2) return C.pantsD;                                                     /* cuff */
     if (dx >= rx - 1.5 && y <= 20 && Math.abs(z + 0.5 - cz) <= 1.1) return C.yel;
     if (dx <= -rx + 1.1) return C.pantsD;
@@ -184,8 +199,10 @@ function buildShin(s) {
   }
   vg.limb(g, tbl, cx, cz, 1, 20, col);
   vg.ellipsoid(g, cx, 11.5, cz - 1.9, 3.0, 3.6, 2.4, col);                           /* calf */
+  if (!KID) {
   vg.ellipsoid(g, cx, 18.0, cz + 3.3, 3.1, 2.5, 1.7, function () { return C.pantsD; });  /* knee pad */
   vg.ellipsoid(g, cx, 18.4, cz + 3.9, 1.9, 1.3, 1.0, function () { return C.pants; });
+  }
   return { grid: g, pivot: { x: cx, y: 18.5, z: cz } };
 }
 
@@ -227,14 +244,15 @@ function buildUpperArm(s) {
   function col(x, y, z) {
     var dz = z + 0.5 - cz;
     if (MAA) return dz < -2.5 ? C.bluD : C.blu;                                       /* her sleeve */
+    if (KID) return y >= 9 ? (dz < -2.5 ? C.bluD : (y === 9 ? C.bluD : C.blu)) : (dz < -2.5 ? C.skinD : C.skin);   /* the boy's half sleeve */
     if (y === 2 && dz > 0) return C.skinD;                                           /* elbow crease */
     if (dz < -3.0 && y >= 4 && y <= 11) return C.skinD;                              /* triceps shade */
     return C.skin;
   }
   vg.limb(g, tbl, cx, cz, 0, 17, col);
-  if (!MAA) vg.ellipsoid(g, cx, 8.4, cz + 1.6, 2.7, 3.4, 2.3, function () { return C.skinL; }); /* biceps */
-  vg.ellipsoid(g, cx, 14.4, cz, 4.1, 3.0, 3.9, col);                                 /* deltoid */
-  if (!MAA) vg.limb(g, tbl, cx, cz, 8, 9, C.yel, 0.45);                                        /* armband */
+  if (!MAA && !KID) vg.ellipsoid(g, cx, 8.4, cz + 1.6, 2.7, 3.4, 2.3, function () { return C.skinL; }); /* biceps */
+  if (KID) vg.ellipsoid(g, cx, 14.4, cz, 3.2, 2.6, 3.1, col); else vg.ellipsoid(g, cx, 14.4, cz, 4.1, 3.0, 3.9, col);   /* deltoid (a boy's: slight) */
+  if (!MAA && !KID) vg.limb(g, tbl, cx, cz, 8, 9, C.yel, 0.45);                                /* armband */
   return { grid: g, pivot: { x: cx, y: 14.0, z: cz } };
 }
 
@@ -244,13 +262,14 @@ function buildForearm(s) {
   function col(x, y, z) {
     var dz = z + 0.5 - cz;
     if (MAA) return y <= 1 ? C.bluD : (dz < -2.0 ? C.bluD : C.blu);                   /* her sleeve to the wrist */
+    if (KID) return dz < -2.2 ? C.skinD : C.skin;                                     /* the boy's bare forearm */
     if (y <= 4) return (y === 4) ? C.gloveL : C.glove;                               /* wrist guard */
     if (dz < -2.2 && y >= 6) return C.skinD;
     if (y >= 7 && y <= 9 && dz > 1.6) return C.skinL;                                /* forearm muscle */
     return C.skin;
   }
   vg.limb(g, tbl, cx, cz, 0, 13, col);
-  if (!MAA) vg.limb(g, tbl, cx, cz, 1, 3, function () { return C.glove; }, 0.35);
+  if (!MAA && !KID) vg.limb(g, tbl, cx, cz, 1, 3, function () { return C.glove; }, 0.35);
   return { grid: g, pivot: { x: cx, y: 11.5, z: cz } };
 }
 
@@ -361,9 +380,21 @@ var MAA_PAL = { skin: h('#b98b66'), skinD: h('#9c7252'), skinL: h('#c99c78'), sk
   yel: h('#f2efe7'), yelD: h('#d8d2c4'), blu: h('#f2efe7'), bluD: h('#d8d2c4'), bluL: h('#faf8f2'),
   pants: h('#eeeae0'), pantsD: h('#d6d0c2'), pantsL: h('#f7f4ec'), belt: h('#e6e0d2'), shoe: h('#9c7252'), shoeL: h('#b98b66'),
   glove: h('#b98b66'), gloveL: h('#c99c78'), buckle: h('#e6e0d2'), buckleD: h('#d6d0c2') };
+/* Maa as she was when Toofan was a boy (the dream): the same build and sari, black hair, younger skin */
+var MAA_YOUNG = { hair: h('#18120e'), skin: h('#c08f69'), skinD: h('#a37553'), skinL: h('#d0a07b'), skinDD: h('#835d42') };
+/* Toofan at 7-8 (the dream): a faded blue half-sleeve school shirt, khaki shorts, worn brown chappals, his own skin and black hair */
+var KID_PAL = { hair: h('#16100c'), yel: h('#4a86c4'), yelD: h('#3a6ea6'), blu: h('#4a86c4'), bluD: h('#3a6ea6'), bluL: h('#5c98d4'),
+  pants: h('#8a7650'), pantsD: h('#6e5d3e'), pantsL: h('#9c8760'), belt: h('#6e5d3e'), buckle: h('#8a7650'), buckleD: h('#6e5d3e'),
+  glove: h('#b07a52'), gloveL: h('#c48a60'), shoe: h('#5a3b24'), shoeL: h('#6e4a2e'), sole: h('#3a2616'), lace: h('#5a3b24') };
 function buildParts(variant) {
-  if (variant === 'maa') {
-    var saveM = {}, km; for (km in MAA_PAL) { saveM[km] = C[km]; C[km] = MAA_PAL[km]; }
+  if (variant === 'kid') {
+    var saveK = {}, kk; for (kk in KID_PAL) { saveK[kk] = C[kk]; C[kk] = KID_PAL[kk]; }
+    KID = true;
+    try { return buildPartsRaw(); } finally { KID = false; for (kk in saveK) C[kk] = saveK[kk]; }
+  }
+  if (/^maa/.test(variant || '')) {
+    var saveM = {}, km, MP = {}; for (km in MAA_PAL) MP[km] = MAA_PAL[km]; if (variant === 'maa:young') for (km in MAA_YOUNG) MP[km] = MAA_YOUNG[km];
+    for (km in MP) { saveM[km] = C[km]; C[km] = MP[km]; }
     TH = true; MAA = true;
     try { return buildPartsRaw(); } finally { TH = false; MAA = false; for (km in saveM) C[km] = saveM[km]; }
   }

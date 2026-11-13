@@ -73,12 +73,15 @@ function mesh(part, mat) {
   return new THREE.Mesh(g, mat);
 }
 
-function createMaa() {
-  var rig = herorig.createHeroRig('maa'), parts = hv.buildParts('maa'), mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+/* opts.young: Maa as she was when Toofan was a boy (the dream): the same woman and the same white sari and pallu over her head, but her
+   hair black, her skin younger, and standing straight at her full height */
+function createMaa(opts) {
+  var young = !!(opts && opts.young), V = young ? 'maa:young' : 'maa';
+  var rig = herorig.createHeroRig(V), parts = hv.buildParts(V), mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   var sk = mesh(skirt(), mat), hd = mesh(hood(parts.head), mat), sh = mesh(sash(parts.torso), mat);
   rig.body.add(sk);                                 /* the skirt hangs from the waist but stays upright, so it is held by the body, at the hips' height */
   rig.head.add(hd); rig.spine.add(sh);
-  rig.root.scale.set(0.86, 0.93, 0.88);             /* a smaller, older frame */
+  if (young) rig.root.scale.set(0.9, 0.98, 0.9); else rig.root.scale.set(0.86, 0.93, 0.88);             /* a smaller, older frame (younger: straighter, taller) */
   return {
     rig: rig, root: rig.root,
     /* the skirt follows the hips' sway a little */

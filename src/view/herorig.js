@@ -45,7 +45,7 @@ function createHeroRig(variant) {
   }
   function M(parent, name) {
     if (SKIN && name !== 'guitar') {                                   /* joins the one skinned mesh built after the joints exist (hidden thug parts are left out) */
-      if (!((/^thug/.test(variant || '') || variant === 'cop' || variant === 'maa') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
+      if (!((/^thug/.test(variant || '') || variant === 'cop' || /^maa/.test(variant || '') || variant === 'kid') && /^(hair|beard)/.test(name))) skinParts.push({ name: name, joint: parent });
       return null;
     }
     var m = new THREE.Mesh(T.geo[name], T.mat); parent.add(m); meshes.push(m); return m;
@@ -59,7 +59,7 @@ function createHeroRig(variant) {
   for (var i = 0; i < 3; i++) { var sg = G(sp, i === 0 ? SK.hair : SK.hairStep, 'hair' + i); M(sg, 'hair' + i); hair.push(sg); sp = sg; }
   var beard = G(head, SK.beard, 'beard'); M(beard, 'beard');
   var guitar = new THREE.Group(); body.add(guitar); var guitarMesh = M(guitar, 'guitar');
-  if (/^thug/.test(variant || '') || variant === 'cop' || variant === 'maa') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
+  if (/^thug/.test(variant || '') || variant === 'cop' || /^maa/.test(variant || '') || variant === 'kid') { guitar.visible = false; beard.visible = false; hair.forEach(function (h0) { h0.visible = false; }); }
 
   /* a hurt thug's face: eyelids that squeeze shut, an open mouth, a smear of blood. Thin boxes just proud of the face, hidden until needed. */
   var faceFx = null;
@@ -223,6 +223,9 @@ function createHeroRig(variant) {
     }
   }
 
+  /* the boy (the dream): a child's build on the same bones - a big head for his size, narrow shoulders, thin arms and legs (the caller
+     scales the whole of him to his height, about 0.62 of the man) */
+  if (variant === 'kid') { head.scale.setScalar(1.45); spine.scale.set(0.86, 1, 0.9); ['L', 'R'].forEach(function (sd) { side[sd].shoulder.scale.set(0.8, 1, 0.8); side[sd].hip.scale.set(0.82, 1, 0.82); }); }
   return { root: root, body: body, joints: joints, meshes: meshes, parts: side, hips: hips, spine: spine, neck: neck, head: head,
            faceFx: faceFx, applyPose: applyPose, flutter: flutter, stats: T.stats, guitar: guitar, guitarMesh: guitarMesh, guitarPoint: function (y, x, z) { guitar.updateMatrixWorld(true); return guitarPoint(y, x || 0, z || 0, new THREE.Vector3()); } };
 }
