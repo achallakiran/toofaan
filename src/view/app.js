@@ -3,6 +3,7 @@
 
 var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
+var blobshadow = require('./blobshadow');
 
 /* THE LOOK (a test switch for now, in the pause menu with ?dev=1): the whole game's style as a few high-level values, laid over whatever
    each place sets. filter: a colour grade over the finished picture (so it reaches everything, lit or not); hemi / sun: the lights,
@@ -12,6 +13,14 @@ var LOOKS = {
   current: { filter: '', hemi: 1, sun: 1, haze: 0 },
   soft: { filter: 'saturate(.66) brightness(1.1) contrast(.85) sepia(.08)', hemi: 1.3, sun: 0.62, sunColor: '#ffe2bd', haze: 0.32, hazeColor: '#eadfd2', fogNear: 0.55, fogFar: 0.85 },
   retro: { filter: 'saturate(1.22) contrast(1.08)', hemi: 1, sun: 1.05, haze: 0, pixel: true }
+};
+/* place moods (with the look's MOODS switch): each brawl ground's light tinted its own way - the sky light, the sun, the haze */
+var MOODS = {
+  market: { sky: '#ffd29a', sun: '#ffb25a', fog: '#e8b88a', k: 0.45 },
+  temple: { sky: '#ffe09a', sun: '#ffc640', fog: '#f0cf8a', k: 0.5 },
+  toll: { sky: '#b6c6de', sun: '#d6e2f2', fog: '#9fb0c4', k: 0.5 },
+  railway: { sky: '#a6c2ff', sun: '#cddfff', fog: '#8ea8d0', k: 0.5 },
+  warehouse: { sky: '#ffbe6a', sun: '#ffa42c', fog: '#c08850', k: 0.55 }
 };
 
 function createView(canvas, tierName) {
@@ -36,7 +45,7 @@ function createView(canvas, tierName) {
   /* turning the phone: the size can settle a moment after the event, so measure again shortly after */
   function resizeSoon() { resize(); setTimeout(resize, 120); setTimeout(resize, 450); }
   /* the look's grade, vignette and pixel size go on the page (see LOOKS); held off for the dream and the thappad */
-  var look = { style: 'current', px: 3, vignette: false }, lookHeld = false, lookState = '', tmpC = new THREE.Color();
+  var look = { style: 'current', px: 3, vignette: false, shadows: true, moods: false }, mood = null, blobs = blobshadow.createBlobs(scene), lookHeld = false, lookState = '', tmpC = new THREE.Color();
   var vig = document.createElement('div'); vig.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;display:none;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,0) 52%,rgba(20,8,4,.42) 100%)';
   if (canvas.parentNode) canvas.parentNode.insertBefore(vig, canvas.nextSibling);
   function lookOn(on, force) {
@@ -94,19 +103,25 @@ function createView(canvas, tierName) {
       var n = performance.now(), dt = lastT ? Math.min(0.1, (n - lastT) / 1000) : 1 / 60; if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
       for (var h = 0; h < frameHooks.length; h++) frameHooks[h](camera, dt);   /* last word before drawing, once the camera is placed (the arena's see-through fade) */
       lookOn(true);
-      var L = LOOKS[look.style] || LOOKS.current, keep = null;
-      if (!lookHeld && (L.hemi !== 1 || L.sun !== 1 || L.haze)) {
+      blobs.update();
+      var L = LOOKS[look.style] || LOOKS.current, keep = null, MD = look.moods && MOODS[mood];
+      if (!lookHeld && (L.hemi !== 1 || L.sun !== 1 || L.haze || MD)) {
         /* the look over this frame only: the place's own lights and fog are put back straight after, so nothing that sets them is touched */
-        keep = { hi: hemi.intensity, si: sun.intensity, sc: sun.color.getHex(), fc: scene.fog && scene.fog.color.getHex(), fn: scene.fog && scene.fog.near, ff: scene.fog && scene.fog.far, bg: scene.background && scene.background.isColor ? scene.background.getHex() : null };
+        keep = { hi: hemi.intensity, si: sun.intensity, sc: sun.color.getHex(), hc: hemi.color.getHex(), fc: scene.fog && scene.fog.color.getHex(), fn: scene.fog && scene.fog.near, ff: scene.fog && scene.fog.far, bg: scene.background && scene.background.isColor ? scene.background.getHex() : null };
         hemi.intensity *= L.hemi; sun.intensity *= L.sun; if (L.sunColor) sun.color.lerp(tmpC.set(L.sunColor), 0.6);
+        if (MD) { hemi.color.lerp(tmpC.set(MD.sky), MD.k); sun.color.lerp(tmpC.set(MD.sun), MD.k); if (scene.fog) scene.fog.color.lerp(tmpC.set(MD.fog), MD.k * 0.7); if (keep.bg !== null) scene.background.lerp(tmpC.set(MD.fog), MD.k * 0.5); }
         if (L.haze && scene.fog) { tmpC.set(L.hazeColor); scene.fog.color.lerp(tmpC, L.haze); scene.fog.near *= L.fogNear; scene.fog.far *= L.fogFar; if (keep.bg !== null) scene.background.lerp(tmpC, L.haze * 0.8); }
       }
       renderer.render(scene, camera);
-      if (keep) { hemi.intensity = keep.hi; sun.intensity = keep.si; sun.color.setHex(keep.sc); if (scene.fog) { scene.fog.color.setHex(keep.fc); scene.fog.near = keep.fn; scene.fog.far = keep.ff; } if (keep.bg !== null && scene.background && scene.background.isColor) scene.background.setHex(keep.bg); }
+      if (keep) { hemi.color.setHex(keep.hc); hemi.intensity = keep.hi; sun.intensity = keep.si; sun.color.setHex(keep.sc); if (scene.fog) { scene.fog.color.setHex(keep.fc); scene.fog.near = keep.fn; scene.fog.far = keep.ff; } if (keep.bg !== null && scene.background && scene.background.isColor) scene.background.setHex(keep.bg); }
     },
     /* the look: { style: 'current' | 'soft' | 'retro', px: 2 | 3, vignette: bool } */
-    setLook: function (o) { look = { style: LOOKS[o.style] ? o.style : 'current', px: o.px === 2 ? 2 : 3, vignette: !!o.vignette }; lookOn(!lookHeld, true); },
-    getLook: function () { return { style: look.style, px: look.px, vignette: look.vignette }; },
+    setLook: function (o) { look = { style: LOOKS[o.style] ? o.style : 'current', px: o.px === 2 ? 2 : 3, vignette: !!o.vignette, shadows: o.shadows !== false, moods: !!o.moods }; blobs.setOn(look.shadows); lookOn(!lookHeld, true); },
+    getLook: function () { return { style: look.style, px: look.px, vignette: look.vignette, shadows: look.shadows, moods: look.moods }; },
+    /* the soft shadows (view/blobshadow): blobs.add(obj, rx, rz, opts) */
+    blobs: blobs,
+    /* the place's mood (a brawl ground's name, or null) */
+    setMood: function (m) { mood = m || null; },
     LOOK_STYLES: Object.keys(LOOKS),
     /* the dream and the thappad draw in their own style: they hold the look off while they show */
     holdLook: function (h) { lookHeld = !!h; lookOn(!lookHeld, true); },

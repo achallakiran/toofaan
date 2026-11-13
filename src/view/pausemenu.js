@@ -67,6 +67,8 @@ function createPauseMenu(o) {
       lk.appendChild(el('div', 'font-size:12px;letter-spacing:.2em;color:#ffd21f', 'LOOK (TEST)'));
       lk.appendChild(row('STYLE', chips(L.style, S.styles.map(function (t) { return { v: t, t: t.toUpperCase() }; }), function (v) { o.set('look', { style: v }); })));
       if (L.style === 'retro') lk.appendChild(row('PIXELS', chips(L.px, [{ v: 3, t: '1/3' }, { v: 2, t: '1/2' }], function (v) { o.set('look', { px: v }); })));
+      lk.appendChild(row('SOFT SHADOWS', chips(L.shadows, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { shadows: v }); })));
+      lk.appendChild(row('PLACE MOODS', chips(L.moods, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { moods: v }); })));
       lk.appendChild(row('VIGNETTE', chips(L.vignette, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { vignette: v }); })));
       colB.appendChild(lk);
     }

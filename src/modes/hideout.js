@@ -53,8 +53,8 @@ function createHideoutMode() {
       S.hide = hideoutview.createHideout(view, hideout.build(7, { cutaway: true }));
       S.rig = herorig.createHeroRig(from === 'shop' ? undefined : 'home');      /* home from a ride: still in costume */ S.rig.guitar.visible = false; view.scene.add(S.rig.root);
       S.key = new THREE.PointLight(0xc8d6ff, 0.9, 5, 1.4); view.scene.add(S.key);
-      S.dog = dogvox.createDog(); view.scene.add(S.dog.root);
-      S.bike = bikevox.createBike(); S.bike.root.position.set(1.1, 0.2, 6.6); S.bike.root.rotation.y = Math.PI / 2; view.scene.add(S.bike.root);
+      S.dog = dogvox.createDog(); view.scene.add(S.dog.root); view.blobs.add(S.rig.root, 0.45, 0.45);
+      S.bike = bikevox.createBike(); S.bike.root.position.set(1.1, 0.2, 6.6); S.bike.root.rotation.y = Math.PI / 2; view.scene.add(S.bike.root); view.blobs.add(S.bike.root, 0.45, 1.1, { dark: 0.42 });
       S.mp = moveplayer.createMovePlayer(); S.cur = posemath.named('stand'); S.phase = 0; S.t = 0; S.last = 0; S.use = null;  S.msgT = 0;
       S.p = from === 'bed' ? { x: 1.45, z: -0.15, face: Math.PI / 2 } : { x: -1.6, z: 4.6, face: Math.PI };
       S.d = from === 'bed' ? { x: 1.0, z: 0.5, face: Math.PI, st: 'sit' } : { x: 3.4, z: 0.35, face: 0, st: 'sleep' };

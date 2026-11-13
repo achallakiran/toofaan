@@ -147,7 +147,8 @@ function createFight() {
       });
       ctx.debug.arena = av;
       scope.add(function () { off(); av.dispose(); ctx.debug.arena = null; ctx.fight = null; });
-      S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
+      S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root); view.blobs.add(S.rig.root, 0.5, 0.5);
+      view.setMood(type); scope.add(function () { view.setMood(null); });
       scope.add(function () { view.scene.remove(S.rig.root); });
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });

@@ -61,7 +61,7 @@ function createStealthView(view, st) {
       box(rig.head, 0.28, 0.07, 0.28, 0, 0.1, 0, redMat); box(rig.head, 0.05, 0.1, 0.06, 0.06, 0.02, -0.16, redMat);
       if (w.type === 'boss') rig.root.scale.setScalar(1.12);
     }
-    root.add(rig.root);
+    root.add(rig.root); view.blobs.add(rig.root, 0.45, 0.45, { ground: 'feet' });
     var fanMat = new THREE.MeshBasicMaterial({ color: w.type === 'guard' ? 0xffe27a : 0xff4a3a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }); made.push(fanMat);
     var fan = new THREE.Mesh(fanG[w.type], fanMat); fan.position.y = 0.05; root.add(fan);
     var lmat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }); made.push(lmat);
@@ -105,7 +105,7 @@ function createStealthView(view, st) {
   }
 
   /* Toofan */
-  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root);
+  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root); view.blobs.add(hero.root, 0.45, 0.45, { ground: 'feet', hide: function () { return !!st.player.climb; } });
   function heroPose(p, dt) {
     var stand = posemath.named('stand'), out;
     if (st.state === 'fail') out = posemath.layer(stand, posemath.named('down'), 1, 1, 1, 1);

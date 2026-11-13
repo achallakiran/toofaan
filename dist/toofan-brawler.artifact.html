@@ -321,7 +321,7 @@ defs["data/config"]=function(module,exports,require){
 'use strict';
 
 var CONFIG = {
-  BUILD: 'build 96',          /* shown in the corner so you can tell which copy you are playing */
+  BUILD: 'build 97',          /* shown in the corner so you can tell which copy you are playing */
   TICK_HZ: 60,
   MAX_STEPS_PER_FRAME: 5,
 
@@ -1305,7 +1305,8 @@ function createFight() {
       });
       ctx.debug.arena = av;
       scope.add(function () { off(); av.dispose(); ctx.debug.arena = null; ctx.fight = null; });
-      S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root);
+      S.rig = herorig.createHeroRig(); view.scene.add(S.rig.root); view.blobs.add(S.rig.root, 0.5, 0.5);
+      view.setMood(type); scope.add(function () { view.setMood(null); });
       scope.add(function () { view.scene.remove(S.rig.root); });
       S.cur = posemath.named('stand'); S.phase = 0; S.mp = moveplayer.createMovePlayer(); S.fx = fxmod.createFx(view.scene); S.counterIdx = 0; S.blockW = 0; S.cine = cinecam.createDirector(); S.seqW = 0; S.seqLinger = 0; S.seqLast = 0; S.seqSide = -0.8; S.seqPushT = 9; S.seqHits = -1; S.seqCam = null; S.seqLook = null;
       scope.add(function () { S.fx.dispose(); });
@@ -1582,8 +1583,8 @@ function createHideoutMode() {
       S.hide = hideoutview.createHideout(view, hideout.build(7, { cutaway: true }));
       S.rig = herorig.createHeroRig(from === 'shop' ? undefined : 'home');      /* home from a ride: still in costume */ S.rig.guitar.visible = false; view.scene.add(S.rig.root);
       S.key = new THREE.PointLight(0xc8d6ff, 0.9, 5, 1.4); view.scene.add(S.key);
-      S.dog = dogvox.createDog(); view.scene.add(S.dog.root);
-      S.bike = bikevox.createBike(); S.bike.root.position.set(1.1, 0.2, 6.6); S.bike.root.rotation.y = Math.PI / 2; view.scene.add(S.bike.root);
+      S.dog = dogvox.createDog(); view.scene.add(S.dog.root); view.blobs.add(S.rig.root, 0.45, 0.45);
+      S.bike = bikevox.createBike(); S.bike.root.position.set(1.1, 0.2, 6.6); S.bike.root.rotation.y = Math.PI / 2; view.scene.add(S.bike.root); view.blobs.add(S.bike.root, 0.45, 1.1, { dark: 0.42 });
       S.mp = moveplayer.createMovePlayer(); S.cur = posemath.named('stand'); S.phase = 0; S.t = 0; S.last = 0; S.use = null;  S.msgT = 0;
       S.p = from === 'bed' ? { x: 1.45, z: -0.15, face: Math.PI / 2 } : { x: -1.6, z: 4.6, face: Math.PI };
       S.d = from === 'bed' ? { x: 1.0, z: 0.5, face: Math.PI, st: 'sit' } : { x: 3.4, z: 0.35, face: 0, st: 'sleep' };
@@ -5639,6 +5640,7 @@ defs["view/app"]=function(module,exports,require){
 
 var CONFIG = require('../data/config');
 var boxmesh = require('./boxmesh');
+var blobshadow = require('./blobshadow');
 
 /* THE LOOK (a test switch for now, in the pause menu with ?dev=1): the whole game's style as a few high-level values, laid over whatever
    each place sets. filter: a colour grade over the finished picture (so it reaches everything, lit or not); hemi / sun: the lights,
@@ -5648,6 +5650,14 @@ var LOOKS = {
   current: { filter: '', hemi: 1, sun: 1, haze: 0 },
   soft: { filter: 'saturate(.66) brightness(1.1) contrast(.85) sepia(.08)', hemi: 1.3, sun: 0.62, sunColor: '#ffe2bd', haze: 0.32, hazeColor: '#eadfd2', fogNear: 0.55, fogFar: 0.85 },
   retro: { filter: 'saturate(1.22) contrast(1.08)', hemi: 1, sun: 1.05, haze: 0, pixel: true }
+};
+/* place moods (with the look's MOODS switch): each brawl ground's light tinted its own way - the sky light, the sun, the haze */
+var MOODS = {
+  market: { sky: '#ffd29a', sun: '#ffb25a', fog: '#e8b88a', k: 0.45 },
+  temple: { sky: '#ffe09a', sun: '#ffc640', fog: '#f0cf8a', k: 0.5 },
+  toll: { sky: '#b6c6de', sun: '#d6e2f2', fog: '#9fb0c4', k: 0.5 },
+  railway: { sky: '#a6c2ff', sun: '#cddfff', fog: '#8ea8d0', k: 0.5 },
+  warehouse: { sky: '#ffbe6a', sun: '#ffa42c', fog: '#c08850', k: 0.55 }
 };
 
 function createView(canvas, tierName) {
@@ -5672,7 +5682,7 @@ function createView(canvas, tierName) {
   /* turning the phone: the size can settle a moment after the event, so measure again shortly after */
   function resizeSoon() { resize(); setTimeout(resize, 120); setTimeout(resize, 450); }
   /* the look's grade, vignette and pixel size go on the page (see LOOKS); held off for the dream and the thappad */
-  var look = { style: 'current', px: 3, vignette: false }, lookHeld = false, lookState = '', tmpC = new THREE.Color();
+  var look = { style: 'current', px: 3, vignette: false, shadows: true, moods: false }, mood = null, blobs = blobshadow.createBlobs(scene), lookHeld = false, lookState = '', tmpC = new THREE.Color();
   var vig = document.createElement('div'); vig.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;display:none;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,0) 52%,rgba(20,8,4,.42) 100%)';
   if (canvas.parentNode) canvas.parentNode.insertBefore(vig, canvas.nextSibling);
   function lookOn(on, force) {
@@ -5730,19 +5740,25 @@ function createView(canvas, tierName) {
       var n = performance.now(), dt = lastT ? Math.min(0.1, (n - lastT) / 1000) : 1 / 60; if (lastT) { var d = n - lastT; if (d < 500) frameMs += (d - frameMs) * 0.08; } lastT = n;
       for (var h = 0; h < frameHooks.length; h++) frameHooks[h](camera, dt);   /* last word before drawing, once the camera is placed (the arena's see-through fade) */
       lookOn(true);
-      var L = LOOKS[look.style] || LOOKS.current, keep = null;
-      if (!lookHeld && (L.hemi !== 1 || L.sun !== 1 || L.haze)) {
+      blobs.update();
+      var L = LOOKS[look.style] || LOOKS.current, keep = null, MD = look.moods && MOODS[mood];
+      if (!lookHeld && (L.hemi !== 1 || L.sun !== 1 || L.haze || MD)) {
         /* the look over this frame only: the place's own lights and fog are put back straight after, so nothing that sets them is touched */
-        keep = { hi: hemi.intensity, si: sun.intensity, sc: sun.color.getHex(), fc: scene.fog && scene.fog.color.getHex(), fn: scene.fog && scene.fog.near, ff: scene.fog && scene.fog.far, bg: scene.background && scene.background.isColor ? scene.background.getHex() : null };
+        keep = { hi: hemi.intensity, si: sun.intensity, sc: sun.color.getHex(), hc: hemi.color.getHex(), fc: scene.fog && scene.fog.color.getHex(), fn: scene.fog && scene.fog.near, ff: scene.fog && scene.fog.far, bg: scene.background && scene.background.isColor ? scene.background.getHex() : null };
         hemi.intensity *= L.hemi; sun.intensity *= L.sun; if (L.sunColor) sun.color.lerp(tmpC.set(L.sunColor), 0.6);
+        if (MD) { hemi.color.lerp(tmpC.set(MD.sky), MD.k); sun.color.lerp(tmpC.set(MD.sun), MD.k); if (scene.fog) scene.fog.color.lerp(tmpC.set(MD.fog), MD.k * 0.7); if (keep.bg !== null) scene.background.lerp(tmpC.set(MD.fog), MD.k * 0.5); }
         if (L.haze && scene.fog) { tmpC.set(L.hazeColor); scene.fog.color.lerp(tmpC, L.haze); scene.fog.near *= L.fogNear; scene.fog.far *= L.fogFar; if (keep.bg !== null) scene.background.lerp(tmpC, L.haze * 0.8); }
       }
       renderer.render(scene, camera);
-      if (keep) { hemi.intensity = keep.hi; sun.intensity = keep.si; sun.color.setHex(keep.sc); if (scene.fog) { scene.fog.color.setHex(keep.fc); scene.fog.near = keep.fn; scene.fog.far = keep.ff; } if (keep.bg !== null && scene.background && scene.background.isColor) scene.background.setHex(keep.bg); }
+      if (keep) { hemi.color.setHex(keep.hc); hemi.intensity = keep.hi; sun.intensity = keep.si; sun.color.setHex(keep.sc); if (scene.fog) { scene.fog.color.setHex(keep.fc); scene.fog.near = keep.fn; scene.fog.far = keep.ff; } if (keep.bg !== null && scene.background && scene.background.isColor) scene.background.setHex(keep.bg); }
     },
     /* the look: { style: 'current' | 'soft' | 'retro', px: 2 | 3, vignette: bool } */
-    setLook: function (o) { look = { style: LOOKS[o.style] ? o.style : 'current', px: o.px === 2 ? 2 : 3, vignette: !!o.vignette }; lookOn(!lookHeld, true); },
-    getLook: function () { return { style: look.style, px: look.px, vignette: look.vignette }; },
+    setLook: function (o) { look = { style: LOOKS[o.style] ? o.style : 'current', px: o.px === 2 ? 2 : 3, vignette: !!o.vignette, shadows: o.shadows !== false, moods: !!o.moods }; blobs.setOn(look.shadows); lookOn(!lookHeld, true); },
+    getLook: function () { return { style: look.style, px: look.px, vignette: look.vignette, shadows: look.shadows, moods: look.moods }; },
+    /* the soft shadows (view/blobshadow): blobs.add(obj, rx, rz, opts) */
+    blobs: blobs,
+    /* the place's mood (a brawl ground's name, or null) */
+    setMood: function (m) { mood = m || null; },
     LOOK_STYLES: Object.keys(LOOKS),
     /* the dream and the thappad draw in their own style: they hold the look off while they show */
     holdLook: function (h) { lookHeld = !!h; lookOn(!lookHeld, true); },
@@ -5947,6 +5963,53 @@ function createBike() {
 }
 
 module.exports = { createBike: createBike, VS: VS };
+
+};
+defs["view/blobshadow"]=function(module,exports,require){
+/* view: soft round shadows under people and vehicles (one of the look's cheap extras): a blurred dark disc on the ground under each one,
+   following it every frame. ground 'zero' (fights, the road): the ground is y = 0, so when he is thrown or jumps the disc stays down
+   and shrinks and fades with his height. ground 'feet' (stealth roofs, the hideout): the disc sits at his feet wherever they are.
+   hide(): a test for when there should be none (on a ladder). A disc whose owner has left the scene goes with it. */
+'use strict';
+
+var tex = null;
+function texture() {
+  if (tex) return tex;
+  var c = document.createElement('canvas'); c.width = c.height = 64;
+  var g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.45, 'rgba(0,0,0,.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  tex = new THREE.CanvasTexture(c); return tex;
+}
+
+function createBlobs(scene) {
+  var list = [], on = true, geo = null, v = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  return {
+    /* obj: whose shadow; rx, rz: its half-size across and along (metres); opts: { ground: 'zero' | 'feet', hide: fn, dark: 0..1 } */
+    add: function (obj, rx, rz, opts) {
+      opts = opts || {}; geo = geo || new THREE.PlaneGeometry(2, 2);
+      var mat = new THREE.MeshBasicMaterial({ map: texture(), transparent: true, depthWrite: false, opacity: opts.dark || 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      var g = new THREE.Group(), m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.scale.set(rx, rz, 1); m.renderOrder = 1; g.add(m); scene.add(g);
+      list.push({ obj: obj, g: g, mat: mat, base: opts.dark || 0.55, feet: opts.ground === 'feet', hide: opts.hide }); g.visible = false;
+    },
+    update: function () {
+      for (var i = list.length - 1; i >= 0; i--) {
+        var b = list[i];
+        if (!b.obj.parent) { scene.remove(b.g); b.mat.dispose(); list.splice(i, 1); continue; }
+        var vis = on && b.obj.visible && !(b.hide && b.hide());
+        if (vis) { for (var o = b.obj; o; o = o.parent) if (!o.visible) { vis = false; break; } }
+        b.g.visible = vis; if (!vis) continue;
+        b.obj.getWorldPosition(v); b.obj.getWorldQuaternion(q); e.setFromQuaternion(q, 'YXZ');
+        var gy = b.feet ? v.y : 0, h = b.feet ? 0 : Math.max(0, Math.min(2.5, v.y - gy)), k = 1 - h / 3.5;
+        b.g.position.set(v.x, gy + 0.03, v.z); b.g.rotation.y = e.y; b.g.scale.setScalar(k); b.mat.opacity = b.base * (1 - h / 3);
+      }
+    },
+    setOn: function (b) { on = !!b; },
+    isOn: function () { return on; }
+  };
+}
+
+module.exports = { createBlobs: createBlobs };
 
 };
 defs["view/boxmesh"]=function(module,exports,require){
@@ -9609,6 +9672,8 @@ function createPauseMenu(o) {
       lk.appendChild(el('div', 'font-size:12px;letter-spacing:.2em;color:#ffd21f', 'LOOK (TEST)'));
       lk.appendChild(row('STYLE', chips(L.style, S.styles.map(function (t) { return { v: t, t: t.toUpperCase() }; }), function (v) { o.set('look', { style: v }); })));
       if (L.style === 'retro') lk.appendChild(row('PIXELS', chips(L.px, [{ v: 3, t: '1/3' }, { v: 2, t: '1/2' }], function (v) { o.set('look', { px: v }); })));
+      lk.appendChild(row('SOFT SHADOWS', chips(L.shadows, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { shadows: v }); })));
+      lk.appendChild(row('PLACE MOODS', chips(L.moods, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { moods: v }); })));
       lk.appendChild(row('VIGNETTE', chips(L.vignette, [{ v: true, t: 'ON' }, { v: false, t: 'OFF' }], function (v) { o.set('look', { vignette: v }); })));
       colB.appendChild(lk);
     }
@@ -10962,7 +11027,7 @@ function createStealthView(view, st) {
       box(rig.head, 0.28, 0.07, 0.28, 0, 0.1, 0, redMat); box(rig.head, 0.05, 0.1, 0.06, 0.06, 0.02, -0.16, redMat);
       if (w.type === 'boss') rig.root.scale.setScalar(1.12);
     }
-    root.add(rig.root);
+    root.add(rig.root); view.blobs.add(rig.root, 0.45, 0.45, { ground: 'feet' });
     var fanMat = new THREE.MeshBasicMaterial({ color: w.type === 'guard' ? 0xffe27a : 0xff4a3a, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }); made.push(fanMat);
     var fan = new THREE.Mesh(fanG[w.type], fanMat); fan.position.y = 0.05; root.add(fan);
     var lmat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }); made.push(lmat);
@@ -11006,7 +11071,7 @@ function createStealthView(view, st) {
   }
 
   /* Toofan */
-  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root);
+  var hero = herorig.createHeroRig(), cur = posemath.named('stand'), hph = 0, ht = 0, heroFace = st.player.face, spd = 0; root.add(hero.root); view.blobs.add(hero.root, 0.45, 0.45, { ground: 'feet', hide: function () { return !!st.player.climb; } });
   function heroPose(p, dt) {
     var stand = posemath.named('stand'), out;
     if (st.state === 'fail') out = posemath.layer(stand, posemath.named('down'), 1, 1, 1, 1);
