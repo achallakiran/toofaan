@@ -57,9 +57,14 @@ function createWake() {
       var word = document.createElement('div'); word.className = 'comic';
       word.style.cssText = 'position:fixed;left:0;right:0;top:34%;z-index:41;text-align:center;pointer-events:none;font:900 clamp(40px,11vw,120px)/1 "Arial Black",Impact,sans-serif;color:#fff;-webkit-text-stroke:3px #000;text-shadow:6px 6px 0 #b0102a;opacity:0;transform:scale(.6) rotate(-4deg);transition:opacity .12s,transform .18s';
       word.textContent = 'NOOO MAAA!'; document.body.appendChild(word); S.word = word;
-      var cap = document.createElement('div');
-      cap.style.cssText = 'position:fixed;left:0;right:0;bottom:16%;z-index:41;text-align:center;pointer-events:none;color:#ffd9d0;font-size:clamp(16px,4.4vw,26px);letter-spacing:.18em;text-shadow:0 0 10px #000,0 2px 2px #000;opacity:0;transition:opacity .5s';
-      document.body.appendChild(cap); S.cap = cap;
+      /* the dream's lines: a shout burst (a jagged balloon) over whoever is shouting, big, popping again and again and shaking, so it reads as a scream */
+      var cap = document.createElement('div'), pts = [], q;
+      for (q = 0; q < 22; q++) { var an = q / 22 * Math.PI * 2, rr = q % 2 ? 36 + (q * 37 % 7) : 50; pts.push((50 + Math.cos(an) * rr).toFixed(1) + ',' + (50 + Math.sin(an) * rr).toFixed(1)); }
+      cap.style.cssText = 'position:fixed;left:0;top:0;z-index:41;pointer-events:none;opacity:0;will-change:transform';
+      cap.innerHTML = '<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;left:-34%;top:-62%;width:168%;height:224%;overflow:visible">' +
+        '<polygon points="' + pts.join(' ') + '" fill="#fff4e2" stroke="#1a0004" stroke-width="2.6" vector-effect="non-scaling-stroke" stroke-linejoin="miter"/></svg>' +
+        '<span style="position:relative;display:block;white-space:nowrap;font-size:clamp(28px,8.5vw,64px);line-height:1;letter-spacing:.06em;color:#c0102a;text-shadow:3px 3px 0 #1a0004"></span>';
+      document.body.appendChild(cap); S.cap = cap; S.capText = cap.lastChild; S.capLine = '';
       var blackout = document.createElement('div'); blackout.style.cssText = 'position:fixed;inset:0;z-index:5;pointer-events:none;background:#000;opacity:0'; document.body.appendChild(blackout); S.black = blackout;
       var skip = document.createElement('button'); skip.textContent = '[ SKIP ▸▸ ]'; skip.setAttribute('data-ok', '1');
       skip.style.cssText = 'position:fixed;z-index:46;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));padding:9px 14px;border-radius:4px;border:1px solid rgba(140,255,156,.5);background:rgba(0,0,0,.6);color:#bdf5c6;font-size:13px;letter-spacing:.12em;cursor:pointer;touch-action:manipulation';
@@ -128,7 +133,16 @@ function createWake() {
       fadeB = Math.max(fadeB, t > END - 0.9 ? ease((t - (END - 0.9)) / 0.8) : 0);
       S.black.style.opacity = Math.max(0, fadeB).toFixed(3);
       var line = dreamOn ? S.dream.caption(t - D0) : '';
-      if (line) S.cap.textContent = line; S.cap.style.opacity = line ? 1 : 0;
+      if (line) {
+        if (line !== S.capLine) { S.capText.textContent = line; S.capLine = line; }
+        var sp = S.dream.speaker(t - D0), cw = S.cap.offsetWidth, ch = S.cap.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+        var pop = sp.t % 0.85, n = Math.min(3, Math.floor(sp.t / 0.85)), fit = Math.min(1, vw * 0.9 / (cw * 1.68 * 1.38)), sc = fit * (1 + n * 0.06) * (pop < 0.12 ? 0.55 + pop / 0.12 * 0.65 : 1 + 0.2 * Math.exp(-(pop - 0.12) * 7));   /* it bursts out again each time she (he) screams, a little bigger */
+        var amp = 2.5 + n * 0.8, jx = (Math.random() - 0.5) * amp * 2, jy = (Math.random() - 0.5) * amp * 2, rot = (sp.maa ? -5 : 5) + (Math.random() - 0.5) * 3;
+        var mx = cw * 0.84 * sc + 10, my = ch * 1.12 * sc + 10;                 /* (the balloon spreads past the words: keep all of it on screen) */
+        var cx = Math.min(vw - mx, Math.max(mx, sp.x * vw)), cy = Math.min(vh * 0.62, Math.max(my + 44, sp.y * vh - ch * 1.3 * sc));   /* (below the sound buttons) */
+        S.cap.style.transform = 'translate(' + (cx - cw / 2 + jx).toFixed(1) + 'px,' + (cy - ch / 2 + jy).toFixed(1) + 'px) rotate(' + rot.toFixed(1) + 'deg) scale(' + sc.toFixed(3) + ')';
+      } else S.capLine = '';
+      S.cap.style.opacity = line ? 1 : 0;
       S.red.style.opacity = t > SCREAM && t < SCREAM + 1.4 ? 0.25 + 0.2 * Math.sin(t * 30) : 0;
       S.red.style.background = t > UP - 0.1 && t < UP + 0.15 ? '#fff' : '#b0102a';
       if (t > UP - 0.1 && t < UP + 0.15) S.red.style.opacity = 0.85;

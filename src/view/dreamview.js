@@ -182,6 +182,13 @@ function createDream(renderer) {
     LENGTH: SHOTS[6], cam: cam,
     /* (for tools: where the people and the grip are) */
     probe: function () { var r = function (v) { return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)]; }; return { villain: r(villain.rig.root.position), maa: r(maa.rig.root.position), fist: r(HV), wrist: r(HM), arm: maa.armAng, cam: r(cam.position) }; },
+    /* who says this shot's line and where their head is on screen (0..1 across, 0..1 down; after render), and how long it has been said */
+    speaker: function (T) {
+      var k = shotOf(T), line = LINES[k], who = /^BETA/.test(line) ? maa : hero, v = who.rig.root.position.clone();
+      v.y += who === maa ? 1.62 : 1.2; cam.updateMatrixWorld(); v.project(cam);
+      var on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      return { x: on ? (v.x + 1) / 2 : 0.5, y: on ? (1 - v.y) / 2 : 0.45, on: on, maa: who === maa, t: T - SHOTS[k] - 0.5 };
+    },
     caption: function (T) { var k = shotOf(T), t = T - SHOTS[k], len = SHOTS[k + 1] - SHOTS[k]; return t > 0.5 && len - t > 0.4 ? LINES[k] : ''; },
     /* draw the dream at story time T */
     render: function (T) {
